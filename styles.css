@@ -505,16 +505,24 @@ body.sidebar-collapsed .nav-item {
   gap: var(--vtc-space-3);
 }
 
+.app-list__meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .btn,
 .icon-button,
 .settings-tab,
-.list-row {
+.list-row,
+.hotkey-capture,
+.choice-pill {
   border-radius: 10px;
   transition: background var(--vtc-motion-fast), border-color var(--vtc-motion-fast), color var(--vtc-motion-fast), transform var(--vtc-motion-fast);
 }
 
 .btn,
-.icon-button {
+.icon-button,
+.hotkey-capture {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -553,6 +561,34 @@ body[data-theme="dark"] .btn--primary {
   width: 36px;
   min-width: 36px;
   padding: 0;
+}
+
+.hotkey-capture {
+  justify-content: flex-start;
+  width: 100%;
+  font-family: var(--vtc-font-mono);
+}
+
+.choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.choice-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--vtc-border-strong);
+  background: var(--vtc-bg-elevated);
+  color: var(--vtc-text-secondary);
+}
+
+.choice-pill.is-active {
+  border-color: var(--vtc-border-highlight);
+  background: color-mix(in srgb, var(--vtc-accent-soft) 100%, transparent);
+  color: var(--vtc-text-primary);
 }
 
 .summary-strip {
@@ -787,6 +823,9 @@ body[data-theme="dark"] .btn--primary {
 .tag {
   background: var(--vtc-bg-soft);
   color: var(--vtc-text-secondary);
+  white-space: normal;
+  line-height: 1.3;
+  text-align: center;
 }
 
 .state-pill--success {

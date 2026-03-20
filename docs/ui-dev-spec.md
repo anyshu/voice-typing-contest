@@ -145,6 +145,7 @@ Use outline icons by default.
 - `Sidebar`
 - `SidebarNavItem`
 - `TopBar`
+- `LocaleToggle`
 - `PageHeader`
 - `PageContent`
 
@@ -165,6 +166,7 @@ Use outline icons by default.
 - `TextInput`
 - `NumberInput`
 - `Textarea`
+- `HotkeyCaptureInput`
 - `Checkbox`
 - `RadioGroup`
 - `Select`
@@ -200,6 +202,18 @@ Use outline icons by default.
 - `ErrorBanner`
 - `Toast`
 
+### 3.7 Vue renderer structure
+
+The Electron renderer should follow a Vue-first structure.
+
+Suggested folders:
+
+- `src/renderer/App.vue`
+- `src/renderer/pages/`
+- `src/renderer/components/`
+- `src/renderer/composables/`
+- `src/renderer/i18n/`
+
 ## 4. Global shell DOM sketch
 
 ```text
@@ -212,16 +226,18 @@ body
       |      |
       |      |----- nav.sidebar__nav
       |      |      |----- button.nav-item[data-page="main"]
-      |      |      |----- button.nav-item[data-page="intro"]
-      |      |      +----- button.nav-item[data-page="about"]
+      |      |      +----- button.nav-item[data-page="intro"]
       |      |
       |      +----- div.sidebar__footer
+      |             |----- button.nav-item[data-page="about"]
       |             +----- button.nav-item[data-action="settings"]
       |
       +----- div.app-shell__main
              |----- header.top-bar
              |      |----- div.top-bar__title
              |      +----- div.top-bar__actions
+             |             |----- button.icon-button[data-action="toggle-theme"]
+             |             +----- button.icon-button[data-action="toggle-locale"]
              |
              +----- main.page-host
                     +----- section.page-root[data-page]
@@ -233,15 +249,15 @@ body
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| Main                                                                     [Run] [Stop] [Settings] |
+| Main                                                     [Run] [Stop] [Theme] [Language] |
 |--------------------------------------------------------------------------------------------------|
 | [Apps: 3] [Samples: 24] [Permission: Ready] [Device: BlackHole 2ch] [DB: OK]                   |
 |--------------------------------------------------------------------------------------------------|
 | +-----------------------------------+ +----------------------------------+ +-------------------+ |
 | | Target Apps                       | | Live Input                       | | Timeline          | |
-| | > Xiguashuo        hold   Ready   | | +------------------------------+ | | 16:02:01 down    | |
-| |   Wispr Flow       tap    Ready   | | |                              | | | 16:02:01 play    | |
-| |   App C            hold   Blocked | | | typed text appears here      | | | 16:02:03 end     | |
+| | > Xiguashuo        hold->release        Ready   | | +------------------------------+ | | 16:02:01 trigger start | |
+| |   Wispr Flow       press-start-stop     Ready   | | |                              | | | 16:02:01 play          | |
+| |   App C            hold->release        Blocked | | | typed text appears here      | | | 16:02:03 trigger stop  | |
 | +-----------------------------------+ | |                              | | | 16:02:04 first   | |
 | | Audio Samples                      | | +------------------------------+ | | 16:02:04 last    | |
 | | zh-basic-01.wav        2.4s        | | Status: success                | +-------------------+ |
@@ -266,7 +282,8 @@ section.page-root.page-main
       +----- div.page-header__actions
              |----- button.btn.btn--primary[data-action="run"]
              |----- button.btn.btn--secondary[data-action="stop"]
-             +----- button.btn.btn--ghost[data-action="open-settings"]
+             |----- button.icon-button[data-action="toggle-theme"]
+             +----- button.icon-button[data-action="toggle-locale"]
 |
 ----- section.summary-strip
       |----- div.status-chip
@@ -385,15 +402,15 @@ div.overlay
 | +-------------------------------+ +--------------------------------------------+ |
 | | > Xiguashuo                   | | Name                [___________________] | |
 | |   Wispr Flow                  | | Enabled             [on ]                 | |
-| |   App C                       | | Bundle ID           [___________________] | |
+| |   App C                       | | App file name       [Xiguashuo.app____]  | |
 | | [+ Add App]                   | | Launch command      [___________________] | |
 | |                               | | Audio input device  [BlackHole 2ch_____] | |
-| |                               | | Hotkey modifiers    [cmd] [shift] [opt ] | |
-| |                               | | Hotkey key          [______]              | |
-| +-------------------------------+ | Mode        (o) hold   ( ) tap            | |
+| |                               | | Hotkey capture      [ press any combo ]  | |
+| +-------------------------------+ | Trigger mode (o) hold->release           | |
+|                                   |              ( ) press start->press stop | |
 |                                   | Pre delay            [120 ] ms            | |
 |                                   | Key -> audio delay   [180 ] ms            | |
-|                                   | Audio -> key up      [ 60 ] ms            | |
+|                                   | Audio -> stop trigger [60 ] ms           | |
 |                                   | Result timeout       [5000] ms            | |
 |                                   | Settle window        [600 ] ms            | |
 |                                   | Notes                [_______________]    | |
@@ -414,7 +431,7 @@ div.settings-panel[data-tab="target-apps"]
       +----- section.master-detail__editor
              +----- form.target-app-form
                     |----- div.form-grid
-                    |----- div.hotkey-chip-group
+                    |----- div.hotkey-capture-input
                     |----- div.radio-group
                     +----- div.form-actions
 ```
@@ -523,7 +540,7 @@ div.settings-panel[data-tab="permissions"]
 +----------------------------------------------------------------------------------+
 | Database                                                                         |
 |----------------------------------------------------------------------------------|
-| DB path            [/Users/.../voice-typing-contest.db_________] [Choose]        |
+| DB path            [/Users/.../voice-typing-contest.sqlite_____] [Choose]        |
 | Log folder         [/Users/.../logs____________________________] [Open]          |
 | Export result CSV                                                  [Export]      |
 +----------------------------------------------------------------------------------+
@@ -584,7 +601,7 @@ div.settings-panel[data-tab="advanced"]
 | [ ] Target apps configured                                                       |
 | [ ] Sample folder ready                                                          |
 |                                                                                  |
-|                                                   [Open Settings] [Go Main]      |
+|                                                                    [Go Main]     |
 +----------------------------------------------------------------------------------+
 ```
 
@@ -630,12 +647,13 @@ section.page-root.page-intro
 |                                                                                  |
 | Info                                                                             |
 | - Platform: macOS desktop                                                        |
-| - Runtime: Electron + native helper                                              |
+| - Runtime: Electron + Vue renderer + native helper                               |
 | - Storage: local SQLite                                                          |
+| - UI language: zh-CN / en                                                        |
 | - Permissions: Accessibility required                                            |
 |                                                                                  |
 | Paths                                                                            |
-| - Database: /.../voice-typing-contest.db                                         |
+| - Database: /.../voice-typing-contest.sqlite                                     |
 | - Logs: /.../logs                                                                |
 |                                                                                  |
 |                                                   [Open Logs] [Open DB Folder]   |
@@ -671,7 +689,7 @@ section.page-root.page-about
 | Status: success                                            |
 |--------------------------------------------------------------|
 | Timeline                                                    |
-| hotkey_down      16:02:01.120                              |
+| trigger_start    16:02:01.120                              |
 | audio_started    16:02:01.260                              |
 | audio_ended      16:02:03.840                              |
 | first_input      16:02:04.110                              |

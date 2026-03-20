@@ -145,6 +145,9 @@
               <svg class="icon icon--theme-light"><use href="#icon-sun"></use></svg>
               <svg class="icon icon--theme-dark"><use href="#icon-moon"></use></svg>
             </button>
+            <button class="btn btn--ghost btn--small has-tooltip top-bar__language-toggle" type="button" data-language-toggle="true" data-tooltip="切换界面语言 / Switch UI language" aria-label="Toggle language">
+              中 / EN
+            </button>
             <button class="icon-button has-tooltip" type="button" data-open-drawer="true" data-tooltip="打开本次 run 的详细结果" aria-label="Open run detail">
               <svg class="icon"><use href="#icon-chart"></use></svg>
             </button>
@@ -224,30 +227,30 @@
                     <li class="app-list__item" data-run-app="xiguashuo">
                       <div class="app-list__main">
                         <strong>Xiguashuo</strong>
-                        <span class="meta-text">com.xigua.voice</span>
+                        <span class="meta-text">Xiguashuo.app</span>
                       </div>
                       <div class="app-list__meta">
-                        <span class="tag">hold</span>
+                        <span class="tag">hold -> release</span>
                         <span class="state-pill state-pill--success">Ready</span>
                       </div>
                     </li>
                     <li class="app-list__item" data-run-app="wispr-flow">
                       <div class="app-list__main">
                         <strong>Wispr Flow</strong>
-                        <span class="meta-text">com.wispr.flow</span>
+                        <span class="meta-text">Wispr Flow.app</span>
                       </div>
                       <div class="app-list__meta">
-                        <span class="tag">tap</span>
+                        <span class="tag">press start -> press stop</span>
                         <span class="state-pill state-pill--success">Ready</span>
                       </div>
                     </li>
                     <li class="app-list__item" data-run-app="app-c">
                       <div class="app-list__main">
                         <strong>App C</strong>
-                        <span class="meta-text">shortcut missing</span>
+                        <span class="meta-text">App C.app not found</span>
                       </div>
                       <div class="app-list__meta">
-                        <span class="tag">hold</span>
+                        <span class="tag">hold -> release</span>
                         <span class="state-pill state-pill--warning">Blocked</span>
                       </div>
                     </li>
@@ -420,7 +423,7 @@
                         <strong class="mono-text" data-snapshot-sample>--</strong>
                       </div>
                       <div class="metric-block">
-                        <span>Hotkey mode</span>
+                        <span>Trigger mode</span>
                         <strong data-snapshot-mode>--</strong>
                       </div>
                     </div>
@@ -447,8 +450,8 @@
                     <li class="step-row" data-run-step="hotkey">
                       <span class="step-row__index">02</span>
                       <div>
-                        <strong>Send Hotkey</strong>
-                        <span class="meta-text">emit system shortcut or hold key down</span>
+                        <strong>Trigger Start</strong>
+                        <span class="meta-text">send captured shortcut to start recording</span>
                       </div>
                     </li>
                     <li class="step-row" data-run-step="play">
@@ -468,8 +471,8 @@
                     <li class="step-row" data-run-step="settle">
                       <span class="step-row__index">05</span>
                       <div>
-                        <strong>Settle Result</strong>
-                        <span class="meta-text">wait for stable text or timeout</span>
+                        <strong>Trigger Stop + Settle</strong>
+                        <span class="meta-text">release or press again, then wait for stable text</span>
                       </div>
                     </li>
                   </ol>
@@ -531,7 +534,8 @@
                   <ul class="note-list">
                     <li>SQLite path 固定，结果可回放，导出只是附加功能。</li>
                     <li>Accessibility required，Automation 和 Input Monitoring 是补充能力。</li>
-                    <li>tooltips 尽量把“这项配置干嘛用”讲清楚，减少误配。</li>
+                    <li>target app 先按安装后的 `.app` 文件名识别，不依赖 Bundle ID。</li>
+                    <li>Vue renderer 需要走 i18n，避免把界面文案写死在组件里。</li>
                   </ul>
                 </article>
               </div>
@@ -665,9 +669,9 @@
                   <h4>Info</h4>
                   <ul class="meta-list">
                     <li><span>Platform</span><strong>macOS desktop</strong></li>
-                    <li><span>Runtime</span><strong>Electron + native helper</strong></li>
+                    <li><span>Runtime</span><strong>Electron + Vue renderer + native helper</strong></li>
                     <li><span>Storage</span><strong>Local SQLite</strong></li>
-                    <li><span>Theme</span><strong>Light / Dark</strong></li>
+                    <li><span>UI Mode</span><strong>Light / Dark + zh / en</strong></li>
                   </ul>
                 </section>
                 <section class="about-block">
@@ -726,12 +730,16 @@
                   <input type="text" value="Contest Lab MacBook" />
                 </label>
                 <label class="form-row">
+                  <span>Interface language</span>
+                  <input type="text" value="zh-CN / en" />
+                </label>
+                <label class="form-row">
                   <span>Preferred theme</span>
                   <input type="text" value="light / dark" />
                 </label>
                 <label class="form-row">
                   <span>Default run notes</span>
-                  <textarea rows="4">Keep VTC frontmost during sample runs. Only Accessibility is required for the core benchmark path.</textarea>
+                  <textarea rows="4">Keep VTC frontmost during sample runs. Vue renderer strings should go through i18n. Only Accessibility is required for the core benchmark path.</textarea>
                 </label>
               </div>
             </div>
@@ -751,10 +759,18 @@
                 <div class="master-detail__editor">
                   <div class="form-grid">
                     <label class="form-row"><span>Name</span><input type="text" value="Xiguashuo" /></label>
-                    <label class="form-row"><span>Bundle ID</span><input type="text" value="com.xigua.voice" /></label>
-                    <label class="form-row"><span>Hotkey modifiers</span><input type="text" value="cmd + shift" /></label>
-                    <label class="form-row"><span>Hotkey key</span><input type="text" value="space" /></label>
-                    <label class="form-row"><span>Mode</span><input type="text" value="hold" /></label>
+                    <label class="form-row"><span>App file name</span><input type="text" value="Xiguashuo.app" /></label>
+                    <label class="form-row">
+                      <span>Hotkey capture</span>
+                      <button class="hotkey-capture" type="button" data-hotkey-capture="true">Press any combination</button>
+                    </label>
+                    <div class="form-row">
+                      <span>Trigger mode</span>
+                      <div class="choice-group">
+                        <span class="choice-pill is-active">hold -> release</span>
+                        <span class="choice-pill">press start -> press stop</span>
+                      </div>
+                    </div>
                     <label class="form-row"><span>Result timeout</span><input type="text" value="5000 ms" /></label>
                   </div>
                 </div>

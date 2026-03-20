@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Typing Contest</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-theme="light">
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-dashboard" viewBox="0 0 24 24">
+        <path d="M4 4h7v7H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 13h7v7H4z" />
+      </symbol>
+      <symbol id="icon-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 10v6" />
+        <circle cx="12" cy="7" r="1" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="icon-about" viewBox="0 0 24 24">
+        <path d="M5 5h14v14H5z" />
+        <path d="M9 9h6M9 13h6M9 17h4" />
+      </symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12" />
+      </symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M10 8l6 4-6 4z" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9 9h6v6H9z" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="icon-moon" viewBox="0 0 24 24">
+        <path d="M14.5 3.5a8.5 8.5 0 1 0 6 14.5 9 9 0 1 1-6-14.5z" />
+      </symbol>
+      <symbol id="icon-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M19.07 4.93l-2.12 2.12M7.05 16.95l-2.12 2.12" />
+      </symbol>
+      <symbol id="icon-panel-left" viewBox="0 0 24 24">
+        <path d="M4 5h16v14H4z" />
+        <path d="M9 5v14" />
+      </symbol>
+      <symbol id="icon-window" viewBox="0 0 24 24">
+        <path d="M4 6h16v12H4z" />
+        <path d="M4 10h16" />
+        <path d="M8 8h.01M11 8h.01" />
+      </symbol>
+      <symbol id="icon-audio" viewBox="0 0 24 24">
+        <path d="M4 14h3l4 4V6l-4 4H4z" />
+        <path d="M16 8a6 6 0 0 1 0 8M18.5 5.5a9.5 9.5 0 0 1 0 13" />
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 3l7 3v5c0 4.4-2.8 8.4-7 10-4.2-1.6-7-5.6-7-10V6z" />
+      </symbol>
+      <symbol id="icon-database" viewBox="0 0 24 24">
+        <ellipse cx="12" cy="6" rx="7" ry="3" />
+        <path d="M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6" />
+        <path d="M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6" />
+      </symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24">
+        <path d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      </symbol>
+      <symbol id="icon-chart" viewBox="0 0 24 24">
+        <path d="M4 18h16" />
+        <path d="M6 15l4-4 3 2 5-6" />
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 1 0 2 5.5" />
+        <path d="M20 4v7h-7" />
+      </symbol>
+      <symbol id="icon-expand" viewBox="0 0 24 24">
+        <path d="M15 7h5v5M9 17H4v-5" />
+        <path d="M14 10l6-6M10 14l-6 6" />
+      </symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6L6 18" />
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="M5 13l4 4L19 7" />
+      </symbol>
+      <symbol id="icon-alert" viewBox="0 0 24 24">
+        <path d="M12 4l9 16H3z" />
+        <path d="M12 10v4" />
+        <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
+      </symbol>
+    </svg>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar__top">
+          <div class="sidebar__brand-row">
+            <div class="sidebar__brand">
+              <div class="brand-mark">VT</div>
+              <div class="brand-copy">
+                <strong>Voice Typing</strong>
+                <span>Contest Lab</span>
+              </div>
+            </div>
+            <button
+              class="icon-button has-tooltip"
+              type="button"
+              data-sidebar-toggle="true"
+              data-tooltip="收起或展开左侧导航"
+              aria-label="Toggle sidebar"
+            >
+              <svg class="icon"><use href="#icon-panel-left"></use></svg>
+            </button>
+          </div>
+
+          <nav class="sidebar__nav" aria-label="Primary">
+            <button class="nav-item is-active has-tooltip" type="button" data-page-target="main" data-tooltip="主控台和实时运行视图">
+              <span class="nav-item__icon"><svg class="icon"><use href="#icon-dashboard"></use></svg></span>
+              <span class="nav-item__label">Main</span>
+            </button>
+            <button class="nav-item has-tooltip" type="button" data-page-target="intro" data-tooltip="准备事项和开跑前检查">
+              <span class="nav-item__icon"><svg class="icon"><use href="#icon-info"></use></svg></span>
+              <span class="nav-item__label">Intro</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="sidebar__footer">
+          <button class="nav-item has-tooltip" type="button" data-page-target="about" data-tooltip="项目定位、版本和本地路径">
+            <span class="nav-item__icon"><svg class="icon"><use href="#icon-about"></use></svg></span>
+            <span class="nav-item__label">About</span>
+          </button>
+          <button class="nav-item has-tooltip" type="button" data-open-settings="true" data-tooltip="唯一的设置入口，所有可编辑配置都在这里">
+            <span class="nav-item__icon"><svg class="icon"><use href="#icon-settings"></use></svg></span>
+            <span class="nav-item__label">Settings</span>
+          </button>
+        </div>
+      </aside>
+
+      <div class="app-shell__main">
+        <header class="top-bar">
+          <div>
+            <p class="top-bar__eyebrow">Local Benchmark Tool</p>
+            <h1 class="top-bar__title" data-page-title>Main</h1>
+          </div>
+          <div class="top-bar__actions">
+            <button class="icon-button has-tooltip" type="button" data-theme-toggle="true" data-tooltip="切换亮色和暗色" aria-label="Toggle theme">
+              <svg class="icon icon--theme-light"><use href="#icon-sun"></use></svg>
+              <svg class="icon icon--theme-dark"><use href="#icon-moon"></use></svg>
+            </button>
+            <button class="btn btn--ghost btn--small has-tooltip top-bar__language-toggle" type="button" data-language-toggle="true" data-tooltip="切换界面语言 / Switch UI language" aria-label="Toggle language">
+              中 / EN
+            </button>
+            <button class="icon-button has-tooltip" type="button" data-open-drawer="true" data-tooltip="打开本次 run 的详细结果" aria-label="Open run detail">
+              <svg class="icon"><use href="#icon-chart"></use></svg>
+            </button>
+          </div>
+        </header>
+
+        <main class="page-host">
+          <section class="page-root page-main is-active" data-page="main">
+            <header class="page-header">
+              <div class="page-header__copy">
+                <h2>Main</h2>
+                <p>同一套音频测试集，递归扫子文件夹，统一落到一个 SQLite benchmark 视图里。</p>
+              </div>
+              <div class="page-header__actions">
+                <button class="btn btn--primary has-tooltip" type="button" data-run-control="start" data-tooltip="开始自动运行并高亮当前 app、样本和步骤">
+                  <svg class="icon"><use href="#icon-play"></use></svg>
+                  <span>Run</span>
+                </button>
+                <button class="btn btn--secondary has-tooltip" type="button" data-run-control="stop" data-tooltip="停止自动运行，保留当前结果快照">
+                  <svg class="icon"><use href="#icon-stop"></use></svg>
+                  <span>Stop</span>
+                </button>
+              </div>
+            </header>
+
+            <section class="summary-strip" aria-label="Summary">
+              <article class="status-chip has-tooltip" data-tooltip="当前启用并会参与批量测试的 app 数量">
+                <span class="status-chip__icon"><svg class="icon"><use href="#icon-window"></use></svg></span>
+                <span class="status-chip__label">Apps</span>
+                <strong class="status-chip__value">3 Ready</strong>
+              </article>
+              <article class="status-chip has-tooltip" data-tooltip="测试集支持子文件夹，递归加载所有 wav 样本">
+                <span class="status-chip__icon"><svg class="icon"><use href="#icon-folder"></use></svg></span>
+                <span class="status-chip__label">Audio Set</span>
+                <strong class="status-chip__value">24 / 5 folders</strong>
+              </article>
+              <article class="status-chip has-tooltip" data-tooltip="Accessibility 是硬要求，缺失时禁止运行">
+                <span class="status-chip__icon"><svg class="icon"><use href="#icon-shield"></use></svg></span>
+                <span class="status-chip__label">Permission</span>
+                <strong class="status-chip__value status-chip__value--success">Ready</strong>
+              </article>
+              <article class="status-chip has-tooltip" data-tooltip="当前虚拟输入设备，运行前要和目标 app 保持一致">
+                <span class="status-chip__icon"><svg class="icon"><use href="#icon-audio"></use></svg></span>
+                <span class="status-chip__label">Device</span>
+                <strong class="status-chip__value">BlackHole 2ch</strong>
+              </article>
+              <article class="status-chip has-tooltip" data-tooltip="结果写入本地 SQLite，不是内存态临时数据">
+                <span class="status-chip__icon"><svg class="icon"><use href="#icon-database"></use></svg></span>
+                <span class="status-chip__label">SQLite</span>
+                <strong class="status-chip__value">healthy</strong>
+              </article>
+            </section>
+
+            <div class="failure-banner" data-failure-banner hidden>
+              <div class="failure-banner__icon">
+                <svg class="icon"><use href="#icon-alert"></use></svg>
+              </div>
+              <div class="failure-banner__copy">
+                <strong data-failure-title>Run blocked</strong>
+                <p data-failure-message>如果某一步失败，这里会直接说明失败原因、所属 app 和建议动作。</p>
+              </div>
+            </div>
+
+            <section class="main-grid">
+              <div class="main-grid__left">
+                <article class="panel-card">
+                  <div class="section-header">
+                    <div>
+                      <h3>Target Apps</h3>
+                      <p>自动运行时会高亮当前 app，并把 blocked 项单独标出来。</p>
+                    </div>
+                    <button class="icon-button has-tooltip" type="button" data-tooltip="刷新 app readiness 和 shortcut 配置" aria-label="Refresh apps">
+                      <svg class="icon"><use href="#icon-refresh"></use></svg>
+                    </button>
+                  </div>
+                  <ul class="app-list">
+                    <li class="app-list__item" data-run-app="xiguashuo">
+                      <div class="app-list__main">
+                        <strong>Xiguashuo</strong>
+                        <span class="meta-text">Xiguashuo.app</span>
+                      </div>
+                      <div class="app-list__meta">
+                        <span class="tag">hold -> release</span>
+                        <span class="state-pill state-pill--success">Ready</span>
+                      </div>
+                    </li>
+                    <li class="app-list__item" data-run-app="wispr-flow">
+                      <div class="app-list__main">
+                        <strong>Wispr Flow</strong>
+                        <span class="meta-text">Wispr Flow.app</span>
+                      </div>
+                      <div class="app-list__meta">
+                        <span class="tag">press start -> press stop</span>
+                        <span class="state-pill state-pill--success">Ready</span>
+                      </div>
+                    </li>
+                    <li class="app-list__item" data-run-app="app-c">
+                      <div class="app-list__main">
+                        <strong>App C</strong>
+                        <span class="meta-text">App C.app not found</span>
+                      </div>
+                      <div class="app-list__meta">
+                        <span class="tag">hold -> release</span>
+                        <span class="state-pill state-pill--warning">Blocked</span>
+                      </div>
+                    </li>
+                  </ul>
+                </article>
+
+                <article class="panel-card">
+                  <div class="section-header">
+                    <div>
+                      <h3>Audio Test Set</h3>
+                      <p>目录按递归方式扫描，子文件夹直接保留相对路径。</p>
+                    </div>
+                    <button class="btn btn--ghost btn--small has-tooltip" type="button" data-tooltip="重新扫描根目录和所有子文件夹">
+                      Rescan
+                    </button>
+                  </div>
+                  <div class="sample-tree">
+                    <section class="sample-folder">
+                      <div class="sample-folder__header">
+                        <svg class="icon"><use href="#icon-folder"></use></svg>
+                        <strong>mandarin/basic</strong>
+                        <span>2 samples</span>
+                      </div>
+                      <ul class="sample-folder__list">
+                        <li class="sample-leaf" data-run-sample="mandarin/basic/zh-basic-01.wav">
+                          <div>
+                            <strong>zh-basic-01.wav</strong>
+                            <span class="meta-text">expected text ready</span>
+                          </div>
+                          <span class="mono-text">2.4s</span>
+                        </li>
+                        <li class="sample-leaf" data-run-sample="mandarin/basic/zh-basic-02.wav">
+                          <div>
+                            <strong>zh-basic-02.wav</strong>
+                            <span class="meta-text">expected text ready</span>
+                          </div>
+                          <span class="mono-text">3.1s</span>
+                        </li>
+                      </ul>
+                    </section>
+                    <section class="sample-folder">
+                      <div class="sample-folder__header">
+                        <svg class="icon"><use href="#icon-folder"></use></svg>
+                        <strong>mandarin/noisy</strong>
+                        <span>1 sample</span>
+                      </div>
+                      <ul class="sample-folder__list">
+                        <li class="sample-leaf" data-run-sample="mandarin/noisy/zh-noisy-04.wav">
+                          <div>
+                            <strong>zh-noisy-04.wav</strong>
+                            <span class="meta-text">expected text ready</span>
+                          </div>
+                          <span class="mono-text">4.9s</span>
+                        </li>
+                      </ul>
+                    </section>
+                    <section class="sample-folder">
+                      <div class="sample-folder__header">
+                        <svg class="icon"><use href="#icon-folder"></use></svg>
+                        <strong>english/short</strong>
+                        <span>1 sample</span>
+                      </div>
+                      <ul class="sample-folder__list">
+                        <li class="sample-leaf" data-run-sample="english/short/en-short-03.wav">
+                          <div>
+                            <strong>en-short-03.wav</strong>
+                            <span class="meta-text">no expected text</span>
+                          </div>
+                          <span class="mono-text">1.8s</span>
+                        </li>
+                      </ul>
+                    </section>
+                  </div>
+                </article>
+
+                <article class="panel-card">
+                  <div class="section-header">
+                    <div>
+                      <h3>Batch Progress</h3>
+                      <p>自动运行时，这里实时显示 app、音频和步骤。</p>
+                    </div>
+                    <span class="state-pill state-pill--info" data-progress-text>Idle</span>
+                  </div>
+                  <div class="progress-card">
+                    <div class="progress-bar" aria-hidden="true">
+                      <div class="progress-bar__value" data-progress-value style="width: 0%"></div>
+                    </div>
+                    <div class="progress-metrics">
+                      <div class="metric-inline">
+                        <span>Current App</span>
+                        <strong data-current-app>--</strong>
+                      </div>
+                      <div class="metric-inline">
+                        <span>Current Sample</span>
+                        <strong class="mono-text" data-current-sample>--</strong>
+                      </div>
+                      <div class="metric-inline">
+                        <span>Current Step</span>
+                        <strong data-current-step>Waiting</strong>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+
+              <div class="main-grid__center">
+                <article class="panel-card panel-card--live">
+                  <div class="section-header">
+                    <div>
+                      <h3>Live Input</h3>
+                      <p>这是唯一的文字落点，用来观察 first char 和最终稳定文本。</p>
+                    </div>
+                    <span class="state-pill state-pill--info" data-live-state>Idle</span>
+                  </div>
+                  <div class="live-input-box">
+                    <div class="live-input-box__chrome">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <textarea class="live-input-box__textarea" data-live-text spellcheck="false">点击 Run 后，这里会跟着自动运行状态一起变化。</textarea>
+                  </div>
+                  <div class="live-result-summary">
+                    <div class="metric-tile">
+                      <span>State</span>
+                      <strong data-metric-state>Idle</strong>
+                    </div>
+                    <div class="metric-tile">
+                      <span>First Char</span>
+                      <strong data-metric-first-char>--</strong>
+                    </div>
+                    <div class="metric-tile">
+                      <span>Final Latency</span>
+                      <strong data-metric-final>--</strong>
+                    </div>
+                    <div class="metric-tile">
+                      <span>Text Length</span>
+                      <strong data-metric-length>--</strong>
+                    </div>
+                  </div>
+                </article>
+
+                <article class="panel-card result-highlight">
+                  <div class="section-header">
+                    <div>
+                      <h3>Result Snapshot</h3>
+                      <p>失败时明确到 app、sample、step；成功时给你留最关键的 timing。</p>
+                    </div>
+                    <button class="btn btn--ghost btn--small has-tooltip" type="button" data-open-drawer="true" data-tooltip="打开当前 run 的详细抽屉">
+                      <svg class="icon"><use href="#icon-expand"></use></svg>
+                      <span>Open Detail</span>
+                    </button>
+                  </div>
+                  <div class="result-highlight__content">
+                    <div class="result-highlight__headline">
+                      <div>
+                        <span class="eyebrow">Failure reason</span>
+                        <strong data-snapshot-failure>--</strong>
+                      </div>
+                      <div>
+                        <span class="eyebrow">Final text</span>
+                        <p data-snapshot-text>还没有开始运行。</p>
+                      </div>
+                    </div>
+                    <div class="result-highlight__grid">
+                      <div class="metric-block">
+                        <span>Storage</span>
+                        <strong>SQLite</strong>
+                      </div>
+                      <div class="metric-block">
+                        <span>Audio path</span>
+                        <strong class="mono-text" data-snapshot-sample>--</strong>
+                      </div>
+                      <div class="metric-block">
+                        <span>Trigger mode</span>
+                        <strong data-snapshot-mode>--</strong>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+
+              <div class="main-grid__right">
+                <article class="panel-card">
+                  <div class="section-header">
+                    <div>
+                      <h3>Run Steps</h3>
+                      <p>当前步骤会高亮，走完的步骤会保留完成态。</p>
+                    </div>
+                  </div>
+                  <ol class="step-list">
+                    <li class="step-row" data-run-step="prepare">
+                      <span class="step-row__index">01</span>
+                      <div>
+                        <strong>Prepare</strong>
+                        <span class="meta-text">focus input and clear previous text</span>
+                      </div>
+                    </li>
+                    <li class="step-row" data-run-step="hotkey">
+                      <span class="step-row__index">02</span>
+                      <div>
+                        <strong>Trigger Start</strong>
+                        <span class="meta-text">send captured shortcut to start recording</span>
+                      </div>
+                    </li>
+                    <li class="step-row" data-run-step="play">
+                      <span class="step-row__index">03</span>
+                      <div>
+                        <strong>Play Audio</strong>
+                        <span class="meta-text">route wav to configured virtual device</span>
+                      </div>
+                    </li>
+                    <li class="step-row" data-run-step="observe">
+                      <span class="step-row__index">04</span>
+                      <div>
+                        <strong>Observe Input</strong>
+                        <span class="meta-text">watch first text and collect raw output</span>
+                      </div>
+                    </li>
+                    <li class="step-row" data-run-step="settle">
+                      <span class="step-row__index">05</span>
+                      <div>
+                        <strong>Trigger Stop + Settle</strong>
+                        <span class="meta-text">release or press again, then wait for stable text</span>
+                      </div>
+                    </li>
+                  </ol>
+                </article>
+
+                <article class="panel-card">
+                  <div class="section-header">
+                    <div>
+                      <h3>Timeline</h3>
+                      <p>和 Run Steps 对齐，方便看卡在哪一步。</p>
+                    </div>
+                  </div>
+                  <ul class="timeline-list">
+                    <li class="timeline-row" data-step-key="prepare">
+                      <span class="timeline-row__time mono-text">16:02:01.020</span>
+                      <div>
+                        <strong>prepare input</strong>
+                        <span class="meta-text">focus benchmark textarea</span>
+                      </div>
+                    </li>
+                    <li class="timeline-row" data-step-key="hotkey">
+                      <span class="timeline-row__time mono-text">16:02:01.120</span>
+                      <div>
+                        <strong>hotkey down</strong>
+                        <span class="meta-text">Quartz event injected</span>
+                      </div>
+                    </li>
+                    <li class="timeline-row" data-step-key="play">
+                      <span class="timeline-row__time mono-text">16:02:01.260</span>
+                      <div>
+                        <strong>audio start</strong>
+                        <span class="meta-text">BlackHole 2ch playback</span>
+                      </div>
+                    </li>
+                    <li class="timeline-row" data-step-key="observe">
+                      <span class="timeline-row__time mono-text">16:02:04.110</span>
+                      <div>
+                        <strong>first text</strong>
+                        <span class="meta-text">input delta observed</span>
+                      </div>
+                    </li>
+                    <li class="timeline-row" data-step-key="settle">
+                      <span class="timeline-row__time mono-text">16:02:04.680</span>
+                      <div>
+                        <strong>result settled</strong>
+                        <span class="meta-text">600 ms settle window closed</span>
+                      </div>
+                    </li>
+                  </ul>
+                </article>
+
+                <article class="panel-card panel-card--helper">
+                  <div class="section-header">
+                    <div>
+                      <h3>Run Notes</h3>
+                      <p>重要前置条件直接贴在侧边，不用来回翻设置。</p>
+                    </div>
+                  </div>
+                  <ul class="note-list">
+                    <li>SQLite path 固定，结果可回放，导出只是附加功能。</li>
+                    <li>Accessibility required，Automation 和 Input Monitoring 是补充能力。</li>
+                    <li>target app 先按安装后的 `.app` 文件名识别，不依赖 Bundle ID。</li>
+                    <li>Vue renderer 需要走 i18n，避免把界面文案写死在组件里。</li>
+                  </ul>
+                </article>
+              </div>
+            </section>
+
+            <section class="result-table-section">
+              <div class="section-header">
+                <div>
+                  <h3>Result Table</h3>
+                  <p>横向比较 app 时，SQLite 里最终会存成结构化结果行。</p>
+                </div>
+                <button class="btn btn--secondary btn--small has-tooltip" type="button" data-tooltip="导出当前 SQLite 查询结果为 CSV">
+                  Export CSV
+                </button>
+              </div>
+              <div class="table-wrap">
+                <table class="result-table">
+                  <thead>
+                    <tr>
+                      <th>App</th>
+                      <th>Sample</th>
+                      <th>Status</th>
+                      <th>First Char</th>
+                      <th>Final</th>
+                      <th>Raw Text</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Xiguashuo</td>
+                      <td class="mono-text">mandarin/basic/zh-basic-01.wav</td>
+                      <td><span class="state-pill state-pill--success">OK</span></td>
+                      <td class="mono-text">850 ms</td>
+                      <td class="mono-text">1440 ms</td>
+                      <td>你好，今天我们开始测试</td>
+                    </tr>
+                    <tr>
+                      <td>Wispr Flow</td>
+                      <td class="mono-text">english/short/en-short-03.wav</td>
+                      <td><span class="state-pill state-pill--danger">Timeout</span></td>
+                      <td class="mono-text">--</td>
+                      <td class="mono-text">5000 ms</td>
+                      <td>--</td>
+                    </tr>
+                    <tr>
+                      <td>Xiguashuo</td>
+                      <td class="mono-text">mandarin/noisy/zh-noisy-04.wav</td>
+                      <td><span class="state-pill state-pill--warning">Retry</span></td>
+                      <td class="mono-text">1120 ms</td>
+                      <td class="mono-text">2210 ms</td>
+                      <td>你好 今天我们 开始测试</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <section class="page-root page-intro" data-page="intro">
+            <header class="page-header">
+              <div class="page-header__copy">
+                <h2>Intro</h2>
+                <p>这一页只讲准备路径，避免你一开始就扎进细碎配置。</p>
+              </div>
+            </header>
+
+            <article class="hero-card">
+              <div class="hero-card__copy">
+                <span class="eyebrow">Voice Typing Contest</span>
+                <h3>一个偏实验室风格的本地 benchmark 工具。</h3>
+                <p>它会递归读取音频测试集的子文件夹，驱动多个 app，用统一输入框接收文本，再把时序和结果写进 SQLite。</p>
+              </div>
+              <div class="intro-step-grid">
+                <article class="step-card">
+                  <span class="step-card__index">01</span>
+                  <h4>Prepare</h4>
+                  <p>装好 BlackHole，确认 target app 已配置好全局热键。</p>
+                </article>
+                <article class="step-card">
+                  <span class="step-card__index">02</span>
+                  <h4>Configure</h4>
+                  <p>在左侧导航底部打开 Settings，录入 app、音频根目录和 SQLite 路径。</p>
+                </article>
+                <article class="step-card">
+                  <span class="step-card__index">03</span>
+                  <h4>Run</h4>
+                  <p>回到 Main 开始自动运行，看高亮步骤和失败提示。</p>
+                </article>
+              </div>
+            </article>
+
+            <article class="panel-card intro-checklist">
+              <div class="section-header">
+                <div>
+                  <h3>Checklist</h3>
+                  <p>开跑前四项都过，失败率会低很多。</p>
+                </div>
+              </div>
+              <ul class="checklist">
+                <li class="checklist__row"><span class="checkmark is-on"><svg class="icon"><use href="#icon-check"></use></svg></span>Accessibility granted</li>
+                <li class="checklist__row"><span class="checkmark is-on"><svg class="icon"><use href="#icon-check"></use></svg></span>Virtual device installed</li>
+                <li class="checklist__row"><span class="checkmark is-on"><svg class="icon"><use href="#icon-check"></use></svg></span>Target apps configured</li>
+                <li class="checklist__row"><span class="checkmark"><svg class="icon"><use href="#icon-check"></use></svg></span>Recursive sample folder ready</li>
+              </ul>
+            </article>
+
+            <div class="page-actions">
+              <button class="btn btn--primary" type="button" data-page-target="main">Go Main</button>
+            </div>
+          </section>
+
+          <section class="page-root page-about" data-page="about">
+            <header class="page-header">
+              <div class="page-header__copy">
+                <h2>About</h2>
+                <p>这里把项目定位、版本、主题支持和本地路径一次讲清楚。</p>
+              </div>
+            </header>
+
+            <article class="about-card">
+              <div class="about-card__hero">
+                <div>
+                  <span class="eyebrow">Voice Typing Contest</span>
+                  <h3>Version 0.2.0 prototype</h3>
+                </div>
+                <p>这版原型已经支持侧栏收缩、亮暗主题、递归音频树、自动运行高亮，以及更明确的失败提示和 tooltip 说明。</p>
+              </div>
+
+              <div class="about-card__grid">
+                <section class="about-block">
+                  <h4>Info</h4>
+                  <ul class="meta-list">
+                    <li><span>Platform</span><strong>macOS desktop</strong></li>
+                    <li><span>Runtime</span><strong>Electron + Vue renderer + native helper</strong></li>
+                    <li><span>Storage</span><strong>Local SQLite</strong></li>
+                    <li><span>UI Mode</span><strong>Light / Dark + zh / en</strong></li>
+                  </ul>
+                </section>
+                <section class="about-block">
+                  <h4>Paths</h4>
+                  <ul class="meta-list">
+                    <li><span>SQLite DB</span><strong class="mono-text">~/Library/Application Support/vtc/voice-typing-contest.sqlite</strong></li>
+                    <li><span>Logs</span><strong class="mono-text">~/Library/Logs/vtc</strong></li>
+                    <li><span>Sample Root</span><strong class="mono-text">~/benchmarks/vtc-audio-set</strong></li>
+                  </ul>
+                </section>
+              </div>
+
+              <div class="page-actions">
+                <button class="btn btn--secondary" type="button">Open Logs</button>
+                <button class="btn btn--ghost" type="button">Open DB Folder</button>
+              </div>
+            </article>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="overlay" data-overlay hidden>
+      <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="settings-modal__header">
+          <div>
+            <p class="eyebrow">Configuration</p>
+            <h2 id="settings-title">Settings</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-settings="true" aria-label="Close settings">
+            <svg class="icon"><use href="#icon-close"></use></svg>
+          </button>
+        </header>
+
+        <div class="settings-modal__body">
+          <aside class="settings-tab-rail" aria-label="Settings tabs">
+            <button class="settings-tab is-active" type="button" data-settings-tab="general">General</button>
+            <button class="settings-tab" type="button" data-settings-tab="target-apps">Target Apps</button>
+            <button class="settings-tab" type="button" data-settings-tab="audio-samples">Audio Samples</button>
+            <button class="settings-tab" type="button" data-settings-tab="timing">Timing</button>
+            <button class="settings-tab" type="button" data-settings-tab="devices">Devices</button>
+            <button class="settings-tab" type="button" data-settings-tab="permissions">Permissions</button>
+            <button class="settings-tab" type="button" data-settings-tab="database">Database</button>
+            <button class="settings-tab" type="button" data-settings-tab="advanced">Advanced</button>
+          </aside>
+
+          <section class="settings-modal__content">
+            <div class="settings-panel is-active" data-settings-panel="general">
+              <div class="settings-panel__header">
+                <h3>General</h3>
+                <p>环境名、默认主题和一些常驻备注放这儿。</p>
+              </div>
+              <div class="form-grid">
+                <label class="form-row">
+                  <span>Workspace label</span>
+                  <input type="text" value="Contest Lab MacBook" />
+                </label>
+                <label class="form-row">
+                  <span>Interface language</span>
+                  <input type="text" value="zh-CN / en" />
+                </label>
+                <label class="form-row">
+                  <span>Preferred theme</span>
+                  <input type="text" value="light / dark" />
+                </label>
+                <label class="form-row">
+                  <span>Default run notes</span>
+                  <textarea rows="4">Keep VTC frontmost during sample runs. Vue renderer strings should go through i18n. Only Accessibility is required for the core benchmark path.</textarea>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="target-apps">
+              <div class="settings-panel__header">
+                <h3>Target Apps</h3>
+                <p>左边选 app，右边改 hotkey、mode、超时和 tooltip 文案。</p>
+              </div>
+              <div class="master-detail">
+                <aside class="master-detail__list">
+                  <button class="list-row is-active" type="button">Xiguashuo</button>
+                  <button class="list-row" type="button">Wispr Flow</button>
+                  <button class="list-row" type="button">App C</button>
+                  <button class="btn btn--secondary btn--small" type="button">+ Add App</button>
+                </aside>
+                <div class="master-detail__editor">
+                  <div class="form-grid">
+                    <label class="form-row"><span>Name</span><input type="text" value="Xiguashuo" /></label>
+                    <label class="form-row"><span>App file name</span><input type="text" value="Xiguashuo.app" /></label>
+                    <label class="form-row">
+                      <span>Hotkey capture</span>
+                      <button class="hotkey-capture" type="button" data-hotkey-capture="true">Press any combination</button>
+                    </label>
+                    <div class="form-row">
+                      <span>Trigger mode</span>
+                      <div class="choice-group">
+                        <span class="choice-pill is-active">hold -> release</span>
+                        <span class="choice-pill">press start -> press stop</span>
+                      </div>
+                    </div>
+                    <label class="form-row"><span>Result timeout</span><input type="text" value="5000 ms" /></label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="audio-samples">
+              <div class="settings-panel__header">
+                <h3>Audio Samples</h3>
+                <p>选择一个根目录后，递归吃进去所有子文件夹。</p>
+              </div>
+              <div class="form-grid">
+                <label class="form-row">
+                  <span>Sample root folder</span>
+                  <div class="field-inline">
+                    <input type="text" value="/Users/hc/benchmarks/vtc-audio-set" />
+                    <button class="btn btn--secondary btn--small" type="button">Choose</button>
+                    <button class="btn btn--ghost btn--small" type="button">Rescan</button>
+                  </div>
+                </label>
+              </div>
+              <div class="mini-table">
+                <div class="mini-table__row">
+                  <strong class="mono-text">mandarin/basic/zh-basic-01.wav</strong><span>2.4s</span><span>zh</span><span>expected text ready</span>
+                </div>
+                <div class="mini-table__row">
+                  <strong class="mono-text">mandarin/noisy/zh-noisy-04.wav</strong><span>4.9s</span><span>zh</span><span>expected text ready</span>
+                </div>
+                <div class="mini-table__row">
+                  <strong class="mono-text">english/short/en-short-03.wav</strong><span>1.8s</span><span>en</span><span>no expected text</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="timing">
+              <div class="settings-panel__header">
+                <h3>Timing</h3>
+                <p>给所有 app 一个一致的默认 timing 基线。</p>
+              </div>
+              <div class="form-grid">
+                <label class="form-row"><span>Launch timeout</span><input type="text" value="5000 ms" /></label>
+                <label class="form-row"><span>Default result timeout</span><input type="text" value="5000 ms" /></label>
+                <label class="form-row"><span>Settle window</span><input type="text" value="600 ms" /></label>
+                <label class="form-row"><span>Cooldown between runs</span><input type="text" value="300 ms" /></label>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="devices">
+              <div class="settings-panel__header">
+                <h3>Devices</h3>
+                <p>虚拟输出设备和当前可用设备列表。</p>
+              </div>
+              <div class="form-grid">
+                <label class="form-row">
+                  <span>Selected virtual output</span>
+                  <div class="field-inline">
+                    <input type="text" value="BlackHole 2ch" />
+                    <button class="btn btn--ghost btn--small" type="button">Recheck</button>
+                  </div>
+                </label>
+              </div>
+              <ul class="device-list">
+                <li><strong>BlackHole 2ch</strong><span class="state-pill state-pill--success">available</span></li>
+                <li><strong>MacBook Pro Speakers</strong><span class="state-pill state-pill--success">available</span></li>
+                <li><strong>External USB Audio</strong><span class="state-pill state-pill--warning">unavailable</span></li>
+              </ul>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="permissions">
+              <div class="settings-panel__header">
+                <h3>Permissions</h3>
+                <p>核心 benchmark 只硬依赖 Accessibility。</p>
+              </div>
+              <div class="permission-list">
+                <div class="permission-row"><strong>Accessibility</strong><span>Required</span><span class="state-pill state-pill--success">Granted</span><button class="btn btn--ghost btn--small" type="button">Check again</button></div>
+                <div class="permission-row"><strong>Automation</strong><span>Optional</span><span class="state-pill state-pill--warning">Missing</span><button class="btn btn--ghost btn--small" type="button">Open settings</button></div>
+                <div class="permission-row"><strong>Input Monitoring</strong><span>Optional</span><span class="state-pill state-pill--warning">Missing</span><button class="btn btn--ghost btn--small" type="button">Open settings</button></div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="database">
+              <div class="settings-panel__header">
+                <h3>Database</h3>
+                <p>结果写入本地 SQLite，导出只是读取层的附加动作。</p>
+              </div>
+              <div class="form-grid">
+                <label class="form-row"><span>SQLite DB path</span><input type="text" value="~/Library/Application Support/vtc/voice-typing-contest.sqlite" /></label>
+                <label class="form-row"><span>Log folder</span><input type="text" value="~/Library/Logs/vtc" /></label>
+                <div class="field-inline field-inline--right">
+                  <button class="btn btn--secondary btn--small" type="button">Choose</button>
+                  <button class="btn btn--ghost btn--small" type="button">Export CSV</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-settings-panel="advanced">
+              <div class="settings-panel__header">
+                <h3>Advanced</h3>
+                <p>把容易误触的高权限和重日志选项放到最后。</p>
+              </div>
+              <div class="form-grid">
+                <label class="checkbox-row"><input type="checkbox" />Store raw event payloads</label>
+                <label class="checkbox-row"><input type="checkbox" checked />Enable verbose log</label>
+                <label class="form-row"><span>Retry failed sample count</span><input type="text" value="0" /></label>
+                <label class="form-row"><span>Helper path override</span><input type="text" value="~/Applications/VTC Helper.app" /></label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="settings-modal__footer">
+          <button class="btn btn--ghost" type="button">Cancel</button>
+          <button class="btn btn--secondary" type="button">Apply</button>
+          <button class="btn btn--primary" type="button" data-close-settings="true">Save and Close</button>
+        </footer>
+      </div>
+    </div>
+
+    <aside class="run-detail-drawer" data-drawer hidden>
+      <header class="run-detail-drawer__header">
+        <div>
+          <p class="eyebrow">Run Detail</p>
+          <h2 data-drawer-title>Xiguashuo / mandarin/basic/zh-basic-01.wav</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-drawer="true" aria-label="Close run detail">
+          <svg class="icon"><use href="#icon-close"></use></svg>
+        </button>
+      </header>
+
+      <div class="run-detail-drawer__meta">
+        <div><span>App</span><strong data-drawer-app>Xiguashuo</strong></div>
+        <div><span>Sample</span><strong class="mono-text" data-drawer-sample>mandarin/basic/zh-basic-01.wav</strong></div>
+        <div><span>Status</span><strong data-drawer-status>idle</strong></div>
+      </div>
+
+      <article class="panel-card">
+        <div class="section-header">
+          <div>
+            <h3>Timeline</h3>
+          </div>
+        </div>
+        <ul class="timeline-list">
+          <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:01.020</span><div><strong>prepare_input</strong></div></li>
+          <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:01.120</span><div><strong>hotkey_down</strong></div></li>
+          <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:01.260</span><div><strong>audio_started</strong></div></li>
+          <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:04.110</span><div><strong>first_input</strong></div></li>
+          <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:04.680</span><div><strong>last_input</strong></div></li>
+        </ul>
+      </article>
+
+      <article class="panel-card">
+        <div class="section-header">
+          <div>
+            <h3>Raw Text</h3>
+          </div>
+        </div>
+        <pre class="raw-text-block" data-drawer-text>点击 Run 后，这里会跟着当前状态刷新。</pre>
+      </article>
+
+      <article class="panel-card">
+        <div class="section-header">
+          <div>
+            <h3>Metrics</h3>
+          </div>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-block"><span>First char latency</span><strong data-drawer-first-char>--</strong></div>
+          <div class="metric-block"><span>Final latency</span><strong data-drawer-final>--</strong></div>
+          <div class="metric-block"><span>Text length</span><strong data-drawer-length>--</strong></div>
+        </div>
+      </article>
+
+      <article class="panel-card">
+        <div class="section-header">
+          <div>
+            <h3>Failure Reason</h3>
+          </div>
+        </div>
+        <div class="failure-reason" data-drawer-failure>--</div>
+      </article>
+    </aside>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

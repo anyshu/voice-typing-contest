@@ -127,6 +127,8 @@ All editable configuration lives inside the `Settings` secondary modal.
 
 There is also one run detail drawer on the main page.
 
+The renderer should support zh-CN and English modes, with language switching visible in the shell rather than hidden deep inside settings.
+
 ## 4. Window Layout
 
 Desktop window recommendation:
@@ -183,7 +185,7 @@ It should answer four questions at a glance:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| Main                                                                     [Run] [Stop] [Settings] |
+| Main                                                     [Run] [Stop] [Theme] [Language] |
 |--------------------------------------------------------------------------------------------------|
 | Summary strip                                                                                   |
 | [Apps: 3] [Samples: 24] [Permission: Ready] [Device: BlackHole 2ch] [DB: OK]                   |
@@ -240,7 +242,7 @@ The target app list should show:
 
 - enabled state
 - readiness state
-- hotkey mode tag
+- trigger mode tag
 
 The sample list should show:
 
@@ -278,13 +280,15 @@ Top-right actions:
 
 - `Run`
 - `Stop`
-- `Settings`
+- theme toggle
+- language toggle
 
 Rules:
 
 - `Run` is dark gray filled
 - `Stop` is white with gray border
-- `Settings` is icon + text ghost button
+- theme and language toggles are compact ghost controls
+- `Settings` stays in the lower sidebar, not in the top action area
 
 ## 6. Settings Modal
 
@@ -326,6 +330,7 @@ Open behavior:
 
 Fields:
 
+- interface language (`zh-CN` / `en`)
 - default result directory
 - auto-save logs
 - open last project on launch
@@ -344,14 +349,15 @@ Use a master-detail flat editor.
 |-----------------------------------|----------------------------------------------|
 | > Xiguashuo                       | Name: [Xiguashuo____________]                |
 |   Wispr Flow                      | Enabled: [on ]                              |
-|   + Add App                       | Bundle ID: [com.xxx.xxxxx_______]           |
+|   + Add App                       | App file name: [Xiguashuo.app___________]   |
 |                                   | Launch command: [optional________________]  |
 |                                   | Audio input: [BlackHole 2ch______________] |
-|                                   | Hotkey: [cmd] [shift] [space]              |
-|                                   | Mode:   (o) hold   ( ) tap                 |
+|                                   | Hotkey capture: [ press any combination ]  |
+|                                   | Trigger mode: (o) hold->release            |
+|                                   |               ( ) press start->press stop  |
 |                                   | Pre delay:          [120 ] ms              |
 |                                   | Key -> audio delay:  [180 ] ms             |
-|                                   | Audio -> key up:     [60  ] ms             |
+|                                   | Audio -> stop trigger: [60 ] ms            |
 |                                   | Timeout:             [5000] ms             |
 |                                   | Settle window:       [600 ] ms             |
 |                                   | Notes:               [...................] |
@@ -369,7 +375,7 @@ Fields and actions:
 - rescan button
 - manual add file
 - expected text editor
-- language tag
+- sample language tag
 - enable / disable
 
 The target app editor should expose both app enable state and the expected audio input route so testers can skip apps without deleting profiles and verify routing before a run.
@@ -468,7 +474,7 @@ It is a concise onboarding page for a tester who just opened the tool.
 | +-------------------------+  +-------------------------+  +---------------------+ |
 | | 1. Prepare              |  | 2. Configure           |  | 3. Run              | |
 | | Install BlackHole       |  | Add apps and samples   |  | Start benchmark     | |
-| | Set target app hotkey   |  | Check permissions      |  | Review result table  | |
+| | Capture app hotkey      |  | Check permissions      |  | Review result table  | |
 | +-------------------------+  +-------------------------+  +---------------------+ |
 |                                                                                  |
 | Environment checklist                                                            |
@@ -477,7 +483,7 @@ It is a concise onboarding page for a tester who just opened the tool.
 | [ ] Target apps configured                                                       |
 | [ ] Sample folder ready                                                          |
 |                                                                                  |
-|                                                     [Open Settings] [Go Main]    |
+|                                                                    [Go Main]    |
 +----------------------------------------------------------------------------------+
 ```
 
@@ -513,12 +519,13 @@ It should feel factual and lightweight.
 |                                                                                  |
 | Info                                                                             |
 | - Platform: macOS desktop                                                        |
-| - Runtime: Electron + native helper                                              |
+| - Runtime: Electron + Vue renderer + native helper                              |
 | - Storage: local SQLite                                                          |
+| - UI language: zh-CN / en                                                        |
 | - Permissions: Accessibility required                                            |
 |                                                                                  |
 | Paths                                                                            |
-| - Database: /.../voice-typing-contest.db                                         |
+| - Database: /.../voice-typing-contest.sqlite                                     |
 | - Logs: /.../logs                                                                |
 |                                                                                  |
 |                                                   [Open Logs] [Open DB Folder]   |
@@ -540,7 +547,7 @@ It slides from the right when the user clicks a row in the result table.
 | Status: success                                            |
 |--------------------------------------------------------------|
 | Timeline                                                    |
-| hotkey_down      16:02:01.120                              |
+| trigger_start    16:02:01.120                              |
 | audio_started    16:02:01.260                              |
 | audio_ended      16:02:03.840                              |
 | first_input      16:02:04.110                              |
@@ -605,7 +612,7 @@ Use chips for:
 
 - permission state
 - app state
-- hotkey mode
+- trigger mode
 - sample language
 
 ### 11.3 Tables

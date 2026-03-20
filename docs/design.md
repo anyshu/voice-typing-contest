@@ -2,7 +2,7 @@
 
 ## 1. Goal
 
-Build a macOS Electron test tool for horizontal evaluation of voice typing apps.
+Build a macOS Electron benchmark tool for horizontal evaluation of voice typing apps, with the renderer implemented in Vue.
 
 The tool drives multiple target apps with the same audio samples and records:
 
@@ -50,11 +50,13 @@ For each target app:
 3. focus the built-in input box
 4. clear previous text
 5. wait `preHotkeyDelayMs`
-6. send hotkey down or hotkey tap, depending on app profile
+6. send the configured hotkey trigger start according to the app profile
 7. wait `hotkeyToAudioDelayMs`
 8. play the WAV sample to the configured virtual audio device
-9. when playback ends, wait `audioToHotkeyUpDelayMs`
-10. send hotkey up when the app uses hold-to-talk mode
+9. when playback ends, wait `audioToTriggerStopDelayMs`
+10. complete the trigger according to mode:
+   - `hold_release`: send key up
+   - `press_start_press_stop`: send the same hotkey again as stop
 11. observe the input box until text stabilizes or timeout fires
 12. record result, raw text, timestamps, metrics, and failure reason
 13. continue with the next audio sample
@@ -157,7 +159,7 @@ This class of automation tool depends on permissions and system integrations tha
 
 The recommended architecture is:
 
-- Electron renderer for UI
+- Electron renderer implemented with Vue for UI
 - Electron main process for orchestration
 - native macOS helper in Swift for privileged system actions
 - SQLite for local result storage
@@ -177,7 +179,7 @@ A Swift helper provides:
 
 ## 7. Components
 
-### 7.1 Renderer
+### 7.1 Vue renderer
 
 Responsibilities:
 
@@ -187,6 +189,14 @@ Responsibilities:
 - live run log
 - result list and comparison views
 
+Suggested Vue structure:
+
+- `src/renderer/App.vue`
+- `src/renderer/pages/*`
+- `src/renderer/components/*`
+- `src/renderer/composables/*`
+- `src/renderer/i18n/*`
+
 ### 7.2 Main process
 
 Responsibilities:
@@ -194,7 +204,7 @@ Responsibilities:
 - own the run state machine
 - schedule apps and samples
 - call the native helper
-- collect renderer input events
+- collect Vue renderer input events
 - persist all run data
 
 Main modules:
@@ -234,11 +244,11 @@ Suggested states:
 - `preflight`
 - `focus_input`
 - `wait_before_hotkey`
-- `hotkey_down`
+- `trigger_start`
 - `wait_before_audio`
 - `audio_playing`
-- `wait_before_hotkey_up`
-- `hotkey_up`
+- `wait_before_trigger_stop`
+- `trigger_stop`
 - `observing_text`
 - `completed`
 - `failed`
@@ -259,21 +269,24 @@ Suggested fields:
 
 - `id`
 - `name`
-- `bundleId`
+- `appFileName`
 - `launchCommand` (optional fallback)
-- `hotkeyKey`
-- `hotkeyModifiers`
-- `hotkeyMode` (`hold` or `tap`)
+- `hotkeyChord`
+- `hotkeyTriggerMode` (`hold_release` or `press_start_press_stop`)
 - `audioInputDeviceName`
 - `launchTimeoutMs`
 - `preHotkeyDelayMs`
 - `hotkeyToAudioDelayMs`
-- `audioToHotkeyUpDelayMs`
+- `audioToTriggerStopDelayMs`
 - `resultTimeoutMs`
 - `settleWindowMs`
 - `postRunCooldownMs`
 - `enabled`
 - `notes`
+
+`appFileName` is the primary way to identify an installed target app in v1. The tool should locate apps by installed `.app` file name, not by bundle id.
+
+`hotkeyChord` stores the exact shortcut the tester enters from a dedicated hotkey capture control. The UI should not split it into a main key field plus modifier chips.
 
 ## 10. Audio Sample Model
 
@@ -281,6 +294,7 @@ Suggested fields:
 
 - `id`
 - `filePath`
+- `relativePath`
 - `displayName`
 - `expectedText`
 - `language`
@@ -288,9 +302,28 @@ Suggested fields:
 - `tags`
 - `enabled`
 
+`relativePath` should preserve subfolder structure under the sample root so the UI can display nested test sets clearly.
+
 `expectedText` is optional, but once present it enables basic accuracy scoring.
 
-## 11. Input Capture Design
+## 11. UI Localization
+
+The app UI must support both Chinese and English in v1.
+
+Requirements:
+
+- renderer strings should go through a shared i18n layer
+- Vue components should not hardcode user-facing copy directly
+- settings must expose an interface language option
+- run result data stays language-neutral where possible
+
+Suggested approach:
+
+- `vue-i18n` or equivalent in the renderer
+- shared keys for page labels, settings labels, tooltips, and failure messages
+- fallback locale = English
+
+## 12. Input Capture Design
 
 The built-in test page should use a stable `textarea` or equivalent input control.
 
@@ -317,7 +350,7 @@ Different voice typing apps may:
 - insert text in chunks
 - revise intermediate text before finalizing
 
-## 12. Timing and Metrics
+## 13. Timing and Metrics
 
 ### 12.1 Raw events
 
@@ -325,10 +358,10 @@ Record at least:
 
 - `run_started_at`
 - `input_focused_at`
-- `hotkey_down_at`
+- `trigger_start_at`
 - `audio_started_at`
 - `audio_ended_at`
-- `hotkey_up_at`
+- `trigger_stop_at`
 - `first_input_at`
 - `last_input_at`
 - `run_finished_at`
@@ -351,7 +384,7 @@ Use monotonic time across main process and native helper whenever possible.
 
 Renderer timestamps should be collected with high-resolution time and converted into the shared run timeline using a measured offset.
 
-## 13. Failure Classification
+## 14. Failure Classification
 
 Do not collapse all failures into ASR failure.
 
@@ -372,7 +405,7 @@ Suggested failure categories:
 
 This separation is necessary for trustworthy benchmark analysis.
 
-## 14. Data Storage
+## 15. Data Storage
 
 Use SQLite as the local database.
 
@@ -423,7 +456,7 @@ Stores detailed timeline events as append-only records:
 
 This keeps future metrics extensible without repeated schema churn.
 
-## 15. Preflight Checklist
+## 16. Preflight Checklist
 
 Before a run starts, the tool must verify:
 
@@ -440,7 +473,7 @@ Optional checks:
 
 If any required check fails, the run does not start.
 
-## 16. UI Notes
+## 17. UI Notes
 
 Initial UI can stay simple and operational.
 
@@ -456,7 +489,7 @@ Suggested main screen:
 | Input box:                                                                       |
 | [ hello this is the live typed text from the target app                         ] |
 |                                                                                  |
-| hotkey_down   16:02:01.120                                                       |
+| trigger_start 16:02:01.120                                                       |
 | audio_start   16:02:01.260                                                       |
 | audio_end     16:02:03.840                                                       |
 | first_input   16:02:04.110                                                       |
@@ -466,7 +499,7 @@ Suggested main screen:
 +----------------------------------------------------------------------------------+
 ```
 
-## 17. Delivery Phases
+## 18. Delivery Phases
 
 ### Phase 1
 
@@ -501,9 +534,9 @@ Add higher-level analysis:
 - percentile latency summaries
 - richer failure diagnostics
 
-## 18. Open Questions
+## 19. Open Questions
 
 - whether each target app reacts correctly to synthetic hotkeys under Accessibility-only injection
 - whether some target apps require relaunch after virtual device changes
-- whether tap-mode apps need a different end-of-recording strategy
+- whether `press_start_press_stop` apps need per-app timing adjustments for the stop trigger
 - whether the helper should be embedded as a bundled executable or linked more tightly into the app runtime

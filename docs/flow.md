@@ -14,6 +14,7 @@
 | - target apps        |
 | - audio samples      |
 | - timing params      |
+| - ui locale          |
 +----------------------+
           |
           |
@@ -46,7 +47,7 @@
      v         v
 +----------------------+      +----------------------+
 | Ensure app ready     |----->| Finish batch         |
-| app may stay bg      |      | Generate summary     |
+| locate by .app name  |      | Generate summary     |
 +----------------------+      +----------------------+
           |
           |
@@ -82,8 +83,8 @@
           |
           v
 +----------------------+
-| Send system hotkey   |
-| down or tap          |
+| Send trigger start   |
+| by captured hotkey   |
 +----------------------+
           |
           |
@@ -110,14 +111,14 @@
           v
 +----------------------+
 | Wait                 |
-| audioToHotkeyUpDelay |
+| audioToTriggerStop   |
 +----------------------+
           |
           |
           v
 +----------------------+
-| Send hotkey up       |
-| if mode = hold       |
+| Complete trigger     |
+| release or second press |
 +----------------------+
           |
           |
@@ -165,7 +166,7 @@ test tool frontmost
         |
         +----- input box keeps focus
         |
-        +----- native helper sends system hotkey
+        +----- native helper sends captured system hotkey
         |
         +----- target voice typing app listens in background
         |

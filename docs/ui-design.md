@@ -343,8 +343,10 @@ Use a master-detail flat editor.
 | App list                          | Editor                                       |
 |-----------------------------------|----------------------------------------------|
 | > Xiguashuo                       | Name: [Xiguashuo____________]                |
-|   Wispr Flow                      | Bundle ID: [com.xxx.xxxxx_______]           |
-|   + Add App                       | Launch command: [optional________________]  |
+|   Wispr Flow                      | Enabled: [on ]                              |
+|   + Add App                       | Bundle ID: [com.xxx.xxxxx_______]           |
+|                                   | Launch command: [optional________________]  |
+|                                   | Audio input: [BlackHole 2ch______________] |
 |                                   | Hotkey: [cmd] [shift] [space]              |
 |                                   | Mode:   (o) hold   ( ) tap                 |
 |                                   | Pre delay:          [120 ] ms              |
@@ -353,7 +355,7 @@ Use a master-detail flat editor.
 |                                   | Timeout:             [5000] ms             |
 |                                   | Settle window:       [600 ] ms             |
 |                                   | Notes:               [...................] |
-|                                   |                             [Save] [Delete] |
+|                                   |                    [Disable] [Save] [Delete] |
 +----------------------------------------------------------------------------------+
 ```
 
@@ -369,6 +371,8 @@ Fields and actions:
 - expected text editor
 - language tag
 - enable / disable
+
+The target app editor should expose both app enable state and the expected audio input route so testers can skip apps without deleting profiles and verify routing before a run.
 
 #### Timing
 
@@ -640,4 +644,3 @@ Avoid:
 - Start Benchmark Execution
 - Configure Current Environment
 - Synchronize Device Status
-

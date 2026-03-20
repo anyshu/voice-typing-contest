@@ -399,6 +399,7 @@ Stores one batch run context, including:
 
 Stores one app + one sample execution result, including:
 
+- `run_session_id`
 - app id
 - sample id
 - status
@@ -408,6 +409,8 @@ Stores one app + one sample execution result, including:
 - latency metrics
 - failure reason
 - created time
+
+`run_session_id` links each test run back to the batch context so one benchmark pass can be queried, compared, and exported as a group.
 
 ### 14.3 `run_events`
 

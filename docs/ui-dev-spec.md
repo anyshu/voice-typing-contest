@@ -384,10 +384,12 @@ div.overlay
 |----------------------------------------------------------------------------------|
 | +-------------------------------+ +--------------------------------------------+ |
 | | > Xiguashuo                   | | Name                [___________________] | |
-| |   Wispr Flow                  | | Bundle ID           [___________________] | |
-| |   App C                       | | Launch command      [___________________] | |
+| |   Wispr Flow                  | | Enabled             [on ]                 | |
+| |   App C                       | | Bundle ID           [___________________] | |
+| | [+ Add App]                   | | Launch command      [___________________] | |
+| |                               | | Audio input device  [BlackHole 2ch_____] | |
 | |                               | | Hotkey modifiers    [cmd] [shift] [opt ] | |
-| | [+ Add App]                   | | Hotkey key          [______]              | |
+| |                               | | Hotkey key          [______]              | |
 | +-------------------------------+ | Mode        (o) hold   ( ) tap            | |
 |                                   | Pre delay            [120 ] ms            | |
 |                                   | Key -> audio delay   [180 ] ms            | |
@@ -395,7 +397,7 @@ div.overlay
 |                                   | Result timeout       [5000] ms            | |
 |                                   | Settle window        [600 ] ms            | |
 |                                   | Notes                [_______________]    | |
-|                                   |                            [Save] [Delete] | |
+|                                   |                 [Disable] [Save] [Delete] | |
 +----------------------------------------------------------------------------------+
 ```
 
@@ -736,4 +738,3 @@ Recommended build order:
 5. about page
 6. run detail drawer
 7. polish states and empty states
-

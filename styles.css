@@ -136,7 +136,8 @@ body.is-locked {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -145,7 +146,8 @@ button {
 }
 
 input,
-textarea {
+textarea,
+select {
   color: var(--vtc-text-primary);
 }
 
@@ -984,6 +986,7 @@ body[data-theme="dark"] .step-row.is-running .step-row__index {
 
 .live-input-box__textarea:focus,
 input:focus,
+select:focus,
 textarea:focus,
 button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--vtc-border-focus) 30%, transparent);
@@ -1054,6 +1057,14 @@ button:focus-visible {
 
 .result-table tbody tr:hover {
   background: color-mix(in srgb, var(--vtc-bg-hover) 82%, transparent);
+}
+
+.result-table tbody tr {
+  cursor: pointer;
+}
+
+.result-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--vtc-accent-soft) 100%, transparent);
 }
 
 .hero-card,
@@ -1224,7 +1235,8 @@ button:focus-visible {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--vtc-border-strong);

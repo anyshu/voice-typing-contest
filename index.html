@@ -223,7 +223,7 @@
                       <svg class="icon"><use href="#icon-refresh"></use></svg>
                     </button>
                   </div>
-                  <ul class="app-list">
+                  <ul class="app-list" data-app-list>
                     <li class="app-list__item" data-run-app="xiguashuo">
                       <div class="app-list__main">
                         <strong>Xiguashuo</strong>
@@ -267,7 +267,7 @@
                       Rescan
                     </button>
                   </div>
-                  <div class="sample-tree">
+                  <div class="sample-tree" data-sample-tree>
                     <section class="sample-folder">
                       <div class="sample-folder__header">
                         <svg class="icon"><use href="#icon-folder"></use></svg>
@@ -439,7 +439,7 @@
                       <p>当前步骤会高亮，走完的步骤会保留完成态。</p>
                     </div>
                   </div>
-                  <ol class="step-list">
+                  <ol class="step-list" data-step-list>
                     <li class="step-row" data-run-step="prepare">
                       <span class="step-row__index">01</span>
                       <div>
@@ -485,7 +485,7 @@
                       <p>和 Run Steps 对齐，方便看卡在哪一步。</p>
                     </div>
                   </div>
-                  <ul class="timeline-list">
+                  <ul class="timeline-list" data-main-timeline>
                     <li class="timeline-row" data-step-key="prepare">
                       <span class="timeline-row__time mono-text">16:02:01.020</span>
                       <div>
@@ -531,7 +531,7 @@
                       <p>重要前置条件直接贴在侧边，不用来回翻设置。</p>
                     </div>
                   </div>
-                  <ul class="note-list">
+                  <ul class="note-list" data-run-notes>
                     <li>SQLite path 固定，结果可回放，导出只是附加功能。</li>
                     <li>Accessibility required，Automation 和 Input Monitoring 是补充能力。</li>
                     <li>target app 先按安装后的 `.app` 文件名识别，不依赖 Bundle ID。</li>
@@ -563,7 +563,7 @@
                       <th>Raw Text</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody data-result-table-body>
                     <tr>
                       <td>Xiguashuo</td>
                       <td class="mono-text">mandarin/basic/zh-basic-01.wav</td>
@@ -701,7 +701,7 @@
             <p class="eyebrow">Configuration</p>
             <h2 id="settings-title">Settings</h2>
           </div>
-          <button class="icon-button" type="button" data-close-settings="true" aria-label="Close settings">
+          <button class="icon-button" type="button" data-dismiss-settings="true" aria-label="Close settings">
             <svg class="icon"><use href="#icon-close"></use></svg>
           </button>
         </header>
@@ -718,7 +718,7 @@
             <button class="settings-tab" type="button" data-settings-tab="advanced">Advanced</button>
           </aside>
 
-          <section class="settings-modal__content">
+          <section class="settings-modal__content" data-settings-content>
             <div class="settings-panel is-active" data-settings-panel="general">
               <div class="settings-panel__header">
                 <h3>General</h3>
@@ -882,8 +882,8 @@
         </div>
 
         <footer class="settings-modal__footer">
-          <button class="btn btn--ghost" type="button">Cancel</button>
-          <button class="btn btn--secondary" type="button">Apply</button>
+          <button class="btn btn--ghost" type="button" data-settings-action="cancel">Cancel</button>
+          <button class="btn btn--secondary" type="button" data-settings-action="apply">Apply</button>
           <button class="btn btn--primary" type="button" data-close-settings="true">Save and Close</button>
         </footer>
       </div>
@@ -912,7 +912,7 @@
             <h3>Timeline</h3>
           </div>
         </div>
-        <ul class="timeline-list">
+        <ul class="timeline-list" data-drawer-timeline>
           <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:01.020</span><div><strong>prepare_input</strong></div></li>
           <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:01.120</span><div><strong>hotkey_down</strong></div></li>
           <li class="timeline-row"><span class="timeline-row__time mono-text">16:02:01.260</span><div><strong>audio_started</strong></div></li>

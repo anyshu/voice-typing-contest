@@ -41,6 +41,12 @@ Before running tests, the tester prepares:
 4. each target app's hotkey
 5. each target app's input device set to the virtual microphone path
 
+Hotkey constraint for automated runs in v1:
+
+- use only automation-safe hotkeys built from standard modifiers and standard keys
+- avoid `fn` / `globe`
+- avoid system-reserved shortcuts unless the tester has explicitly disabled the conflict first
+
 ### 3.2 Batch flow
 
 For each target app:
@@ -287,6 +293,15 @@ Suggested fields:
 `appFileName` is the primary way to identify an installed target app in v1. The tool should locate apps by installed `.app` file name, not by bundle id.
 
 `hotkeyChord` stores the exact shortcut the tester enters from a dedicated hotkey capture control. The UI should not split it into a main key field plus modifier chips.
+
+Hotkey automation rule in v1:
+
+- supported automation chords should be limited to combinations composed from `Cmd`, `Ctrl`, `Option`, `Shift`, and a regular key
+- `fn` / `globe` must be treated as unsupported for synthetic dispatch in the automated benchmark path
+- reason: macOS does not provide a stable public injection path that behaves like a normal synthetic key press for `fn`
+- implication: if a target app depends on `fn` / `globe`, the tester must change that app's hotkey before running the benchmark
+- `Ctrl + Space` is logically representable as a synthetic chord, but it may still fail in practice when macOS input source switching or another system shortcut intercepts it first
+- therefore the tester should prefer a non-reserved chord even when the tool technically supports the key combination format
 
 ## 10. Audio Sample Model
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigStore } from "./config-store";
@@ -13,10 +13,50 @@ import type { AppConfig, AudioDevice, PermissionSnapshot } from "../shared/types
 import { defaultDevices, defaultPermissions } from "../shared/defaults";
 
 let win: BrowserWindow | undefined;
+let tray: Tray | undefined;
 let config: AppConfig;
 let devices: AudioDevice[] = defaultDevices();
 let permissions: PermissionSnapshot[] = defaultPermissions();
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const appIconPath = fileURLToPath(new URL("../../cb4a0819-0b67-4a69-94c8-53f37e73c304.png", import.meta.url));
+
+function loadAppIcon() {
+  const icon = nativeImage.createFromPath(appIconPath);
+  return icon.isEmpty() ? undefined : icon;
+}
+
+function installMacBranding(): void {
+  const icon = loadAppIcon();
+  if (!icon) return;
+
+  if (process.platform === "darwin") {
+    app.dock?.setIcon(icon);
+    if (!tray) {
+      const trayIcon = icon.resize({ width: 18, height: 18 });
+      tray = new Tray(trayIcon);
+      tray.setToolTip("Voice Typing Contest");
+      tray.setContextMenu(Menu.buildFromTemplate([
+        {
+          label: "显示主窗口",
+          click: () => {
+            if (!win) return;
+            win.show();
+            win.focus();
+          },
+        },
+        {
+          label: "退出",
+          click: () => app.quit(),
+        },
+      ]));
+      tray.on("click", () => {
+        if (!win) return;
+        win.show();
+        win.focus();
+      });
+    }
+  }
+}
 
 function normalizeSelectedOutputDevice(current: string, availableDevices: AudioDevice[]): string {
   if (availableDevices.some((item) => item.id === current)) {
@@ -137,6 +177,7 @@ async function createWindow(): Promise<void> {
   win = new BrowserWindow({
     width: 1480,
     height: 980,
+    icon: loadAppIcon(),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.mjs"),
       contextIsolation: true,
@@ -199,6 +240,8 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  app.setName("Voice Typing Contest");
+  installMacBranding();
   await createWindow();
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) await createWindow();

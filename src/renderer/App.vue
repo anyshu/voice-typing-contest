@@ -45,6 +45,8 @@ const liveTextarea = ref<HTMLTextAreaElement | null>(null);
 const notice = ref("默认启用的是“内建自测”，先用它确认流程通了，再去接真实目标应用。");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
+const completedSessionId = ref<string | null>(null);
+const completionDialogVisible = ref(false);
 
 const phaseLabels: Record<RunPhase, string> = {
   idle: "空闲",
@@ -214,6 +216,7 @@ function median(values: number[]): number | undefined {
 }
 
 const latestSessionGroup = computed(() => resultSessionGroups.value[0]);
+const completedSessionGroup = computed(() => resultSessionGroups.value.find((item) => item.session.id === completedSessionId.value));
 const latestSessionAppStats = computed(() => (latestSessionGroup.value?.appGroups ?? []).map((group) => {
   const runs = group.runs;
   const firstCharValues = runs
@@ -241,6 +244,31 @@ const latestSessionAppStats = computed(() => (latestSessionGroup.value?.appGroup
     ],
   };
 }));
+
+function isTerminalPhase(phase: RunPhase): boolean {
+  return phase === "completed" || phase === "failed" || phase === "cancelled";
+}
+
+function formatElapsedDuration(startedAt?: string, finishedAt?: string): string {
+  if (!startedAt || !finishedAt) return "-";
+  const elapsedMs = Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime());
+  if (elapsedMs < 1000) return `${elapsedMs} ms`;
+  if (elapsedMs < 60_000) return `${(elapsedMs / 1000).toFixed(1)} 秒`;
+  const minutes = Math.floor(elapsedMs / 60_000);
+  const seconds = Math.round((elapsedMs % 60_000) / 1000);
+  return `${minutes} 分 ${seconds} 秒`;
+}
+
+const completedDialogSummary = computed(() => {
+  const group = completedSessionGroup.value;
+  if (!group) return null;
+  return {
+    status: sessionStatusText(group.session.status),
+    appCount: group.appGroups.length,
+    sampleCount: group.runs.length,
+    elapsed: formatElapsedDuration(group.session.startedAt, group.session.finishedAt),
+  };
+});
 
 function safePayload(item: RunEventRecord): Record<string, unknown> {
   try {
@@ -690,6 +718,15 @@ watch(() => timeline.value[timeline.value.length - 1]?.id, async (latestId) => {
   scrollTimelineToLatest();
 });
 
+watch(() => progress.value.phase, async (phase, previousPhase) => {
+  if (!isTerminalPhase(phase) || !previousPhase || isTerminalPhase(previousPhase) || previousPhase === "idle") {
+    return;
+  }
+  await refreshResultData();
+  completedSessionId.value = resultSessionGroups.value[0]?.session.id ?? null;
+  completionDialogVisible.value = Boolean(completedSessionId.value);
+});
+
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown, true);
   window.removeEventListener("keyup", handleGlobalKeyup, true);
@@ -932,7 +969,7 @@ onBeforeUnmount(() => {
           </article>
         </section>
 
-        <section class="result-stack">
+        <section v-if="!running" class="result-stack">
           <article class="panel">
             <h3>测试结果</h3>
             <template v-if="latestSessionGroup">
@@ -1050,7 +1087,7 @@ onBeforeUnmount(() => {
           <div class="panel-header-row">
             <div>
               <h3>运行前检查</h3>
-              <p class="muted">这里单独看能不能跑，以及卡在哪一项。</p>
+              <p class="muted">这里只看当前能不能跑，以及具体卡在哪一项。</p>
             </div>
             <button class="ghost-button" @click="refreshEnvironment">刷新</button>
           </div>
@@ -1078,16 +1115,6 @@ onBeforeUnmount(() => {
             <button class="ghost-button" @click="openAccessibilitySettings">打开系统设置</button>
           </div>
         </article>
-
-        <article class="panel">
-          <h3>当前环境</h3>
-          <div class="about-grid">
-            <div class="field"><span class="muted">辅助功能权限</span><strong>{{ accessibility?.granted ? "已授权" : "未授权" }}</strong></div>
-            <div class="field"><span class="muted">已启用应用</span><strong>{{ enabledApps.length }}</strong></div>
-            <div class="field"><span class="muted">已启用样本</span><strong>{{ enabledSamples.length }}</strong></div>
-            <div class="field"><span class="muted">当前输出设备</span><strong>{{ selectedDevice?.name || "未选择" }}</strong></div>
-          </div>
-        </article>
       </section>
 
       <section v-else-if="page === 'samples'" class="stack">
@@ -1095,24 +1122,27 @@ onBeforeUnmount(() => {
           <div class="panel-header-row">
             <div>
               <h3>样本</h3>
-              <p class="muted">外部目录、样本状态和语言信息都单独放这里看。</p>
+              <p class="muted">这里只保留目录和当前可用样本。</p>
             </div>
             <div class="toolbar">
               <button class="ghost-button" @click="chooseSampleRoot">选择目录</button>
               <button class="secondary-button" @click="rescanSamples">重新扫描</button>
             </div>
           </div>
-          <div class="about-grid" style="margin-bottom: 12px">
-            <div class="field"><span class="muted">外部样本目录</span><strong>{{ config.sampleRoot || "还没选，当前只跑内建自测" }}</strong></div>
-            <div class="field"><span class="muted">已启用样本</span><strong>{{ enabledSamples.length }}</strong></div>
+          <div class="field" style="margin-bottom: 12px">
+            <span class="muted">外部样本目录</span>
+            <strong>{{ config.sampleRoot || "还没选，当前只跑内建自测" }}</strong>
           </div>
           <ul class="meta-list">
             <li v-for="sample in config.audioSamples" :key="sample.id" class="sample-row">
               <div>
                 <strong>{{ sample.relativePath }}</strong>
-                <div class="muted">{{ sampleMeta(sample.language, sample.durationMs) }}</div>
+                <div class="muted">
+                  {{ sampleMeta(sample.language, sample.durationMs) }}
+                  <span v-if="sample.enabled"> · 已启用</span>
+                </div>
               </div>
-              <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "已启用" : "未启用" }}</span>
+              <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
             </li>
           </ul>
         </article>
@@ -1284,6 +1314,35 @@ onBeforeUnmount(() => {
 3. 现在先以“能跑通流程、能看清错误”为第一目标。</pre>
         </article>
       </section>
+
+      <div v-if="completionDialogVisible && completedDialogSummary" class="dialog-backdrop" @click.self="completionDialogVisible = false">
+        <div class="dialog-card">
+          <div class="panel-header-row">
+            <div>
+              <h3>测试结束</h3>
+              <p class="muted">这一轮已经跑完，汇总如下。</p>
+            </div>
+            <span class="pill">{{ completedDialogSummary.status }}</span>
+          </div>
+          <div class="dialog-stat-grid">
+            <div class="field">
+              <span class="muted">应用数</span>
+              <strong>{{ completedDialogSummary.appCount }}</strong>
+            </div>
+            <div class="field">
+              <span class="muted">样本数</span>
+              <strong>{{ completedDialogSummary.sampleCount }}</strong>
+            </div>
+            <div class="field">
+              <span class="muted">总耗时</span>
+              <strong>{{ completedDialogSummary.elapsed }}</strong>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="secondary-button" @click="completionDialogVisible = false">知道了</button>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>

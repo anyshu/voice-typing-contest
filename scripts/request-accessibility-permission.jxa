@@ -1,0 +1,8 @@
+ObjC.import("AppKit");
+ObjC.import("ApplicationServices");
+
+const options = $.NSMutableDictionary.alloc.init;
+options.setObjectForKey($(true), $.kAXTrustedCheckOptionPrompt);
+const trusted = $.AXIsProcessTrustedWithOptions(options);
+
+console.log(String(ObjC.unwrap(trusted)));

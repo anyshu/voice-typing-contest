@@ -1,0 +1,312 @@
+import AppKit
+import ApplicationServices
+import AVFoundation
+import CoreAudio
+import Foundation
+
+struct PermissionRow: Codable {
+    let id: String
+    let name: String
+    let required: Bool
+    let granted: Bool
+}
+
+struct AudioDeviceRow: Codable {
+    let id: String
+    let name: String
+    let available: Bool
+    let isDefault: Bool?
+}
+
+struct HelperResponse<T: Encodable>: Encodable {
+    let ok: Bool
+    let result: T?
+    let error: String?
+}
+
+struct CommandRequest: Decodable {
+    let command: String
+    let filePath: String?
+    let outputDeviceId: String?
+    let chord: String?
+    let phase: String?
+    let appFileName: String?
+    let pane: String?
+}
+
+enum HelperError: Error {
+    case unsupported(String)
+    case invalidInput(String)
+}
+
+func writeResponse<T: Encodable>(_ result: T) throws {
+    let data = try JSONEncoder().encode(HelperResponse(ok: true, result: result, error: nil))
+    FileHandle.standardOutput.write(data)
+}
+
+func writeError(_ error: Error) {
+    let payload = HelperResponse<String>(ok: false, result: nil, error: String(describing: error))
+    let data = try? JSONEncoder().encode(payload)
+    if let data {
+        FileHandle.standardOutput.write(data)
+    }
+}
+
+func readRequest() throws -> CommandRequest {
+    let data = FileHandle.standardInput.readDataToEndOfFile()
+    return try JSONDecoder().decode(CommandRequest.self, from: data)
+}
+
+func checkPermissions() -> [String: [PermissionRow]] {
+    let accessibility = AXIsProcessTrusted()
+    return [
+        "permissions": [
+            PermissionRow(id: "accessibility", name: "Accessibility", required: true, granted: accessibility),
+            PermissionRow(id: "automation", name: "Automation", required: false, granted: true),
+            PermissionRow(id: "input-monitoring", name: "Input Monitoring", required: false, granted: true)
+        ]
+    ]
+}
+
+func getDeviceName(_ deviceId: AudioDeviceID) -> String {
+    var deviceName: CFString = "" as CFString
+    var propertySize = UInt32(MemoryLayout<CFString>.size)
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioObjectPropertyName,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    AudioObjectGetPropertyData(deviceId, &address, 0, nil, &propertySize, &deviceName)
+    return deviceName as String
+}
+
+func listAudioDevices() -> [String: [AudioDeviceRow]] {
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size)
+    let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+    var devices = Array(repeating: AudioDeviceID(), count: count)
+    AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices)
+
+    var defaultAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var defaultSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var defaultDevice = AudioDeviceID()
+    AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &defaultSize, &defaultDevice)
+
+    return [
+        "devices": devices.map { device in
+            AudioDeviceRow(id: String(device), name: getDeviceName(device), available: true, isDefault: device == defaultDevice)
+        }
+    ]
+}
+
+func keyCode(for token: String) -> CGKeyCode? {
+    let map: [String: CGKeyCode] = [
+        "A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5, "Z": 6, "X": 7, "C": 8, "V": 9,
+        "B": 11, "Q": 12, "W": 13, "E": 14, "R": 15, "Y": 16, "T": 17, "1": 18, "2": 19,
+        "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26, "-": 27, "8": 28,
+        "0": 29, "]": 30, "O": 31, "U": 32, "[": 33, "I": 34, "P": 35, "L": 37, "J": 38,
+        "'": 39, "K": 40, ";": 41, "\\": 42, ",": 43, "/": 44, "N": 45, "M": 46, ".": 47,
+        "SPACE": 49, "RETURN": 36, "TAB": 48, "ESC": 53,
+        "CMD": 55, "COMMAND": 55, "SHIFT": 56, "OPTION": 58, "ALT": 58, "CTRL": 59, "CONTROL": 59,
+        "FN": 63, "GLOBE": 63
+    ]
+    return map[token.uppercased()]
+}
+
+func flags(for tokens: [String]) throws -> CGEventFlags {
+    var eventFlags: CGEventFlags = []
+    for token in tokens {
+      switch token.uppercased() {
+      case "CMD", "COMMAND":
+        eventFlags.insert(.maskCommand)
+      case "CTRL", "CONTROL":
+        eventFlags.insert(.maskControl)
+      case "OPTION", "ALT":
+        eventFlags.insert(.maskAlternate)
+      case "SHIFT":
+        eventFlags.insert(.maskShift)
+      case "FN", "GLOBE":
+        eventFlags.insert(.maskSecondaryFn)
+      default:
+        continue
+      }
+    }
+    return eventFlags
+}
+
+func sendHotkey(_ chord: String, phase: String) throws -> [String: String] {
+    let tokens = chord.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
+    guard let keyToken = tokens.last, let code = keyCode(for: keyToken) else {
+        throw HelperError.invalidInput("Invalid hotkey chord: \(chord)")
+    }
+    let modifierTokens = tokens.enumerated().compactMap { index, token in
+        index == tokens.count - 1 ? nil : String(token)
+    }
+    let modifierFlags = try flags(for: modifierTokens)
+    let mainToken = String(keyToken)
+    let mainTokenFlags = try flags(for: [mainToken])
+    let mainKeyDownFlags = modifierFlags.union(mainTokenFlags)
+    let mainKeyUpFlags = mainTokenFlags.isEmpty ? mainKeyDownFlags : modifierFlags
+    let modifierKeyCodes: [String: CGKeyCode] = [
+        "CMD": 55,
+        "COMMAND": 55,
+        "SHIFT": 56,
+        "OPTION": 58,
+        "ALT": 58,
+        "CTRL": 59,
+        "CONTROL": 59,
+        "FN": 63,
+        "GLOBE": 63
+    ]
+
+    let modifierRows: [(code: CGKeyCode, flag: CGEventFlags)] = try modifierTokens.map { token in
+        guard let code = modifierKeyCodes[token.uppercased()] else {
+            throw HelperError.invalidInput("Unsupported modifier: \(token)")
+        }
+        return (code: code, flag: try flags(for: [token]))
+    }
+
+    let sendEvent: (CGKeyCode, Bool, CGEventFlags, Bool) throws -> Void = { keyCode, keyDown, flags, isModifier in
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: keyDown) else {
+            throw HelperError.invalidInput("Failed to create keyboard event")
+        }
+        if isModifier {
+            event.type = .flagsChanged
+        }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+    }
+    let mainIsModifier = !mainTokenFlags.isEmpty
+    switch phase {
+    case "down":
+        var activeFlags: CGEventFlags = []
+        for modifier in modifierRows {
+            activeFlags.formUnion(modifier.flag)
+            try sendEvent(modifier.code, true, activeFlags, true)
+        }
+        try sendEvent(code, true, mainKeyDownFlags, mainIsModifier)
+    case "up":
+        try sendEvent(code, false, mainKeyUpFlags, mainIsModifier)
+        if !modifierRows.isEmpty {
+            for index in stride(from: modifierRows.count - 1, through: 0, by: -1) {
+                let remainingFlags = modifierRows.prefix(index).reduce(into: CGEventFlags()) { partialResult, item in
+                    partialResult.formUnion(item.flag)
+                }
+                try sendEvent(modifierRows[index].code, false, remainingFlags, true)
+            }
+        }
+    default:
+        try sendHotkey(chord, phase: "down")
+        try sendHotkey(chord, phase: "up")
+    }
+    return ["status": "ok"]
+}
+
+func playWav(_ filePath: String) throws -> [String: String] {
+    let url = URL(fileURLWithPath: filePath)
+    let player = try AVAudioPlayer(contentsOf: url)
+    player.prepareToPlay()
+    player.play()
+    while player.isPlaying {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+    return ["status": "ok"]
+}
+
+func activateApp(_ appTarget: String) throws -> [String: String] {
+    if appTarget.hasPrefix("selftest://") {
+        return ["status": "ok"]
+    }
+    if appTarget.hasPrefix("/") {
+        let appURL = URL(fileURLWithPath: appTarget)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
+        return ["status": "ok"]
+    }
+    let candidates = [
+        "/Applications/\(appTarget)",
+        "/System/Applications/\(appTarget)",
+        "/Applications/Setapp/\(appTarget)"
+    ]
+    guard let path = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        throw HelperError.invalidInput("App not found: \(appTarget)")
+    }
+    let appURL = URL(fileURLWithPath: path)
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
+    return ["status": "ok"]
+}
+
+func closeApp(_ appTarget: String) throws -> [String: String] {
+    if appTarget.hasPrefix("selftest://") {
+        return ["status": "ok"]
+    }
+    let appName = URL(fileURLWithPath: appTarget).deletingPathExtension().lastPathComponent
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+    process.arguments = ["-f", appName]
+    do {
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus == 0 {
+            return ["status": "ok"]
+        }
+    } catch {
+        // Fall back to AppKit termination below.
+    }
+
+    let runningApps = NSWorkspace.shared.runningApplications.filter { app in
+        app.localizedName == appName || app.bundleURL?.lastPathComponent == "\(appName).app"
+    }
+    for runningApp in runningApps {
+        _ = runningApp.terminate()
+    }
+    return ["status": "ok"]
+}
+
+func revealSystemSettings(_ pane: String) throws -> [String: String] {
+    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!
+    NSWorkspace.shared.open(url)
+    return ["status": "ok"]
+}
+
+do {
+    let request = try readRequest()
+    switch request.command {
+    case "checkPermissions":
+        try writeResponse(checkPermissions())
+    case "listAudioDevices":
+        try writeResponse(listAudioDevices())
+    case "playWav":
+        guard let filePath = request.filePath else { throw HelperError.invalidInput("Missing filePath") }
+        try writeResponse(playWav(filePath))
+    case "sendHotkey":
+        guard let chord = request.chord, let phase = request.phase else { throw HelperError.invalidInput("Missing hotkey arguments") }
+        try writeResponse(sendHotkey(chord, phase: phase))
+    case "activateApp":
+        guard let appFileName = request.appFileName else { throw HelperError.invalidInput("Missing appFileName") }
+        try writeResponse(activateApp(appFileName))
+    case "closeApp":
+        guard let appFileName = request.appFileName else { throw HelperError.invalidInput("Missing appFileName") }
+        try writeResponse(closeApp(appFileName))
+    case "revealSystemSettings":
+        guard let pane = request.pane else { throw HelperError.invalidInput("Missing pane") }
+        try writeResponse(revealSystemSettings(pane))
+    default:
+        throw HelperError.invalidInput("Unknown command")
+    }
+} catch {
+    writeError(error)
+    exit(1)
+}

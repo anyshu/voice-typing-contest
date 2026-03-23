@@ -1,0 +1,36 @@
+{
+  "name": "voice-typing-contest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "macOS Electron benchmark app for voice typing tools",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "helper:build": "node scripts/build-helper.mjs debug",
+    "helper:release": "node scripts/build-helper.mjs release"
+  },
+  "dependencies": {
+    "@hugeicons/core-free-icons": "^1.0.5",
+    "@hugeicons/vue": "^1.0.5",
+    "better-sqlite3": "^11.10.0",
+    "electron-log": "^5.4.0",
+    "nanoid": "^5.1.5",
+    "vue": "^3.5.13",
+    "vue-i18n": "^10.0.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "electron": "^35.1.5",
+    "electron-vite": "^3.1.0",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.2",
+    "vitest": "^3.0.8"
+  }
+}

@@ -1,0 +1,102 @@
+ObjC.import("ApplicationServices");
+
+const keyCodeMap = {
+  A: 0, S: 1, D: 2, F: 3, H: 4, G: 5, Z: 6, X: 7, C: 8, V: 9,
+  B: 11, Q: 12, W: 13, E: 14, R: 15, Y: 16, T: 17, "1": 18, "2": 19,
+  "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26, "-": 27, "8": 28,
+  "0": 29, "]": 30, O: 31, U: 32, "[": 33, I: 34, P: 35, RETURN: 36, L: 37, J: 38,
+  "'": 39, K: 40, ";": 41, "\\": 42, ",": 43, "/": 44, N: 45, M: 46, ".": 47,
+  TAB: 48, SPACE: 49, ESC: 53,
+};
+
+const modifierMap = {
+  CMD: { keyCode: 55, flag: Number($.kCGEventFlagMaskCommand) },
+  COMMAND: { keyCode: 55, flag: Number($.kCGEventFlagMaskCommand) },
+  SHIFT: { keyCode: 56, flag: Number($.kCGEventFlagMaskShift) },
+  OPTION: { keyCode: 58, flag: Number($.kCGEventFlagMaskAlternate) },
+  ALT: { keyCode: 58, flag: Number($.kCGEventFlagMaskAlternate) },
+  CTRL: { keyCode: 59, flag: Number($.kCGEventFlagMaskControl) },
+  CONTROL: { keyCode: 59, flag: Number($.kCGEventFlagMaskControl) },
+  FN: { keyCode: 63, flag: Number($.kCGEventFlagMaskSecondaryFn) },
+  GLOBE: { keyCode: 63, flag: Number($.kCGEventFlagMaskSecondaryFn) },
+};
+
+function modifierForToken(token) {
+  return modifierMap[token.toUpperCase()];
+}
+
+function normalizeMainKey(token) {
+  if (token === " ") return "SPACE";
+  if (token.length === 1) return token.toUpperCase();
+  const upper = token.toUpperCase();
+  if (upper === "ESCAPE") return "ESC";
+  if (upper === "ENTER") return "RETURN";
+  return upper;
+}
+
+function postKeyEvent(keyCode, keyDown, flags, isModifier = false) {
+  const event = $.CGEventCreateKeyboardEvent(null, keyCode, keyDown);
+  if (isModifier) {
+    $.CGEventSetType(event, $.kCGEventFlagsChanged);
+  }
+  $.CGEventSetFlags(event, flags);
+  $.CGEventPost($.kCGHIDEventTap, event);
+}
+
+function parseChord(chord) {
+  const tokens = chord.split("+").map((token) => token.trim()).filter(Boolean);
+  if (!tokens.length) {
+    throw new Error(`Invalid hotkey: ${chord}`);
+  }
+  const mainToken = normalizeMainKey(tokens[tokens.length - 1]);
+  const mainModifier = modifierForToken(mainToken);
+  const mainKeyCode = keyCodeMap[mainToken] ?? mainModifier?.keyCode;
+  if (mainKeyCode === undefined) {
+    throw new Error(`Unsupported key: ${mainToken}`);
+  }
+
+  const modifiers = tokens.slice(0, -1).map((token) => {
+    const value = modifierForToken(token);
+    if (!value) {
+      throw new Error(`Unsupported modifier: ${token}`);
+    }
+    return value;
+  });
+
+  const flags = modifiers.reduce((acc, item) => acc | item.flag, 0);
+  const mainKeyDownFlags = mainModifier ? (flags | mainModifier.flag) : flags;
+  const mainKeyUpFlags = mainModifier ? flags : mainKeyDownFlags;
+  return { mainKeyCode, modifiers, mainKeyDownFlags, mainKeyUpFlags, mainIsModifier: Boolean(mainModifier) };
+}
+
+function run(argv) {
+  const [chord, phase] = argv;
+  const { mainKeyCode, modifiers, mainKeyDownFlags, mainKeyUpFlags, mainIsModifier } = parseChord(chord);
+
+  const pressDown = () => {
+    for (let index = 0; index < modifiers.length; index += 1) {
+      const activeFlags = modifiers.slice(0, index + 1).reduce((acc, item) => acc | item.flag, 0);
+      postKeyEvent(modifiers[index].keyCode, true, activeFlags, true);
+    }
+    postKeyEvent(mainKeyCode, true, mainKeyDownFlags, mainIsModifier);
+  };
+
+  const pressUp = () => {
+    postKeyEvent(mainKeyCode, false, mainKeyUpFlags, mainIsModifier);
+    for (let index = modifiers.length - 1; index >= 0; index -= 1) {
+      const activeFlags = modifiers.slice(0, index).reduce((acc, item) => acc | item.flag, 0);
+      postKeyEvent(modifiers[index].keyCode, false, activeFlags, true);
+    }
+  };
+
+  if (phase === "down") {
+    pressDown();
+  } else if (phase === "up") {
+    pressUp();
+  } else {
+    pressDown();
+    pressUp();
+  }
+
+  return "ok";
+}

@@ -210,6 +210,52 @@ select {
   font-size: 13px;
 }
 
+.notice-toast {
+  position: fixed;
+  top: 18px;
+  right: 24px;
+  z-index: 50;
+  min-width: 220px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(217, 222, 231, 0.95);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  font-size: 13px;
+  line-height: 1.4;
+  backdrop-filter: blur(14px);
+}
+
+.notice-toast--success {
+  color: #166534;
+  border-color: rgba(134, 239, 172, 0.9);
+  background: rgba(240, 253, 244, 0.97);
+}
+
+.notice-toast--warning {
+  color: var(--warning);
+  border-color: rgba(253, 224, 71, 0.8);
+  background: rgba(255, 251, 235, 0.97);
+}
+
+.notice-toast--danger {
+  color: var(--danger);
+  border-color: rgba(252, 165, 165, 0.85);
+  background: rgba(254, 242, 242, 0.97);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
 .topbar,
 .summary-grid,
 .main-grid,
@@ -353,6 +399,17 @@ select {
   padding: 0;
 }
 
+.sample-global-toggle {
+  margin-left: auto;
+  padding: 6px 0;
+}
+
+.sample-global-toggle__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+}
+
 .sample-list-clean {
   display: grid;
   gap: 0;
@@ -385,14 +442,21 @@ select {
 }
 
 .sample-row-main {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .sample-row-main strong {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sample-row-meta {
+  flex: 0 0 auto;
 }
 
 .sample-row-actions {
@@ -841,6 +905,24 @@ select {
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.88);
   color: var(--text);
+}
+
+.icon-only-button {
+  border: none;
+  background: transparent;
+  padding: 6px;
+  color: rgba(153, 27, 27, 0.82);
+}
+
+.icon-only-button:hover,
+.icon-only-button:focus-visible {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.icon-only-button:focus-visible {
+  outline: 2px solid rgba(153, 27, 27, 0.18);
+  outline-offset: 2px;
 }
 
 .action-button {
@@ -1341,8 +1423,17 @@ pre {
     gap: 10px;
   }
 
+  .sample-global-toggle {
+    margin-left: 0;
+  }
+
   .sample-row-index {
     padding-top: 0;
+  }
+
+  .sample-row-main {
+    white-space: normal;
+    flex-wrap: wrap;
   }
 
   .sample-row-actions {

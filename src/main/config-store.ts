@@ -48,11 +48,6 @@ export class ConfigStore {
         hotkeyTriggerMode: wisprDefault.hotkeyTriggerMode,
       });
     }
-    for (const app of defaults.targetApps) {
-      if (!appMap.has(app.id)) {
-        appMap.set(app.id, app);
-      }
-    }
     const targetApps = Array.from(appMap.values());
     const audioSamples = config.audioSamples.length ? config.audioSamples : defaults.audioSamples;
     if (!targetApps.some((app) => app.enabled)) {

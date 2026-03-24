@@ -192,8 +192,9 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `设置`, `怎么开始`, `当前实现`
+- page navigation for `主控台`, `运行前检查`, `样本管理`, `测试历史`, `App管理`, `设置`, `怎么开始`, `当前实现`
 - configuration UI
+- target app CRUD now lives in dedicated `App管理`
 - permission status UI
 - built-in input box for typed output
 - live run timeline

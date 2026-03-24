@@ -6,6 +6,7 @@ import {
   BookOpen01Icon,
   CheckListIcon,
   DashboardSquare01Icon,
+  Delete02Icon,
   FolderAudioIcon,
   InformationCircleIcon,
   PlayCircleIcon,
@@ -32,7 +33,7 @@ import type {
 
 const brandIconUrl = new URL("../../resources/icon-macos.png", import.meta.url).href;
 const muteDuringDictationImageUrl = new URL("./assets/mute-during-dictation.svg", import.meta.url).href;
-const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "faq" | "about" | "settings">("main");
+const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "faq" | "about" | "settings" | "apps">("main");
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
 const devices = ref<AudioDevice[]>([]);
@@ -59,6 +60,7 @@ const preRunDialogVisible = ref(false);
 const preRunTimelineEvents = ref<RunEventRecord[]>([]);
 const showLatestSessionTimeline = ref(true);
 let resolvePreRunConfirm: (() => void) | null = null;
+let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const PRE_RUN_RUN_ID_PREFIX = "prep:";
 
@@ -106,6 +108,7 @@ const disabledSamples = computed(() => config.value.audioSamples.filter((item) =
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
+const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
 const resultSessionGroups = computed(() => sessions.value.map((session) => {
   const runs = results.value.filter((item) => item.runSessionId === session.id);
   const appNames = [...new Set(runs.map((item) => item.appName))];
@@ -128,6 +131,7 @@ const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
   if (page.value === "samples") return "样本管理";
+  if (page.value === "apps") return "App管理";
   if (page.value === "history") return "测试历史";
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
@@ -138,11 +142,18 @@ const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
   if (page.value === "checks") return "开跑前检查清单";
   if (page.value === "samples") return "测试集与目录视图";
+  if (page.value === "apps") return "目标 App 配置与热键";
   if (page.value === "history") return "历史结果与分轮导出";
-  if (page.value === "settings") return "运行参数与目标App";
+  if (page.value === "settings") return "运行参数与环境设置";
   if (page.value === "intro") return "准备路径与使用说明";
   if (page.value === "faq") return "常见问题与排查";
   return "当前实现状态";
+});
+const noticeTone = computed(() => {
+  if (!notice.value) return "info";
+  if (notice.value.includes("失败") || notice.value.includes("缺少") || notice.value.includes("不能")) return "danger";
+  if (notice.value.includes("取消") || notice.value.includes("未")) return "warning";
+  return "success";
 });
 function buildTimelineCards(
   items: RunEventRecord[],
@@ -237,6 +248,8 @@ async function jumpToGuideTarget(target: "apps" | "hotkey" | "samples" | "run"):
     page.value = "main";
   } else if (target === "samples") {
     page.value = "samples";
+  } else if (target === "apps" || target === "hotkey") {
+    page.value = "apps";
   } else {
     page.value = "settings";
   }
@@ -254,11 +267,37 @@ function sampleMeta(language: string, durationMs?: number): string {
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
 }
 
+function showToast(message: string): void {
+  notice.value = message;
+  if (noticeTimer) {
+    window.clearTimeout(noticeTimer);
+  }
+  noticeTimer = window.setTimeout(() => {
+    if (notice.value === message) {
+      notice.value = "";
+    }
+    noticeTimer = null;
+  }, 2600);
+}
+
 function toggleSampleEnabled(sampleId: string, enabled: boolean): void {
   const sample = config.value.audioSamples.find((item) => item.id === sampleId);
   if (!sample) return;
   sample.enabled = enabled;
-  notice.value = `${sample.displayName} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`;
+  showToast(`${sample.displayName} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`);
+}
+
+function setAllSamplesEnabled(enabled: boolean): void {
+  if (!config.value.audioSamples.length) return;
+  for (const sample of config.value.audioSamples) {
+    sample.enabled = enabled;
+  }
+  showToast(`已${enabled ? "全局开启" : "全局关闭"}全部样本。`);
+}
+
+function toggleAllSamples(event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setAllSamplesEnabled(Boolean(target?.checked));
 }
 
 function onSampleToggle(sampleId: string, event: Event): void {
@@ -535,10 +574,10 @@ async function saveSettings(showNotice = true): Promise<void> {
     await window.vtc.saveSettings(plainConfig());
     await refreshEnvironment();
     if (showNotice) {
-      notice.value = "设置已保存。";
+      showToast("设置已保存。");
     }
   } catch (error) {
-    notice.value = `保存设置失败：${error instanceof Error ? error.message : String(error)}`;
+    showToast(`保存设置失败：${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
 }
@@ -717,6 +756,19 @@ function addApp(): void {
     enabled: false,
     notes: "",
   });
+}
+
+function removeApp(appId: string): void {
+  const app = config.value.targetApps.find((item) => item.id === appId);
+  if (!app) return;
+  const confirmed = window.confirm(`确定要删除 ${app.name} 吗？`);
+  if (!confirmed) return;
+  config.value.targetApps = config.value.targetApps.filter((item) => item.id !== appId);
+  if (capturingAppId.value === appId) {
+    capturingAppId.value = null;
+    capturePreview.value = "";
+  }
+  notice.value = `已删除 ${app.name}。记得保存设置。`;
 }
 
 function beginHotkeyCapture(appId: string): void {
@@ -992,6 +1044,10 @@ watch(() => progress.value.phase, async (phase, previousPhase) => {
 });
 
 onBeforeUnmount(() => {
+  if (noticeTimer) {
+    window.clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
   window.removeEventListener("keydown", handleGlobalKeydown, true);
   window.removeEventListener("keyup", handleGlobalKeyup, true);
   window.removeEventListener("mousedown", lockDialogPointerInput, true);
@@ -1047,6 +1103,12 @@ onBeforeUnmount(() => {
         <div class="sidebar-label">其他</div>
         <ul class="nav-list">
           <li>
+            <button class="nav-button" :class="{ active: page === 'apps' }" @click="page = 'apps'">
+              <HugeiconsIcon :icon="Settings01Icon" :size="18" class="nav-icon" />
+              <span>App管理</span>
+            </button>
+          </li>
+          <li>
             <button class="nav-button" :class="{ active: page === 'settings' }" @click="page = 'settings'">
               <HugeiconsIcon :icon="Settings01Icon" :size="18" class="nav-icon" />
               <span>设置</span>
@@ -1078,6 +1140,12 @@ onBeforeUnmount(() => {
     </aside>
 
     <main class="content">
+      <transition name="toast">
+        <div v-if="notice" class="notice-toast" :class="`notice-toast--${noticeTone}`" role="status" aria-live="polite">
+          {{ notice }}
+        </div>
+      </transition>
+
       <header class="topbar">
         <div v-if="page !== 'main'">
           <p class="muted">{{ pageSubtitle }}</p>
@@ -1141,7 +1209,7 @@ onBeforeUnmount(() => {
             <article class="panel panel-main panel-apps">
               <div class="panel-header-row">
                 <h3>目标App</h3>
-                <button class="secondary-button" @click="page = 'settings'">去设置</button>
+                <button class="secondary-button" @click="page = 'apps'">去 App 管理</button>
               </div>
               <ul class="meta-list panel-scroll">
                 <li v-for="app in config.targetApps" :key="app.id" class="app-row">
@@ -1309,18 +1377,25 @@ onBeforeUnmount(() => {
               <span class="summary-label">总共</span>
               <strong>{{ config.audioSamples.length }}</strong>
             </div>
+            <label v-if="config.audioSamples.length" class="switch-row sample-global-toggle">
+              <span class="sample-global-toggle__label">全选</span>
+              <input
+                :checked="allSamplesEnabled"
+                type="checkbox"
+                @change="toggleAllSamples"
+              />
+            </label>
           </section>
           <div v-if="config.audioSamples.length" class="sample-list-clean">
             <div v-for="(sample, index) in config.audioSamples" :key="sample.id" class="sample-row-clean">
               <div class="sample-row-index">{{ index + 1 }}、</div>
               <div class="sample-row-main">
                 <strong>{{ sample.relativePath }}</strong>
-                <div class="muted">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</div>
+                <span class="muted sample-row-meta">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</span>
               </div>
               <div class="sample-row-actions">
                 <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
                 <label class="switch-row sample-switch-row">
-                  <span>{{ sample.enabled ? "关闭" : "启用" }}</span>
                   <input
                     :checked="sample.enabled"
                     type="checkbox"
@@ -1404,6 +1479,63 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
+      <section v-else-if="page === 'apps'" class="settings-page">
+        <article class="panel">
+          <div class="panel-header-row">
+            <h3>目标App</h3>
+            <div class="toolbar">
+              <button class="secondary-button" @click="addApp">新增应用</button>
+              <button class="secondary-button" @click="saveSettings">保存设置</button>
+            </div>
+          </div>
+          <p class="muted">如果你现在只想确认工具能不能跑，保留“内建自测”开启就够了。</p>
+          <div v-for="app in config.targetApps" :key="app.id" class="app-editor-card" :data-guide-target="app.enabled ? 'apps' : undefined">
+            <div class="panel-header-row">
+              <div>
+                <strong>{{ app.name }}</strong>
+                <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "这是工具自带的自测目标，不依赖真实应用。" : "真实目标App配置" }}</div>
+              </div>
+              <div class="toolbar">
+                <label class="switch-row">
+                  <span>启用</span>
+                  <input v-model="app.enabled" type="checkbox" />
+                </label>
+                <button
+                  class="ghost-button icon-only-button"
+                  :aria-label="`删除 ${app.name}`"
+                  :title="`删除 ${app.name}`"
+                  @click="removeApp(app.id)"
+                >
+                  <HugeiconsIcon :icon="Delete02Icon" :size="18" class="button-icon" />
+                </button>
+              </div>
+            </div>
+            <div class="settings-grid">
+              <label><span>名称 <em class="required-mark">*</em></span><input v-model="app.name" /></label>
+              <label><span>.app 文件名 <em class="required-mark">*</em></span><input v-model="app.appFileName" :disabled="Boolean(app.launchCommand?.startsWith('selftest://'))" /></label>
+              <label :data-guide-target="app.enabled ? 'hotkey' : undefined">
+                <span>热键 <em class="required-mark">*</em></span>
+                <div class="inline-field">
+                  <input :value="app.hotkeyChord" readonly />
+                  <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
+                  <button class="ghost-button" @click="setHotkeyForApp(app.id, 'Fn')">设为 Fn</button>
+                </div>
+                <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
+              </label>
+              <label class="compact-field">
+                <span>触发方式 <em class="required-mark">*</em></span>
+                <select v-model="app.hotkeyTriggerMode" class="compact-select">
+                  <option value="hold_release">按住热键，松开收口</option>
+                  <option value="press_start_press_stop">按一次触发，再按一次收口</option>
+                </select>
+              </label>
+              <label><span>启动命令</span><input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" /></label>
+              <label style="grid-column: 1 / -1"><span>备注</span><textarea v-model="app.notes" rows="2" /></label>
+            </div>
+          </div>
+        </article>
+      </section>
+
 
       <section v-else-if="page === 'settings'" class="settings-page">
         <article class="panel">
@@ -1465,48 +1597,6 @@ onBeforeUnmount(() => {
           </div>
         </article>
 
-        <article class="panel">
-          <div class="panel-header-row">
-            <h3>目标App</h3>
-            <button class="secondary-button" @click="addApp">新增应用</button>
-          </div>
-          <p class="muted">如果你现在只想确认工具能不能跑，保留“内建自测”开启就够了。</p>
-          <div v-for="app in config.targetApps" :key="app.id" class="app-editor-card" :data-guide-target="app.enabled ? 'apps' : undefined">
-            <div class="panel-header-row">
-              <div>
-                <strong>{{ app.name }}</strong>
-                <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "这是工具自带的自测目标，不依赖真实应用。" : "真实目标App配置" }}</div>
-              </div>
-              <label class="switch-row">
-                <span>启用</span>
-                <input v-model="app.enabled" type="checkbox" />
-              </label>
-            </div>
-            <div class="settings-grid">
-              <label><span>名称 <em class="required-mark">*</em></span><input v-model="app.name" /></label>
-              <label><span>.app 文件名 <em class="required-mark">*</em></span><input v-model="app.appFileName" :disabled="Boolean(app.launchCommand?.startsWith('selftest://'))" /></label>
-              <label :data-guide-target="app.enabled ? 'hotkey' : undefined">
-                <span>热键 <em class="required-mark">*</em></span>
-                <div class="inline-field">
-                  <input :value="app.hotkeyChord" readonly />
-                  <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
-                  <button class="ghost-button" @click="setHotkeyForApp(app.id, 'Fn')">设为 Fn</button>
-                </div>
-                <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
-              </label>
-              <label class="compact-field">
-                <span>触发方式 <em class="required-mark">*</em></span>
-                <select v-model="app.hotkeyTriggerMode" class="compact-select">
-                  <option value="hold_release">按住热键，松开收口</option>
-                  <option value="press_start_press_stop">按一次触发，再按一次收口</option>
-                </select>
-              </label>
-              <label><span>启动命令</span><input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" /></label>
-              <label style="grid-column: 1 / -1"><span>备注</span><textarea v-model="app.notes" rows="2" /></label>
-            </div>
-          </div>
-        </article>
-
         <div class="settings-grid">
           <article class="panel">
             <div class="panel-header-row">
@@ -1548,7 +1638,7 @@ onBeforeUnmount(() => {
         <div class="intro-steps">
           <button class="intro-step" @click="jumpToGuideTarget('apps')">
             <strong>1）添加 app</strong>
-            <span>去设置页添加或启用目标App。</span>
+            <span>去 App 管理页添加或启用目标App。</span>
           </button>
           <button class="intro-step" @click="jumpToGuideTarget('hotkey')">
             <strong>2）热键</strong>

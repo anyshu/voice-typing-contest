@@ -13,11 +13,12 @@ Current first-level pages:
 - `主控台`
 - `运行前检查`
 - `样本`
+- `测试历史`
 - `设置`
 - `怎么开始`
 - `当前实现`
 
-`开始运行` and `关闭本轮` belong only to `主控台`.
+`开始` and `关闭` belong only to `主控台`.
 
 ## 2. Design Tokens
 
@@ -79,11 +80,12 @@ Current first-level pages:
 | 主控台 | `DashboardSquare01Icon` |
 | 运行前检查 | `CheckListIcon` |
 | 样本 | `FolderAudioIcon` |
+| 测试历史 | `Analytics01Icon` |
 | 设置 | `Settings01Icon` |
 | 怎么开始 | `BookOpen01Icon` |
 | 当前实现 | `InformationCircleIcon` |
-| 开始运行 | `PlayCircleIcon` |
-| 关闭本轮 | `StopCircleIcon` |
+| 开始 | `PlayCircleIcon` |
+| 关闭 | `StopCircleIcon` |
 | 权限 | `Shield01Icon` |
 | 设备 | `Speaker01Icon` |
 | 统计 / 结果 | `Analytics01Icon` |
@@ -95,7 +97,8 @@ Main page layout is:
 - summary strip
 - three-column workspace
 - latest-session summary
-- result sessions list
+
+The persisted session list now belongs to the dedicated `测试历史` page.
 
 ### 4.1 Summary strip
 
@@ -114,9 +117,9 @@ Do not use oversized KPI cards. Keep icon left, text right, one-line value empha
 The center area contains:
 
 - live input box
-- compact current status strip
+- compact current status stack
 
-The current status strip is a single horizontal line:
+The current status stack shows:
 
 - current phase
 - current message
@@ -129,15 +132,20 @@ It should not be rendered as four identical cards.
 
 Timeline rules:
 
-- only current run events are shown
+- render from per-run timeline data that is persisted with each `test_runs` row
+- merge live `run:event` updates with persisted runs only while the session is active
 - auto-scroll with the newest event
-- two visual states only:
-  - running: green pulse
-  - completed: dark green
+- support distinct visual classes for:
+  - start / end bookends
+  - app-level milestones
+  - sample-level milestones
+  - ordinary actions
+  - failures
+- only the currently live item pulses
 
 ### 4.4 Latest-session summary
 
-The section title is `测试结果`.
+The section title is `测试统计`.
 
 This area shows aggregate stats for the latest session only and does not react to row selection.
 
@@ -160,15 +168,17 @@ Current stats per app:
 - median first-char latency
 - total run time
 
-### 4.5 Result list
+### 4.5 History page
 
-The result list is grouped as:
+The `测试历史` page is grouped as:
 
 - session
 - app
 - sample row
 
 The session header owns the `导出本轮 CSV` action.
+
+Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
 
 ## 5. Settings Page Structure
 

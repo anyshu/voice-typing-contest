@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const profile = process.argv[2] ?? "debug";
@@ -7,6 +7,7 @@ const helperRoot = resolve("native/helper");
 const buildRoot = join(helperRoot, ".build", profile);
 const wrapperPath = join(buildRoot, "vtc-helper");
 const fallbackPath = resolve("scripts/vtc-helper-fallback.mjs");
+const fallbackRelativePath = relative(buildRoot, fallbackPath);
 const audioToolSource = resolve("native/coreaudio-tool/main.c");
 const audioToolPath = join(buildRoot, "vtc-audioctl");
 
@@ -39,7 +40,8 @@ if (swift.status === 0) {
 }
 
 const wrapper = `#!/bin/sh
-exec node "${fallbackPath}" "$@"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+exec node "$SCRIPT_DIR/${fallbackRelativePath}" "$@"
 `;
 writeFileSync(wrapperPath, wrapper, "utf8");
 chmodSync(wrapperPath, 0o755);

@@ -86,6 +86,12 @@ export class HelperClient {
     if (overridePath && existsSync(overridePath)) {
       return overridePath;
     }
+    if (process.resourcesPath) {
+      const packagedPath = join(process.resourcesPath, "native", "helper", ".build", "release", "vtc-helper");
+      if (existsSync(packagedPath)) {
+        return packagedPath;
+      }
+    }
     return join(process.cwd(), "native", "helper", ".build", "debug", "vtc-helper");
   }
 

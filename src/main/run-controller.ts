@@ -29,6 +29,20 @@ interface CurrentObservation {
   values: InputObservationEvent[];
 }
 
+interface PreparedRunContext {
+  samples: AppConfig["audioSamples"];
+  runnableApps: Array<{
+    app: AppConfig["targetApps"][number];
+    resolved: string | undefined;
+    isSelftest: boolean;
+    ok: boolean;
+    runnable: boolean;
+    skipReason?: "missing" | "permission";
+  }>;
+  resolvedAppMap: Map<string, string | undefined>;
+  preflight: PreflightReport;
+}
+
 class RunCancelledError extends Error {
   constructor(message = "Run cancelled") {
     super(message);
@@ -70,67 +84,14 @@ export class RunController extends EventEmitter {
     this.emit("progress", { ...this.progress });
   }
 
+  async inspect(config: AppConfig): Promise<PreflightReport> {
+    const prepared = await this.prepareRun(config);
+    this.emit("preflight", prepared.preflight);
+    return prepared.preflight;
+  }
+
   async run(config: AppConfig): Promise<PreflightReport> {
-    const enabledApps = config.targetApps.filter((item) => item.enabled);
-    const samples = config.audioSamples.filter((item) => item.enabled);
-    const resolvedApps = await Promise.all(
-      enabledApps.map(async (app) => {
-        const resolved = await this.targets.resolve(app);
-        const isSelftest = Boolean(resolved?.startsWith("selftest://"));
-        return {
-          app,
-          resolved,
-          isSelftest,
-          ok: Boolean(resolved),
-        };
-      }),
-    );
-    const permissionSnapshot = await this.permissions.snapshot();
-    const accessibilityGranted = permissionSnapshot.permissions.find((item) => item.id === "accessibility")?.granted ?? false;
-
-    const appReadiness = resolvedApps.map((item) => {
-      if (!item.ok) {
-        return { ...item, runnable: false, skipReason: "missing" as const };
-      }
-      if (!item.isSelftest && !accessibilityGranted) {
-        return { ...item, runnable: false, skipReason: "permission" as const };
-      }
-      return { ...item, runnable: true, skipReason: undefined };
-    });
-
-    const runnableApps = appReadiness.filter((item) => item.runnable);
-    const resolvedAppMap = new Map(runnableApps.map((item) => [item.app.id, item.resolved]));
-    const preflight = await this.permissions.buildPreflight({
-      hasSamples: samples.length > 0,
-      hasEnabledApps: enabledApps.length > 0,
-      hasRunnableApps: runnableApps.length > 0,
-      dbReady: await this.checkDbWritable(config.databasePath),
-      selectedDeviceId: config.selectedOutputDeviceId,
-      requiresAccessibility: runnableApps.some((item) => !item.isSelftest),
-      appChecks: appReadiness.map((item) => ({
-        key: `app:${item.app.id}`,
-        ok: item.runnable || runnableApps.length > 0,
-        message: item.runnable
-          ? `${item.app.name} 已就绪`
-          : item.skipReason === "permission"
-            ? runnableApps.length > 0
-              ? `当前这个测试工具没有辅助功能权限，暂时不能控制 ${item.app.name}，本轮已跳过`
-              : `当前这个测试工具没有辅助功能权限，暂时不能控制 ${item.app.name}`
-            : runnableApps.length > 0
-              ? `${item.app.name} 未找到，本轮已跳过`
-              : `${item.app.name} 未找到`,
-        category: item.runnable
-          ? undefined
-          : item.skipReason === "permission"
-            ? (runnableApps.length > 0 ? undefined : "permission_denied_accessibility")
-            : (runnableApps.length > 0 ? undefined : "target_app_not_installed"),
-        hint: item.runnable
-          ? undefined
-          : item.skipReason === "permission"
-            ? "去系统设置 -> 隐私与安全性 -> 辅助功能，给当前这个 Electron 测试工具打开权限，然后回来点“刷新”。"
-            : `先确认 ${item.app.appFileName} 已安装，或者先关掉它，改用“内建自测”验证流程。`,
-      })),
-    });
+    const { samples, runnableApps, resolvedAppMap, preflight } = await this.prepareRun(config);
     this.emit("preflight", preflight);
     if (!preflight.ok) {
       this.progress = {
@@ -161,8 +122,19 @@ export class RunController extends EventEmitter {
     this.store.createSession(session);
     let completed = 0;
     const totalRuns = runnableApps.length * samples.length;
+    const runTimelineMap = new Map<string, RunEventRecord[]>();
 
     for (const { app } of runnableApps) {
+      const appStartRecord: RunEventRecord = {
+        id: nanoid(),
+        runId: sessionId,
+        eventType: "app_start",
+        tsMs: performance.now(),
+        payloadJson: JSON.stringify({ app: app.name }),
+      };
+      this.store.appendEvent(appStartRecord);
+      this.emit("timeline", appStartRecord);
+      let pendingAppTimelinePrefix: RunEventRecord[] = [appStartRecord];
       const resolvedApp = resolvedAppMap.get(app.id);
       const isSelfTestApp = Boolean(resolvedApp?.startsWith("selftest://"));
       let appLaunched = false;
@@ -178,6 +150,10 @@ export class RunController extends EventEmitter {
           payloadJson: JSON.stringify(payload),
         };
         this.store.appendEvent(record);
+        const timeline = runTimelineMap.get(runId) ?? [];
+        timeline.push(record);
+        runTimelineMap.set(runId, timeline);
+        this.store.updateRunTimeline(runId, timeline);
         this.emit("timeline", record);
       };
 
@@ -188,6 +164,10 @@ export class RunController extends EventEmitter {
         }
         const runId = nanoid();
         lastRunIdForApp = runId;
+        if (pendingAppTimelinePrefix.length) {
+          runTimelineMap.set(runId, [...pendingAppTimelinePrefix]);
+          pendingAppTimelinePrefix = [];
+        }
         this.current = { runId, appId: app.id, sampleId: sample.id, values: [] };
         this.progress = {
           sessionId,
@@ -211,8 +191,13 @@ export class RunController extends EventEmitter {
             payloadJson: JSON.stringify(payload),
           };
           this.store.appendEvent(record);
+          const timeline = runTimelineMap.get(runId) ?? [];
+          timeline.push(record);
+          runTimelineMap.set(runId, timeline);
+          this.store.updateRunTimeline(runId, timeline);
           this.emit("timeline", record);
         };
+        pushEvent("sample_start", { app: app.name, sample: sample.relativePath });
 
         let failureCategory: FailureCategory | undefined;
         let failureReason = "";
@@ -261,6 +246,10 @@ export class RunController extends EventEmitter {
           if (config.focusInputDelayMs > 0) {
             pushEvent("focus_input_wait", { delayMs: config.focusInputDelayMs });
             await this.waitUnlessStopped(config.focusInputDelayMs);
+          }
+          if (!isSelfTestApp && (app.preHotkeyDelayMs ?? 0) > 0) {
+            pushEvent("pre_hotkey_wait", { app: app.name, delayMs: app.preHotkeyDelayMs });
+            await this.waitUnlessStopped(app.preHotkeyDelayMs ?? 0);
           }
 
           this.progress.phase = "trigger_start";
@@ -319,7 +308,7 @@ export class RunController extends EventEmitter {
             }
           } else {
             triggerStopTs = performance.now();
-            const text = sample.expectedText || sample.displayName.replace(/\.wav$/i, "");
+            const text = sample.expectedText || sample.displayName.replace(/\.[^.]+$/i, "");
             const chunks = text.length > 8 ? [text.slice(0, Math.ceil(text.length / 2)), text] : [text];
             this.emitSelfTestText(chunks);
           }
@@ -358,17 +347,19 @@ export class RunController extends EventEmitter {
             inputEventCount: observed.events.length,
             finalTextLength: rawText.length,
             createdAt: new Date().toISOString(),
+            timeline: [...(runTimelineMap.get(runId) ?? [])],
           };
           this.store.insertRun(record);
           completed += 1;
+          const batchFinished = completed >= totalRuns;
           this.progress = {
             sessionId,
             runId,
-            phase: "completed",
+            phase: batchFinished ? "completed" : "between_samples_wait",
             currentAppName: app.name,
             currentSamplePath: sample.relativePath,
             textValue: rawText,
-            message: "Completed",
+            message: batchFinished ? "Completed" : "当前样本已完成，准备下一条",
             completedRuns: completed,
             totalRuns,
           };
@@ -378,6 +369,14 @@ export class RunController extends EventEmitter {
           status = this.stopRequested || error instanceof RunCancelledError ? "cancelled" : "failed";
           failureCategory = status === "cancelled" ? undefined : ((error as { category?: FailureCategory }).category ?? "timeout_waiting_result");
           failureReason = (error as { message?: string }).message ?? (status === "cancelled" ? "Run cancelled" : "Run failed");
+          if (status !== "cancelled") {
+            pushEvent("run_failed", {
+              app: app.name,
+              sample: sample.relativePath,
+              reason: failureReason,
+              category: failureCategory,
+            });
+          }
           const record: TestRunRecord = {
             id: runId,
             runSessionId: sessionId,
@@ -395,6 +394,7 @@ export class RunController extends EventEmitter {
             inputEventCount: this.current?.values.length ?? 0,
             finalTextLength: this.progress.textValue.length,
             createdAt: new Date().toISOString(),
+            timeline: [...(runTimelineMap.get(runId) ?? [])],
           };
           this.store.insertRun(record);
           if (status !== "cancelled") {
@@ -405,7 +405,7 @@ export class RunController extends EventEmitter {
           this.progress = {
             sessionId,
             runId,
-            phase: status === "cancelled" ? "cancelled" : "failed",
+            phase: status === "cancelled" ? "cancelled" : (completed >= totalRuns ? "failed" : "between_samples_wait"),
             currentAppName: app.name,
             currentSamplePath: sample.relativePath,
             textValue: this.progress.textValue,
@@ -422,7 +422,15 @@ export class RunController extends EventEmitter {
           const isLastSampleForApp = sampleIndex === samples.length - 1;
           if (!this.stopRequested && !shouldExitAfterCurrentRun && !isLastSampleForApp && config.betweenSamplesDelayMs > 0) {
             pushEvent("between_samples_wait", { delayMs: config.betweenSamplesDelayMs });
-            await this.waitUnlessStopped(config.betweenSamplesDelayMs);
+            try {
+              await this.waitUnlessStopped(config.betweenSamplesDelayMs);
+            } catch (error) {
+              if (error instanceof RunCancelledError) {
+                shouldExitAfterCurrentRun = true;
+              } else {
+                throw error;
+              }
+            }
           }
         }
 
@@ -438,13 +446,22 @@ export class RunController extends EventEmitter {
           this.finishCancelledSession(sessionId, completed, totalRuns);
           return preflight;
         }
-        if (config.closeAppDelayMs > 0) {
-          appendEventForRun(lastRunIdForApp, "app_close_wait", { app: app.name, delayMs: config.closeAppDelayMs });
-          await this.waitUnlessStopped(config.closeAppDelayMs);
+        try {
+          if (config.closeAppDelayMs > 0) {
+            appendEventForRun(lastRunIdForApp, "app_close_wait", { app: app.name, delayMs: config.closeAppDelayMs });
+            await this.waitUnlessStopped(config.closeAppDelayMs);
+          }
+          await this.withAbortableHelper(async (signal) => await this.helper.closeApp(closeTarget, signal));
+          appendEventForRun(lastRunIdForApp, "app_close", { app: app.name });
+        } catch (error) {
+          if (error instanceof RunCancelledError) {
+            this.finishCancelledSession(sessionId, completed, totalRuns);
+            return preflight;
+          }
+          throw error;
         }
-        await this.withAbortableHelper(async (signal) => await this.helper.closeApp(closeTarget, signal));
-        appendEventForRun(lastRunIdForApp, "app_close", { app: app.name });
       }
+
     }
 
     if (this.stopRequested) {
@@ -454,6 +471,75 @@ export class RunController extends EventEmitter {
 
     this.store.updateSessionStatus(sessionId, "completed", new Date().toISOString());
     return preflight;
+  }
+
+  private async prepareRun(config: AppConfig): Promise<PreparedRunContext> {
+    const enabledApps = config.targetApps.filter((item) => item.enabled);
+    const samples = config.audioSamples.filter((item) => item.enabled);
+    const resolvedApps = await Promise.all(
+      enabledApps.map(async (app) => {
+        const resolved = await this.targets.resolve(app);
+        const isSelftest = Boolean(resolved?.startsWith("selftest://"));
+        return {
+          app,
+          resolved,
+          isSelftest,
+          ok: Boolean(resolved),
+        };
+      }),
+    );
+    const permissionSnapshot = await this.permissions.snapshot();
+    const accessibilityGranted = permissionSnapshot.permissions.find((item) => item.id === "accessibility")?.granted ?? false;
+
+    const appReadiness = resolvedApps.map((item) => {
+      if (!item.ok) {
+        return { ...item, runnable: false, skipReason: "missing" as const };
+      }
+      if (!item.isSelftest && !accessibilityGranted) {
+        return { ...item, runnable: false, skipReason: "permission" as const };
+      }
+      return { ...item, runnable: true, skipReason: undefined };
+    });
+
+    const runnableApps = appReadiness.filter((item) => item.runnable);
+    const preflight = await this.permissions.buildPreflight({
+      hasSamples: samples.length > 0,
+      hasEnabledApps: enabledApps.length > 0,
+      hasRunnableApps: runnableApps.length > 0,
+      dbReady: await this.checkDbWritable(config.databasePath),
+      selectedDeviceId: config.selectedOutputDeviceId,
+      requiresAccessibility: runnableApps.some((item) => !item.isSelftest),
+      appChecks: appReadiness.map((item) => ({
+        key: `app:${item.app.id}`,
+        ok: item.runnable || runnableApps.length > 0,
+        message: item.runnable
+          ? `${item.app.name} 已就绪`
+          : item.skipReason === "permission"
+            ? runnableApps.length > 0
+              ? `当前这个测试工具没有辅助功能权限，暂时不能控制 ${item.app.name}，本轮已跳过`
+              : `当前这个测试工具没有辅助功能权限，暂时不能控制 ${item.app.name}`
+            : runnableApps.length > 0
+              ? `${item.app.name} 未找到，本轮已跳过`
+              : `${item.app.name} 未找到`,
+        category: item.runnable
+          ? undefined
+          : item.skipReason === "permission"
+            ? (runnableApps.length > 0 ? undefined : "permission_denied_accessibility")
+            : (runnableApps.length > 0 ? undefined : "target_app_not_installed"),
+        hint: item.runnable
+          ? undefined
+          : item.skipReason === "permission"
+            ? "去系统设置 -> 隐私与安全性 -> 辅助功能，给当前这个 Electron 测试工具打开权限，然后回来点“刷新”。"
+            : `先确认 ${item.app.appFileName} 已安装，或者先关掉它，改用“内建自测”验证流程。`,
+      })),
+    });
+
+    return {
+      samples,
+      runnableApps,
+      resolvedAppMap: new Map(runnableApps.map((item) => [item.app.id, item.resolved])),
+      preflight,
+    };
   }
 
   stop(): void {

@@ -41,6 +41,7 @@ describe("ResultStore", () => {
       inputEventCount: 2,
       finalTextLength: 5,
       createdAt: new Date().toISOString(),
+      timeline: [],
     });
     const csv = store.exportCsv();
     expect(csv).toContain("app_name");
@@ -48,6 +49,7 @@ describe("ResultStore", () => {
     expect(csv).toContain("trigger_stop_to_final_text_ms");
     expect(csv).toContain("hello");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
+    expect(store.listRuns()[0]?.timeline).toEqual([]);
     store.close();
   });
 });

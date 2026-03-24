@@ -57,6 +57,31 @@ func readRequest() throws -> CommandRequest {
     return try JSONDecoder().decode(CommandRequest.self, from: data)
 }
 
+func bundledScriptURL(_ name: String) -> URL? {
+    let helperURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+    let candidate = helperURL
+        .deletingLastPathComponent()
+        .appendingPathComponent("../../../../scripts/\(name)")
+        .standardizedFileURL
+    return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
+}
+
+func runBundledOsaScript(_ scriptName: String, arguments: [String]) throws {
+    guard let scriptURL = bundledScriptURL(scriptName) else {
+        throw HelperError.invalidInput("Bundled script not found: \(scriptName)")
+    }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = ["-l", "JavaScript", scriptURL.path] + arguments
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+    if process.terminationStatus != 0 {
+        throw HelperError.invalidInput("osascript failed: \(scriptName)")
+    }
+}
+
 func checkPermissions() -> [String: [PermissionRow]] {
     let accessibility = AXIsProcessTrusted()
     return [
@@ -144,6 +169,10 @@ func flags(for tokens: [String]) throws -> CGEventFlags {
 }
 
 func sendHotkey(_ chord: String, phase: String) throws -> [String: String] {
+    if bundledScriptURL("send-hotkey.jxa") != nil {
+        try runBundledOsaScript("send-hotkey.jxa", arguments: [chord, phase])
+        return ["status": "ok"]
+    }
     let tokens = chord.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
     guard let keyToken = tokens.last, let code = keyCode(for: keyToken) else {
         throw HelperError.invalidInput("Invalid hotkey chord: \(chord)")
@@ -226,12 +255,27 @@ func activateApp(_ appTarget: String) throws -> [String: String] {
     if appTarget.hasPrefix("selftest://") {
         return ["status": "ok"]
     }
+    func openAndActivate(_ appURL: URL) throws -> [String: String] {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        let semaphore = DispatchSemaphore(value: 0)
+        var openError: Error?
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { app, error in
+            if let app {
+                app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            }
+            openError = error
+            semaphore.signal()
+        }
+        semaphore.wait()
+        if let openError {
+            throw openError
+        }
+        return ["status": "ok"]
+    }
     if appTarget.hasPrefix("/") {
         let appURL = URL(fileURLWithPath: appTarget)
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
-        return ["status": "ok"]
+        return try openAndActivate(appURL)
     }
     let candidates = [
         "/Applications/\(appTarget)",
@@ -242,10 +286,7 @@ func activateApp(_ appTarget: String) throws -> [String: String] {
         throw HelperError.invalidInput("App not found: \(appTarget)")
     }
     let appURL = URL(fileURLWithPath: path)
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = false
-    NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
-    return ["status": "ok"]
+    return try openAndActivate(appURL)
 }
 
 func closeApp(_ appTarget: String) throws -> [String: String] {

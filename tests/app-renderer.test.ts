@@ -93,11 +93,11 @@ describe("App renderer", () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
-    expect(wrapper.text()).toContain("开始运行");
+    expect(wrapper.text()).toContain("开始");
     expect(wrapper.text()).toContain("运行前检查");
     expect(wrapper.text()).toContain("样本");
+    expect(wrapper.text()).toContain("测试历史");
     expect(wrapper.text()).toContain("内建自测");
-    expect(wrapper.text()).toContain("结果列表");
   });
 
   it("lets the user choose an output device in settings", async () => {
@@ -132,7 +132,7 @@ describe("App renderer", () => {
           ok: false,
           message: "缺少辅助功能权限",
           category: "permission_denied_accessibility",
-          hint: "先到系统设置里给这个应用打开辅助功能权限，再回来点开始运行。",
+          hint: "先到系统设置里给这个应用打开辅助功能权限，再回来点开始。",
         },
       ],
     };
@@ -141,13 +141,16 @@ describe("App renderer", () => {
     await flushPromises();
     await wrapper.get("button.primary-button").trigger("click");
     await flushPromises();
+    expect(api.startRun).not.toHaveBeenCalled();
+    await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
+    await flushPromises();
     expect(api.startRun).toHaveBeenCalled();
     expect(wrapper.text()).toContain("现在还不能运行");
     expect(wrapper.text()).toContain("缺少辅助功能权限");
     expect(wrapper.text()).toContain("先到系统设置里给这个应用打开辅助功能权限");
   });
 
-  it("sends stop IPC from the close-current-run button while running", async () => {
+  it("sends close IPC from the close button while running", async () => {
     const { api, handlers } = setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
@@ -161,14 +164,32 @@ describe("App renderer", () => {
     });
     await flushPromises();
 
-    const closeButton = wrapper.findAll("button").find((item) => item.text() === "关闭本轮");
+    const closeButton = wrapper.findAll("button").find((item) => item.text() === "关闭");
     expect(closeButton).toBeTruthy();
     expect(closeButton!.attributes("disabled")).toBeUndefined();
     await closeButton!.trigger("click");
     await flushPromises();
 
     expect(api.stopRun).toHaveBeenCalled();
-    expect(wrapper.text()).toContain("正在关闭本轮");
+  });
+
+  it("keeps the close button active between samples instead of flipping back to start", async () => {
+    const { handlers } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    handlers.progress?.({
+      phase: "between_samples_wait",
+      textValue: "partial result",
+      message: "当前样本已完成，准备下一条",
+      completedRuns: 1,
+      totalRuns: 2,
+    });
+    await flushPromises();
+
+    const closeButton = wrapper.findAll("button").find((item) => item.text() === "关闭");
+    expect(closeButton).toBeTruthy();
+    expect(wrapper.text()).not.toContain("当前阶段:完成");
   });
 
   it("captures hotkey by pressing real key combo after clicking record", async () => {
@@ -280,7 +301,7 @@ describe("App renderer", () => {
 
     expect(wrapper.text()).toContain("后台启动目标应用");
     expect(wrapper.text()).toContain("Wispr Flow 已尝试后台启动");
-    expect(wrapper.text()).toContain("开始热键：Fn");
+    expect(wrapper.text()).toContain("触发热键：Fn");
   });
 
   it("renders the between-samples wait as a readable timeline card", async () => {
@@ -371,22 +392,155 @@ describe("App renderer", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("聚焦检测框");
-    expect(wrapper.text()).toContain("发送开始热键");
+    expect(wrapper.text()).toContain("发送触发热键");
     expect(wrapper.text()).not.toContain("样本播放完成");
-    expect(wrapper.text()).not.toContain("发送结束热键");
+    expect(wrapper.text()).not.toContain("发送收口热键");
   });
 
-  it("shows test summary above the result list on the main page", async () => {
+  it("shows only the history list on the history page", async () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
 
-    const headings = wrapper.findAll("h3").map((item) => item.text());
-    const detailIndex = headings.indexOf("测试结果");
-    const listIndex = headings.indexOf("结果列表");
-    expect(detailIndex).toBeGreaterThan(-1);
-    expect(listIndex).toBeGreaterThan(-1);
-    expect(detailIndex).toBeLessThan(listIndex);
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("历史列表");
+    expect(wrapper.text()).not.toContain("测试结果");
+  });
+
+  it("merges same-app timeline across runs on the main console so launch and close are both visible", async () => {
+    const { api } = setupDesktopApi();
+    const groupedRuns: TestRunRecord[] = [
+      {
+        id: "run-1",
+        runSessionId: "session-1",
+        appId: "xiguashuo",
+        appName: "西瓜说",
+        sampleId: "sample-1",
+        samplePath: "first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "first",
+        normalizedText: "first",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [
+          {
+            id: "event-app-start",
+            runId: "run-1",
+            eventType: "app_start",
+            tsMs: 10,
+            payloadJson: JSON.stringify({ app: "西瓜说" }),
+          },
+          {
+            id: "event-launch",
+            runId: "run-1",
+            eventType: "app_launch",
+            tsMs: 20,
+            payloadJson: JSON.stringify({ app: "西瓜说", target: "西瓜说.app" }),
+          },
+        ],
+      },
+      {
+        id: "run-2",
+        runSessionId: "session-1",
+        appId: "xiguashuo",
+        appName: "西瓜说",
+        sampleId: "sample-2",
+        samplePath: "zh.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "second",
+        normalizedText: "second",
+        inputEventCount: 1,
+        finalTextLength: 6,
+        createdAt: "2026-03-23T10:02:00.000Z",
+        timeline: [
+          {
+            id: "event-close-wait",
+            runId: "run-2",
+            eventType: "app_close_wait",
+            tsMs: 30,
+            payloadJson: JSON.stringify({ app: "西瓜说", delayMs: 3000 }),
+          },
+          {
+            id: "event-close",
+            runId: "run-2",
+            eventType: "app_close",
+            tsMs: 40,
+            payloadJson: JSON.stringify({ app: "西瓜说" }),
+          },
+        ],
+      },
+    ];
+    api.listResults.mockResolvedValueOnce(groupedRuns);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("后台启动目标应用");
+    expect(wrapper.text()).toContain("关闭目标应用");
+    expect(wrapper.text()).toContain("西瓜说 已尝试后台启动");
+    expect(wrapper.text()).toContain("西瓜说 已发送关闭指令");
+  });
+
+  it("keeps rendering the live same-app timeline after completion so no just-finished steps disappear", async () => {
+    const { handlers } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    handlers.progress?.({
+      sessionId: "session-live",
+      runId: "run-2",
+      phase: "focus_input",
+      currentAppName: "西瓜说",
+      currentSamplePath: "zh.wav",
+      textValue: "",
+      message: "running",
+      completedRuns: 1,
+      totalRuns: 2,
+    });
+
+    handlers.timeline?.({
+      id: "event-app-start",
+      runId: "session-live",
+      eventType: "app_start",
+      tsMs: 10,
+      payloadJson: JSON.stringify({ app: "西瓜说" }),
+    });
+    handlers.timeline?.({
+      id: "event-launch",
+      runId: "run-1",
+      eventType: "app_launch",
+      tsMs: 20,
+      payloadJson: JSON.stringify({ app: "西瓜说", target: "西瓜说.app" }),
+    });
+    handlers.timeline?.({
+      id: "event-close",
+      runId: "run-2",
+      eventType: "app_close",
+      tsMs: 40,
+      payloadJson: JSON.stringify({ app: "西瓜说" }),
+    });
+    handlers.progress?.({
+      sessionId: "session-live",
+      runId: "run-2",
+      phase: "completed",
+      currentAppName: "西瓜说",
+      currentSamplePath: "zh.wav",
+      textValue: "",
+      message: "done",
+      completedRuns: 2,
+      totalRuns: 2,
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("开始处理应用");
+    expect(wrapper.text()).toContain("后台启动目标应用");
+    expect(wrapper.text()).toContain("关闭目标应用");
   });
 
   it("groups results under collapsible run sessions and exports the selected session", async () => {
@@ -406,10 +560,16 @@ describe("App renderer", () => {
         inputEventCount: 1,
         finalTextLength: 5,
         createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
       },
     ];
     api.listResults.mockResolvedValueOnce(groupedRuns);
     const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
     await flushPromises();
 
     expect(wrapper.text()).toContain("03/23");
@@ -423,6 +583,27 @@ describe("App renderer", () => {
     expect(api.exportCsv).toHaveBeenCalledWith("session-1");
   });
 
+  it("clears the previous main-page results when a new run starts", async () => {
+    const { handlers } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("03/23");
+
+    handlers.progress?.({
+      sessionId: "session-2",
+      phase: "focus_input",
+      textValue: "",
+      message: "新一轮开始",
+      completedRuns: 0,
+      totalRuns: 2,
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("03/23");
+    expect(wrapper.text()).toContain("还没有测试结果");
+  });
+
   it("moves focus into the live textarea before starting a run", async () => {
     const { api } = setupDesktopApi();
     const host = document.createElement("div");
@@ -432,11 +613,53 @@ describe("App renderer", () => {
 
     await wrapper.get("button.primary-button").trigger("click");
     await flushPromises();
+    expect(api.startRun).not.toHaveBeenCalled();
 
     const textarea = wrapper.get("textarea.live-textarea").element as HTMLTextAreaElement;
     expect(api.focusBenchmarkWindow).toHaveBeenCalled();
     expect(document.activeElement).toBe(textarea);
+
+    await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
+    await flushPromises();
+    expect(api.startRun).toHaveBeenCalled();
     wrapper.unmount();
     host.remove();
+  });
+
+  it("restores the latest session summary when the pre-run dialog is canceled", async () => {
+    const { api } = setupDesktopApi();
+    const groupedRuns: TestRunRecord[] = [
+      {
+        id: "run-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "zh.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "hello",
+        normalizedText: "hello",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ];
+    api.listResults.mockResolvedValue(groupedRuns);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("测试统计");
+    await wrapper.get("button.primary-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("测试统计");
+    await wrapper.get(".dialog-card--countdown .ghost-button").trigger("click");
+    await flushPromises();
+
+    expect(api.startRun).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("测试统计");
+    expect(wrapper.text()).toContain("Wispr Flow");
   });
 });

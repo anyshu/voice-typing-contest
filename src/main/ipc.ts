@@ -1,12 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { nanoid } from "nanoid";
 import type { AppConfig, InputObservationEvent } from "../shared/types";
 import { SampleManager } from "./sample-manager";
 import { ConfigStore } from "./config-store";
 import { ResultStore } from "./result-store";
 import { PermissionManager } from "./permission-manager";
 import { RunController } from "./run-controller";
+import { formatTimelineLog } from "./run-logging";
 
 interface IpcDeps {
   configStore: ConfigStore;
@@ -21,6 +23,9 @@ interface IpcDeps {
 }
 
 export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
+  let activeRun: Promise<unknown> | null = null;
+  const timelineFirstTsByRunId = new Map<string, number>();
+
   ipcMain.handle("settings:get", async () => ({
     ...deps.getConfig(),
     devices: deps.getDevices(),
@@ -95,7 +100,41 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return { ok: true };
   });
 
-  ipcMain.handle("run:start", async () => await deps.runController.run(deps.getConfig()));
+  ipcMain.handle("run:start", async () => {
+    const phase = deps.runController.getProgress().phase;
+    const terminal = phase === "idle" || phase === "completed" || phase === "failed" || phase === "cancelled";
+
+    if (activeRun) {
+      if (!terminal) {
+        throw new Error("上一轮测试还在运行或关闭中，请稍候再开始。");
+      }
+      try {
+        await activeRun;
+      } catch {
+        // Ignore the previous run outcome; we only need it fully settled.
+      }
+    }
+
+    activeRun = deps.runController.run(deps.getConfig());
+    try {
+      return await activeRun;
+    } finally {
+      activeRun = null;
+    }
+  });
+  ipcMain.handle("run:emitTimelineEvent", async (_event, runId: string, eventType: string, payload: Record<string, unknown>) => {
+    const record = {
+      id: nanoid(),
+      runId,
+      eventType,
+      tsMs: performance.now(),
+      payloadJson: JSON.stringify(payload),
+    };
+    console.log(formatTimelineLog(record, timelineFirstTsByRunId));
+    win.webContents.send("run:event", record);
+    return { ok: true };
+  });
+  ipcMain.handle("run:inspect", async () => await deps.runController.inspect(deps.getConfig()));
   ipcMain.handle("run:stop", async () => deps.runController.stop());
   ipcMain.handle("results:list", async () => deps.resultStore.listRuns());
   ipcMain.handle("results:listSessions", async () => deps.resultStore.listSessions());

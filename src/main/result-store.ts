@@ -56,7 +56,8 @@ export class ResultStore {
         total_run_ms INTEGER,
         input_event_count INTEGER NOT NULL,
         final_text_length INTEGER NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        timeline_json TEXT NOT NULL DEFAULT '[]'
       );
       CREATE TABLE IF NOT EXISTS run_events (
         id TEXT PRIMARY KEY,
@@ -74,6 +75,9 @@ export class ResultStore {
     }
     if (!testRunColumnNames.has("trigger_stop_to_final_text_ms")) {
       this.db.exec("ALTER TABLE test_runs ADD COLUMN trigger_stop_to_final_text_ms INTEGER");
+    }
+    if (!testRunColumnNames.has("timeline_json")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN timeline_json TEXT NOT NULL DEFAULT '[]'");
     }
   }
 
@@ -113,8 +117,8 @@ export class ResultStore {
         id, run_session_id, app_id, app_name, sample_id, sample_path, status, phase,
         failure_category, failure_reason, raw_text, normalized_text, expected_text,
         hotkey_to_audio_ms, trigger_stop_to_first_char_ms, trigger_stop_to_final_text_ms,
-        total_run_ms, input_event_count, final_text_length, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_run_ms, input_event_count, final_text_length, created_at, timeline_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.runSessionId,
@@ -136,6 +140,7 @@ export class ResultStore {
       record.inputEventCount,
       record.finalTextLength,
       record.createdAt,
+      JSON.stringify(record.timeline),
     );
   }
 
@@ -147,6 +152,10 @@ export class ResultStore {
       record.tsMs,
       record.payloadJson,
     );
+  }
+
+  updateRunTimeline(runId: string, timeline: RunEventRecord[]): void {
+    this.db.prepare("UPDATE test_runs SET timeline_json = ? WHERE id = ?").run(JSON.stringify(timeline), runId);
   }
 
   listRuns(sessionId?: string): TestRunRecord[] {
@@ -171,14 +180,23 @@ export class ResultStore {
         total_run_ms AS totalRunMs,
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
-        created_at AS createdAt
+        created_at AS createdAt,
+        timeline_json AS timelineJson
       FROM test_runs
       ${sessionId ? "WHERE run_session_id = ?" : ""}
       ORDER BY created_at DESC
     `;
-    return (sessionId
+    const rows = (sessionId
       ? this.db.prepare(query).all(sessionId)
-      : this.db.prepare(query).all()) as unknown as TestRunRecord[];
+      : this.db.prepare(query).all()) as Array<TestRunRecord & { timelineJson?: string }>;
+    return rows.map(({ id, timelineJson, ...row }) => {
+      const timeline = this.parseTimeline(timelineJson);
+      return {
+        id,
+        ...row,
+        timeline: timeline.length ? timeline : this.listEventsForRun(id),
+      };
+    });
   }
 
   listSessions(): RunSessionSummary[] {
@@ -221,12 +239,34 @@ export class ResultStore {
         total_run_ms AS totalRunMs,
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
-        created_at AS createdAt
+        created_at AS createdAt,
+        timeline_json AS timelineJson
       FROM test_runs
       WHERE id = ?
-    `).get(runId) as TestRunRecord | undefined;
+    `).get(runId) as (TestRunRecord & { timelineJson?: string }) | undefined;
     if (!record) return undefined;
-    const events = this.db.prepare(`
+    const timeline = this.parseTimeline(record.timelineJson);
+    const normalizedTimeline = timeline.length ? timeline : this.listEventsForRun(runId);
+    const { timelineJson, ...baseRecord } = record;
+    const normalizedRecord: TestRunRecord = {
+      ...baseRecord,
+      timeline: normalizedTimeline,
+    };
+    return { record: normalizedRecord, events: normalizedTimeline };
+  }
+
+  private parseTimeline(timelineJson?: string): RunEventRecord[] {
+    if (!timelineJson) return [];
+    try {
+      const timeline = JSON.parse(timelineJson) as RunEventRecord[];
+      return Array.isArray(timeline) ? timeline : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private listEventsForRun(runId: string): RunEventRecord[] {
+    return this.db.prepare(`
       SELECT
         id,
         run_id AS runId,
@@ -237,7 +277,6 @@ export class ResultStore {
       WHERE run_id = ?
       ORDER BY ts_ms ASC
     `).all(runId) as unknown as RunEventRecord[];
-    return { record, events };
   }
 
   exportCsv(sessionId?: string): string {

@@ -12,6 +12,7 @@ export type RunPhase =
   | "wait_before_trigger_stop"
   | "trigger_stop"
   | "observing_text"
+  | "between_samples_wait"
   | "completed"
   | "failed"
   | "cancelled";
@@ -153,6 +154,7 @@ export interface TestRunRecord {
   inputEventCount: number;
   finalTextLength: number;
   createdAt: string;
+  timeline: RunEventRecord[];
 }
 
 export interface RunEventRecord {

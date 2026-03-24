@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
-import { basename, extname, join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { nanoid } from "nanoid";
-import { readWavDurationMs } from "../shared/wav";
+import { isSupportedAudioSample, readAudioDurationMs } from "../shared/audio";
 import type { AudioSample } from "../shared/types";
 import { resolveHomePath } from "../shared/paths";
 
@@ -21,9 +21,9 @@ export class SampleManager {
         await this.walk(root, filePath, found);
         continue;
       }
-      if (extname(entry.name).toLowerCase() !== ".wav") continue;
+      if (!isSupportedAudioSample(entry.name)) continue;
       const relativePath = relative(root, filePath);
-      const durationMs = await readWavDurationMs(filePath);
+      const durationMs = await readAudioDurationMs(filePath);
       found.push({
         id: nanoid(),
         filePath,

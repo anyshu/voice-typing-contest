@@ -15,6 +15,7 @@ import {
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { defaultConfig } from "../shared/defaults";
+import { safeTimelinePayload, timelineDetail, timelineTitle } from "../shared/timeline";
 import type {
   AppConfig,
   AudioDevice,
@@ -29,7 +30,7 @@ import type {
   TestRunRecord,
 } from "../shared/types";
 
-const page = ref<"main" | "checks" | "samples" | "intro" | "about" | "settings">("main");
+const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "about" | "settings">("main");
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
 const devices = ref<AudioDevice[]>([]);
@@ -38,7 +39,9 @@ const results = ref<TestRunRecord[]>([]);
 const expandedSessionIds = ref<string[]>([]);
 const progress = ref<RunProgress>({ phase: "idle", textValue: "", message: "空闲", completedRuns: 0, totalRuns: 0 });
 const preflightReport = ref<PreflightReport | null>(null);
-const timeline = ref<RunEventRecord[]>([]);
+const liveTimelineByRunId = ref<Record<string, RunEventRecord[]>>({});
+const lastTimelineRunId = ref<string | null>(null);
+const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const liveInput = ref("");
 const liveTextarea = ref<HTMLTextAreaElement | null>(null);
@@ -47,21 +50,30 @@ const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
 const completedSessionId = ref<string | null>(null);
 const completionDialogVisible = ref(false);
+const completionDialogShownForSessionId = ref<string | null>(null);
+const pendingRunStart = ref(false);
+const preRunDialogVisible = ref(false);
+const preRunTimelineEvents = ref<RunEventRecord[]>([]);
+const showLatestSessionTimeline = ref(true);
+let resolvePreRunConfirm: (() => void) | null = null;
+
+const PRE_RUN_RUN_ID_PREFIX = "prep:";
 
 const phaseLabels: Record<RunPhase, string> = {
   idle: "空闲",
   preflight: "运行前检查",
   focus_input: "聚焦输入框",
-  wait_before_hotkey: "等待开始热键",
-  trigger_start: "发送开始热键",
+  wait_before_hotkey: "等待触发热键",
+  trigger_start: "发送触发热键",
   wait_before_audio: "等待音频启动",
   audio_playing: "播放音频",
-  wait_before_trigger_stop: "等待结束热键",
-  trigger_stop: "发送结束热键",
+  wait_before_trigger_stop: "等待收口热键",
+  trigger_stop: "发送收口热键",
   observing_text: "观察输入",
+  between_samples_wait: "等待下一条样本",
   completed: "完成",
   failed: "失败",
-  cancelled: "已取消",
+  cancelled: "已结束",
 };
 
 const failureLabels: Record<FailureCategory, string> = {
@@ -80,8 +92,8 @@ const failureLabels: Record<FailureCategory, string> = {
 };
 
 const modeLabels = {
-  hold_release: "按住开始，松开结束",
-  press_start_press_stop: "按一次开始，再按一次结束",
+  hold_release: "按住热键，松开收口",
+  press_start_press_stop: "按一次触发，再按一次收口",
 } as const;
 
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
@@ -112,6 +124,7 @@ const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
   if (page.value === "samples") return "样本";
+  if (page.value === "history") return "测试历史";
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
   return "当前实现";
@@ -120,28 +133,69 @@ const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
   if (page.value === "checks") return "开跑前检查清单";
   if (page.value === "samples") return "测试集与目录视图";
+  if (page.value === "history") return "历史结果与分轮导出";
   if (page.value === "settings") return "运行参数与目标应用";
   if (page.value === "intro") return "准备路径与使用说明";
   return "当前实现状态";
 });
-const activeTimelineRunId = computed(() => timeline.value[timeline.value.length - 1]?.runId ?? "");
-const latestTimeline = computed(() => {
-  const activeRunId = activeTimelineRunId.value;
-  if (!activeRunId) return [];
-  return timeline.value.filter((item) => item.runId === activeRunId).slice(-10);
-});
-const timelineCards = computed(() => {
-  const items = latestTimeline.value;
+function buildTimelineCards(
+  items: RunEventRecord[],
+  showLiveState: boolean,
+  terminalStatus?: string,
+) {
+  if (!items.length) return [];
+
   const firstTs = items[0]?.tsMs ?? 0;
-  return items.map((item, index) => ({
+  const formatTimelineOffset = (offsetMs: number): string => {
+    const totalMs = Math.max(0, Math.round(offsetMs));
+    const hours = Math.floor(totalMs / 3_600_000);
+    const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
+    const seconds = Math.floor((totalMs % 60_000) / 1000);
+    const milliseconds = totalMs % 1000;
+    return [
+      String(hours).padStart(2, "0"),
+      String(minutes).padStart(2, "0"),
+      String(seconds).padStart(2, "0"),
+    ].join(":") + `.${String(milliseconds).padStart(3, "0")}`;
+  };
+  const baseItems = items.map((item, index) => ({
     ...item,
     title: timelineTitle(item),
     detail: timelineDetail(item),
-    stateClass: running.value && index === items.length - 1 ? "timeline-current" : "timeline-completed",
-    offsetLabel: `+${Math.max(0, Math.round(item.tsMs - firstTs))} ms`,
-    gapLabel: index === 0 ? "开始" : `间隔 ${Math.max(0, Math.round(item.tsMs - items[index - 1]!.tsMs))} ms`,
+    stateClass: timelineStateClass(item, showLiveState && index === items.length - 1),
+    timestampLabel: formatTimelineOffset(item.tsMs - firstTs),
   }));
-});
+
+  const syntheticStart = {
+    id: "__timeline_start__",
+    runId: items[0]?.runId ?? "",
+    eventType: "__start__",
+    tsMs: firstTs,
+    payloadJson: "{}",
+    title: "开始",
+    detail: "整轮测试开始。",
+    stateClass: "timeline-bookend",
+    timestampLabel: "00:00:00.000",
+  };
+
+  const cards = [syntheticStart, ...baseItems];
+  if ((showLiveState && isTerminalPhase(progress.value.phase)) || (!showLiveState && terminalStatus && ["completed", "failed", "cancelled"].includes(terminalStatus))) {
+    const lastTs = items[items.length - 1]?.tsMs ?? firstTs;
+    cards.push({
+      id: "__timeline_close__",
+      runId: items[items.length - 1]?.runId ?? "",
+      eventType: "__close__",
+      tsMs: lastTs,
+      payloadJson: "{}",
+      title: "结束",
+      detail: "整轮测试已结束。",
+      stateClass: "timeline-bookend",
+      timestampLabel: formatTimelineOffset(lastTs - firstTs),
+    });
+  }
+
+  return cards;
+}
 
 function plainConfig(): AppConfig {
   return JSON.parse(JSON.stringify(config.value)) as AppConfig;
@@ -157,7 +211,7 @@ function failureText(category?: FailureCategory): string {
 
 function resultStatusText(status: TestRunRecord["status"]): string {
   if (status === "success") return "成功";
-  if (status === "cancelled") return "已取消";
+  if (status === "cancelled") return "已结束";
   return "失败";
 }
 
@@ -172,6 +226,23 @@ function appModeText(mode: keyof typeof modeLabels): string {
   return modeLabels[mode];
 }
 
+async function jumpToGuideTarget(target: "apps" | "hotkey" | "samples" | "run"): Promise<void> {
+  if (target === "run") {
+    page.value = "main";
+  } else if (target === "samples") {
+    page.value = "samples";
+  } else {
+    page.value = "settings";
+  }
+  await nextTick();
+  const element = document.querySelector<HTMLElement>(`[data-guide-target="${target}"]`);
+  if (!element) return;
+  element.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (typeof element.focus === "function") {
+    element.focus({ preventScroll: true });
+  }
+}
+
 function sampleMeta(language: string, durationMs?: number): string {
   if (!durationMs) return language;
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
@@ -180,7 +251,7 @@ function sampleMeta(language: string, durationMs?: number): string {
 function sessionStatusText(status: RunSessionSummary["status"]): string {
   if (status === "completed") return "已完成";
   if (status === "failed") return "失败";
-  if (status === "cancelled") return "已取消";
+  if (status === "cancelled") return "已结束";
   if (status === "preflight") return "检查中";
   return phaseText(status);
 }
@@ -194,6 +265,17 @@ function formatSessionTime(value: string): string {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function formatSessionTimestamp(value: string): string {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  const second = String(date.getSeconds()).padStart(2, "0");
+  return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
 }
 
 function formatLatencyMs(value?: number): string {
@@ -217,7 +299,104 @@ function median(values: number[]): number | undefined {
 
 const latestSessionGroup = computed(() => resultSessionGroups.value[0]);
 const completedSessionGroup = computed(() => resultSessionGroups.value.find((item) => item.session.id === completedSessionId.value));
+const mainSessionGroup = computed(() => {
+  if (pendingRunStart.value || running.value) {
+    return resultSessionGroups.value.find((item) => item.session.id === progress.value.sessionId);
+  }
+  if (!showLatestSessionTimeline.value) {
+    return undefined;
+  }
+  return latestSessionGroup.value;
+});
+const latestMainRun = computed(() => mainSessionGroup.value?.runs[0]);
+const mainTimelineAppName = computed(() => progress.value.currentAppName ?? latestMainRun.value?.appName);
+const mainTimelineSessionId = computed(() => progress.value.sessionId ?? mainSessionGroup.value?.session.id);
+const liveRunAppNameMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const run of mainSessionGroup.value?.runs ?? []) {
+    map.set(run.id, run.appName);
+  }
+  for (const event of liveTimelineEvents.value) {
+    const payload = safeTimelinePayload(event);
+    const appName = typeof payload.app === "string" ? payload.app : undefined;
+    if (appName) {
+      map.set(event.runId, appName);
+    }
+  }
+  if (progress.value.runId && progress.value.currentAppName) {
+    map.set(progress.value.runId, progress.value.currentAppName);
+  }
+  return map;
+});
+const displayedTimeline = computed(() => {
+  const preRunEvents = preRunTimelineEvents.value;
+  const appName = mainTimelineAppName.value;
+  const sessionId = mainTimelineSessionId.value;
+  if (!appName) {
+    const liveRunId = progress.value.runId ?? lastTimelineRunId.value;
+    const liveEvents = liveRunId ? (liveTimelineByRunId.value[liveRunId] ?? []) : [];
+    return [...preRunEvents, ...liveEvents];
+  }
+
+  const live = liveTimelineEvents.value.filter((event) => {
+    const payload = safeTimelinePayload(event);
+    if (typeof payload.app === "string" && payload.app === appName) {
+      return true;
+    }
+    const mappedApp = liveRunAppNameMap.value.get(event.runId);
+    if (mappedApp === appName) {
+      return true;
+    }
+    return Boolean(sessionId && event.runId === sessionId && payload.app === appName);
+  });
+  const normalizedLive = live
+    .sort((left, right) => left.tsMs - right.tsMs)
+    .filter((event, index, items) => index === items.findIndex((candidate) => candidate.id === event.id));
+  if (normalizedLive.length) {
+    return [...preRunEvents, ...normalizedLive];
+  }
+
+  const persisted = (mainSessionGroup.value?.runs ?? [])
+    .filter((run) => run.appName === appName)
+    .flatMap((run) => run.timeline);
+  const merged = [...persisted]
+    .sort((left, right) => left.tsMs - right.tsMs)
+    .filter((event, index, items) => index === items.findIndex((candidate) => candidate.id === event.id));
+  return [...preRunEvents, ...merged];
+});
+const timelineCards = computed(() => buildTimelineCards(
+  displayedTimeline.value,
+  running.value || pendingRunStart.value,
+  latestMainRun.value?.phase,
+));
 const latestSessionAppStats = computed(() => (latestSessionGroup.value?.appGroups ?? []).map((group) => {
+  const runs = group.runs;
+  const firstCharValues = runs
+    .map((item) => item.triggerStopToFirstCharMs)
+    .filter((value): value is number => value !== undefined);
+  const textLengths = runs
+    .map((item) => item.finalTextLength)
+    .filter((value): value is number => value !== undefined);
+  const totalRunValues = runs
+    .map((item) => item.totalRunMs)
+    .filter((value): value is number => value !== undefined);
+
+  return {
+    appName: group.appName,
+    summary: `共 ${runs.length} 条 · 成功 ${group.successCount} · 失败 ${group.failedCount}${group.cancelledCount ? ` · 取消 ${group.cancelledCount}` : ""}`,
+    stats: [
+      { label: "样本总数", value: String(runs.length), tone: "" },
+      { label: "成功", value: String(group.successCount), tone: "success" },
+      { label: "失败", value: String(group.failedCount), tone: "danger" },
+      { label: "平均首字时间", value: formatLatencyMs(average(firstCharValues)), tone: "accent" },
+      { label: "平均字数", value: textLengths.length ? String(Math.round(textLengths.reduce((sum, value) => sum + value, 0) / textLengths.length)) : "-", tone: "" },
+      { label: "最长首字时间", value: formatLatencyMs(firstCharValues.length ? Math.max(...firstCharValues) : undefined), tone: "accent" },
+      { label: "首字时间中位数", value: formatLatencyMs(median(firstCharValues)), tone: "accent" },
+      { label: "总共耗时", value: formatLatencyMs(totalRunValues.length ? totalRunValues.reduce((sum, value) => sum + value, 0) : undefined), tone: "" },
+    ],
+  };
+}));
+const mainSessionAppStats = computed(() => (mainSessionGroup.value?.appGroups ?? []).map((group) => {
   const runs = group.runs;
   const firstCharValues = runs
     .map((item) => item.triggerStopToFirstCharMs)
@@ -265,77 +444,18 @@ const completedDialogSummary = computed(() => {
   return {
     status: sessionStatusText(group.session.status),
     appCount: group.appGroups.length,
-    sampleCount: group.runs.length,
+    sampleCount: new Set(group.runs.map((item) => item.sampleId)).size,
     elapsed: formatElapsedDuration(group.session.startedAt, group.session.finishedAt),
   };
 });
 
-function safePayload(item: RunEventRecord): Record<string, unknown> {
-  try {
-    return JSON.parse(item.payloadJson) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-function tailName(value: unknown): string {
-  const text = typeof value === "string" ? value : "";
-  if (!text) return "-";
-  const normalized = text.replace(/\\/g, "/");
-  return normalized.split("/").filter(Boolean).pop() ?? text;
-}
-
-function timelineTitle(item: RunEventRecord): string {
-  const labels: Record<string, string> = {
-    focus_input: "聚焦检测框",
-    selftest_mode: "进入内建自测",
-    app_launch: "后台启动目标应用",
-    app_launch_wait: "等待应用启动",
-    focus_input_wait: "等待检测框稳定",
-    trigger_start: "发送开始热键",
-    audio_start: "开始播放样本",
-    audio_end: "样本播放完成",
-    trigger_stop: "发送结束热键",
-    input_observed: "检测到文本输入",
-    between_samples_wait: "等待下一条样本",
-    app_close_wait: "等待关闭应用",
-    app_close: "关闭目标应用",
-  };
-  return labels[item.eventType] ?? item.eventType;
-}
-
-function timelineDetail(item: RunEventRecord): string {
-  const payload = safePayload(item);
-  switch (item.eventType) {
-    case "focus_input":
-      return "把焦点拉回实时输入框，后面的文本应该落在这里。";
-    case "selftest_mode":
-      return `本轮用的是 ${String(payload.app ?? "内建自测")}。`;
-    case "app_launch":
-      return `${String(payload.app ?? "目标应用")} 已尝试后台启动，目标是 ${tailName(payload.target)}。`;
-    case "app_launch_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，让 ${String(payload.app ?? "目标应用")} 启动稳定。`;
-    case "focus_input_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，再开始发送热键。`;
-    case "trigger_start":
-      return `开始热键：${String(payload.chord ?? "-")}`;
-    case "audio_start":
-      return `播放样本：${tailName(payload.playableSamplePath ?? payload.sample)}`;
-    case "audio_end":
-      return "音频已经播完，准备收尾。";
-    case "trigger_stop":
-      return "结束热键已经发出。";
-    case "input_observed":
-      return `共观察到 ${String(payload.count ?? 0)} 次输入事件。`;
-    case "between_samples_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，再切到下一条样本。`;
-    case "app_close_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，然后关闭 ${String(payload.app ?? "目标应用")}。`;
-    case "app_close":
-      return `${String(payload.app ?? "目标应用")} 已发送关闭指令。`;
-    default:
-      return item.payloadJson === "{}" ? "无额外信息" : item.payloadJson;
-  }
+function timelineStateClass(item: RunEventRecord, isLatest: boolean): string {
+  if (item.eventType === "run_failed") return "timeline-failure";
+  if (item.eventType.startsWith("pre_run_")) return "timeline-prep";
+  if (item.eventType === "app_start") return "timeline-app";
+  if (item.eventType === "sample_start") return "timeline-sample";
+  if (isLatest && running.value) return "timeline-live";
+  return "timeline-action";
 }
 
 async function loadBootstrap(): Promise<void> {
@@ -352,6 +472,13 @@ async function refreshEnvironment(): Promise<void> {
   devices.value = snapshot.devices;
 }
 
+async function inspectRunReadiness(): Promise<void> {
+  await saveSettings(false);
+  await refreshEnvironment();
+  preflightReport.value = await window.vtc.inspectRun() as PreflightReport;
+  notice.value = preflightReport.value.ok ? "检查完成，可以开始。" : "检查完成，请先处理未通过项。";
+}
+
 async function refreshResultData(preferredRunId?: string): Promise<void> {
   const [nextResults, nextSessions] = await Promise.all([
     window.vtc.listResults() as Promise<TestRunRecord[]>,
@@ -365,6 +492,24 @@ async function refreshResultData(preferredRunId?: string): Promise<void> {
     validExpandedIds.push(nextSessions[0].id);
   }
   expandedSessionIds.value = validExpandedIds;
+  maybeShowCompletionDialog();
+}
+
+function maybeShowCompletionDialog(): void {
+  const { sessionId, phase, completedRuns, totalRuns } = progress.value;
+  if (!sessionId || totalRuns <= 0) {
+    return;
+  }
+  const batchFinished = isTerminalPhase(phase) && completedRuns >= totalRuns;
+  const sessionGroup = resultSessionGroups.value.find((item) => item.session.id === sessionId);
+  const sessionPersisted = Boolean(sessionGroup?.session.finishedAt);
+  const allRunsPersisted = (sessionGroup?.runs.length ?? 0) >= totalRuns;
+  if (!batchFinished || !sessionPersisted || !allRunsPersisted || completionDialogShownForSessionId.value === sessionId) {
+    return;
+  }
+  completedSessionId.value = sessionId;
+  completionDialogVisible.value = true;
+  completionDialogShownForSessionId.value = sessionId;
 }
 
 async function saveSettings(showNotice = true): Promise<void> {
@@ -404,23 +549,82 @@ async function chooseDatabasePath(): Promise<void> {
 
 async function runBatch(): Promise<void> {
   try {
+    pendingRunStart.value = true;
     preflightReport.value = null;
     liveInput.value = "";
-    timeline.value = [];
-    notice.value = "正在开始运行。";
+    liveTimelineByRunId.value = {};
+    lastTimelineRunId.value = null;
+    liveTimelineEvents.value = [];
+    preRunTimelineEvents.value = [];
+    showLatestSessionTimeline.value = false;
+    notice.value = "开始前提示已弹出，确认开始后请不要操作鼠标和键盘。";
     await focusLiveTextarea();
     await saveSettings(false);
+    await runPreStartCountdown();
     const report = await window.vtc.startRun() as PreflightReport;
     preflightReport.value = report;
     await refreshResultData();
     if (!report.ok) {
       notice.value = "这次没跑起来，先看上面的红色提示。";
     } else if (progress.value.phase === "completed") {
-      notice.value = "本轮已经跑完。";
+      notice.value = "测试已完成。";
     }
   } catch (error) {
-    notice.value = `开始运行失败：${error instanceof Error ? error.message : String(error)}`;
+    preRunDialogVisible.value = false;
+    resolvePreRunConfirm = null;
+    notice.value = `开始失败：${error instanceof Error ? error.message : String(error)}`;
+    pendingRunStart.value = false;
   }
+}
+
+async function runPreStartCountdown(): Promise<void> {
+  const runId = `${PRE_RUN_RUN_ID_PREFIX}${Date.now()}`;
+  preRunDialogVisible.value = true;
+
+  await emitRunTimelineEvent(runId, "pre_run_prompt", {
+    message: "开始测试前请先确认已经准备好；不确认则不会开始。",
+  });
+  notice.value = "开始前提示已弹出，点击“我已准备好，开始测试”后会立即开始。";
+  await new Promise<void>((resolve) => {
+    resolvePreRunConfirm = resolve;
+  });
+
+  preRunDialogVisible.value = false;
+  notice.value = "已确认，开始正式测试。";
+  await emitRunTimelineEvent(runId, "pre_run_acknowledged", {
+    message: "测试员确认可以开始。",
+  });
+  await emitRunTimelineEvent(runId, "pre_run_begin", {
+    message: "提示对话框已关闭，正式开始测试。",
+  });
+  preRunTimelineEvents.value = [];
+  resolvePreRunConfirm = null;
+}
+
+async function emitRunTimelineEvent(runId: string, eventType: string, payload: Record<string, unknown>): Promise<void> {
+  const emitter = window.vtc.emitRunTimelineEvent as ((runId: string, eventType: string, payload: Record<string, unknown>) => Promise<unknown>) | undefined;
+  if (typeof emitter !== "function") {
+    return;
+  }
+  await emitter(runId, eventType, payload);
+}
+
+function confirmPreRunDialog(): void {
+  if (!preRunDialogVisible.value) return;
+  resolvePreRunConfirm?.();
+}
+
+function cancelPreRunDialog(): void {
+  if (!preRunDialogVisible.value) return;
+  preRunDialogVisible.value = false;
+  preRunTimelineEvents.value = [];
+  liveTimelineByRunId.value = {};
+  liveTimelineEvents.value = [];
+  lastTimelineRunId.value = null;
+  showLatestSessionTimeline.value = true;
+  resolvePreRunConfirm = null;
+  pendingRunStart.value = false;
+  notice.value = "已取消开始，准备好之后再点开始。";
 }
 
 async function focusLiveTextarea(): Promise<void> {
@@ -438,8 +642,7 @@ async function focusLiveTextarea(): Promise<void> {
   currentTextarea.setSelectionRange(end, end);
 }
 
-function scrollTimelineToLatest(): void {
-  const list = timelineList.value;
+function scrollTimelineToLatest(list = timelineList.value): void {
   if (!list) return;
   if (typeof list.scrollTo === "function") {
     list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
@@ -451,9 +654,9 @@ function scrollTimelineToLatest(): void {
 async function stopBatch(): Promise<void> {
   try {
     await window.vtc.stopRun();
-    notice.value = "正在关闭本轮。";
+    notice.value = "正在关闭测试。";
   } catch (error) {
-    notice.value = `停止失败：${error instanceof Error ? error.message : String(error)}`;
+    notice.value = `关闭失败：${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
@@ -574,6 +777,11 @@ function normalizeHotkey(event: KeyboardEvent): string {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
+  if (preRunDialogVisible.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (!capturingAppId.value) return;
   event.preventDefault();
   event.stopPropagation();
@@ -606,6 +814,11 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
 }
 
 function handleGlobalKeyup(event: KeyboardEvent): void {
+  if (preRunDialogVisible.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (!capturingAppId.value) return;
   if (!isModifierOnly(event)) return;
   event.preventDefault();
@@ -668,13 +881,29 @@ function onFocusState(event: FocusEvent): void {
   });
 }
 
+function lockDialogPointerInput(event: MouseEvent): void {
+  if (!preRunDialogVisible.value) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest(".dialog-card--countdown")) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 onMounted(async () => {
   await loadBootstrap();
   window.addEventListener("keydown", handleGlobalKeydown, true);
   window.addEventListener("keyup", handleGlobalKeyup, true);
+  window.addEventListener("mousedown", lockDialogPointerInput, true);
+  window.addEventListener("mouseup", lockDialogPointerInput, true);
+  window.addEventListener("click", lockDialogPointerInput, true);
 
   window.vtc.onProgress((payload) => {
     progress.value = payload as RunProgress;
+    if (progress.value.sessionId || isTerminalPhase(progress.value.phase)) {
+      pendingRunStart.value = false;
+      showLatestSessionTimeline.value = true;
+    }
+    maybeShowCompletionDialog();
     if (progress.value.textValue !== undefined) {
       liveInput.value = progress.value.textValue;
     }
@@ -691,7 +920,19 @@ onMounted(async () => {
   });
 
   window.vtc.onTimeline((payload) => {
-    timeline.value = [...timeline.value, payload as RunEventRecord];
+    const record = payload as RunEventRecord;
+    if (record.runId.startsWith(PRE_RUN_RUN_ID_PREFIX)) {
+      preRunTimelineEvents.value = [...preRunTimelineEvents.value, record];
+      lastTimelineRunId.value = record.runId;
+      return;
+    }
+    const nextTimeline = [...(liveTimelineByRunId.value[record.runId] ?? []), record];
+    liveTimelineByRunId.value = {
+      ...liveTimelineByRunId.value,
+      [record.runId]: nextTimeline,
+    };
+    liveTimelineEvents.value = [...liveTimelineEvents.value, record];
+    lastTimelineRunId.value = record.runId;
   });
 
   window.vtc.onSelfTestText((chunks) => {
@@ -712,7 +953,7 @@ onMounted(async () => {
   });
 });
 
-watch(() => timeline.value[timeline.value.length - 1]?.id, async (latestId) => {
+watch(() => displayedTimeline.value[displayedTimeline.value.length - 1]?.id, async (latestId) => {
   if (!latestId) return;
   await nextTick();
   scrollTimelineToLatest();
@@ -723,13 +964,14 @@ watch(() => progress.value.phase, async (phase, previousPhase) => {
     return;
   }
   await refreshResultData();
-  completedSessionId.value = resultSessionGroups.value[0]?.session.id ?? null;
-  completionDialogVisible.value = Boolean(completedSessionId.value);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown, true);
   window.removeEventListener("keyup", handleGlobalKeyup, true);
+  window.removeEventListener("mousedown", lockDialogPointerInput, true);
+  window.removeEventListener("mouseup", lockDialogPointerInput, true);
+  window.removeEventListener("click", lockDialogPointerInput, true);
 });
 </script>
 
@@ -765,6 +1007,12 @@ onBeforeUnmount(() => {
               <span>样本</span>
             </button>
           </li>
+          <li>
+            <button class="nav-button" :class="{ active: page === 'history' }" @click="page = 'history'">
+              <HugeiconsIcon :icon="Analytics01Icon" :size="18" class="nav-icon" />
+              <span>测试历史</span>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -778,7 +1026,7 @@ onBeforeUnmount(() => {
             </button>
           </li>
           <li>
-            <button class="nav-button" :class="{ active: page === 'intro' }" @click="page = 'intro'">
+            <button class="nav-button nav-button-guide" :class="{ active: page === 'intro' }" @click="page = 'intro'">
               <HugeiconsIcon :icon="BookOpen01Icon" :size="18" class="nav-icon" />
               <span>怎么开始</span>
             </button>
@@ -795,98 +1043,74 @@ onBeforeUnmount(() => {
 
     <main class="content">
       <header class="topbar">
-        <div>
+        <div v-if="page !== 'main'">
           <p class="muted">{{ pageSubtitle }}</p>
           <h2>{{ pageTitle }}</h2>
         </div>
-        <div v-if="page === 'main'" class="top-actions">
-          <button class="primary-button action-button" :disabled="running" @click="runBatch">
-            <HugeiconsIcon :icon="PlayCircleIcon" :size="18" class="button-icon" />
-            <span>开始运行</span>
-          </button>
-          <button class="ghost-button action-button" :disabled="!running" @click="stopBatch">
-            <HugeiconsIcon :icon="StopCircleIcon" :size="18" class="button-icon" />
-            <span>关闭本轮</span>
+        <div v-if="page === 'main'" class="topbar-main-actions">
+          <section class="summary-strip">
+            <div class="summary-item">
+              <HugeiconsIcon :icon="DashboardSquare01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">已启用应用</span>
+              <strong>{{ enabledApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="FolderAudioIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">已启用样本</span>
+              <strong>{{ enabledSamples.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="Shield01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">辅助功能权限</span>
+              <strong>{{ accessibility?.granted ? "已授权" : "未授权" }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="Speaker01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">输出设备</span>
+              <strong>{{ selectedDevice?.name || "未选择" }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="Analytics01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">当前进度</span>
+              <strong>{{ progress.completedRuns }} / {{ progress.totalRuns }}</strong>
+            </div>
+          </section>
+          <button
+            class="action-button"
+            :class="running ? 'ghost-button' : 'primary-button'"
+            :data-guide-target="running ? undefined : 'run'"
+            :disabled="pendingRunStart || preRunDialogVisible"
+            @click="running ? stopBatch() : runBatch()"
+          >
+            <HugeiconsIcon :icon="running ? StopCircleIcon : PlayCircleIcon" :size="18" class="button-icon" />
+            <span>{{ running ? "关闭" : (preRunDialogVisible ? "准备中" : "开始") }}</span>
           </button>
         </div>
       </header>
 
-      <div class="notice-bar">
-        <strong>最近消息：</strong>{{ notice }}
+      <div v-if="page !== 'main'" class="notice-bar">
+        <span>{{ notice }}</span>
       </div>
 
       <template v-if="page === 'main'">
-        <section class="summary-grid">
-          <article class="panel summary-card">
-            <div class="summary-icon-wrap">
-              <HugeiconsIcon :icon="DashboardSquare01Icon" :size="18" class="summary-icon" />
-            </div>
-            <div class="summary-copy">
-              <span class="muted">已启用应用</span>
-              <strong>{{ enabledApps.length }}</strong>
-            </div>
-          </article>
-          <article class="panel summary-card">
-            <div class="summary-icon-wrap">
-              <HugeiconsIcon :icon="FolderAudioIcon" :size="18" class="summary-icon" />
-            </div>
-            <div class="summary-copy">
-              <span class="muted">已启用样本</span>
-              <strong>{{ enabledSamples.length }}</strong>
-            </div>
-          </article>
-          <article class="panel summary-card">
-            <div class="summary-icon-wrap">
-              <HugeiconsIcon :icon="Shield01Icon" :size="18" class="summary-icon" />
-            </div>
-            <div class="summary-copy">
-              <span class="muted">辅助功能权限</span>
-              <strong>{{ accessibility?.granted ? "已授权" : "未授权" }}</strong>
-            </div>
-          </article>
-          <article class="panel summary-card">
-            <div class="summary-icon-wrap">
-              <HugeiconsIcon :icon="Speaker01Icon" :size="18" class="summary-icon" />
-            </div>
-            <div class="summary-copy">
-              <span class="muted">当前设备</span>
-              <strong>{{ selectedDevice?.name || "未选择" }}</strong>
-            </div>
-          </article>
-          <article class="panel summary-card">
-            <div class="summary-icon-wrap">
-              <HugeiconsIcon :icon="Analytics01Icon" :size="18" class="summary-icon" />
-            </div>
-            <div class="summary-copy">
-              <span class="muted">当前进度</span>
-              <strong>{{ progress.completedRuns }} / {{ progress.totalRuns }}</strong>
-            </div>
-          </article>
-        </section>
-
         <div v-if="preflightFailures.length" class="banner">
           <strong>现在还不能运行</strong>
           <ul class="banner-list">
             <li v-for="item in preflightFailures" :key="item.key">
               <strong>{{ item.message }}</strong>
-              <span>{{ item.hint || "先处理完这一项，再点开始运行。" }}</span>
+              <span>{{ item.hint || "先处理完这一项，再点开始。" }}</span>
             </li>
           </ul>
         </div>
 
-        <div v-else-if="progress.phase === 'failed'" class="banner">
-          <strong>{{ failureText(progress.failureCategory) }}</strong>
-          <div>{{ progress.failureReason || progress.message }}</div>
-        </div>
-
         <section class="main-grid">
           <div class="stack">
-            <article class="panel">
+            <article class="panel panel-main panel-apps">
               <div class="panel-header-row">
                 <h3>目标应用</h3>
                 <button class="secondary-button" @click="page = 'settings'">去设置</button>
               </div>
-              <ul class="meta-list">
+              <ul class="meta-list panel-scroll">
                 <li v-for="app in config.targetApps" :key="app.id" class="app-row">
                   <div>
                     <strong>{{ app.name }}</strong>
@@ -899,7 +1123,7 @@ onBeforeUnmount(() => {
             </article>
           </div>
 
-          <article class="panel">
+          <article class="panel panel-main panel-live">
             <div class="panel-header-row">
               <h3>实时输入</h3>
               <span class="pill" :class="statusTone(progress.phase)">{{ phaseText(progress.phase) }}</span>
@@ -916,32 +1140,11 @@ onBeforeUnmount(() => {
               @focus="onFocusState"
               @blur="onFocusState"
             />
-            <div class="status-strip">
-              <div class="status-chip">
-                <span>当前阶段:</span>
-                <strong>{{ phaseText(progress.phase) }}</strong>
-              </div>
-              <span class="status-divider" aria-hidden="true">•</span>
-              <div class="status-chip status-chip--wide">
-                <span>当前消息:</span>
-                <strong>{{ progress.message || "等待开始" }}</strong>
-              </div>
-              <span class="status-divider" aria-hidden="true">•</span>
-              <div class="status-chip">
-                <span>当前应用:</span>
-                <strong>{{ progress.currentAppName || "-" }}</strong>
-              </div>
-              <span class="status-divider" aria-hidden="true">•</span>
-              <div class="status-chip status-chip--wide">
-                <span>当前样本:</span>
-                <strong>{{ progress.currentSamplePath || "-" }}</strong>
-              </div>
-            </div>
           </article>
 
-          <article class="panel">
+          <article class="panel panel-main panel-timeline">
             <h3>时间线</h3>
-            <p class="muted">这里只展示最近 10 个关键动作。上面是动作名，下面是人话说明。</p>
+            <p class="muted">这里按整轮连续展示所有动作：新应用蓝色，新样本绿色，普通动作白色，失败红色。</p>
             <ul ref="timelineList" class="timeline-list timeline-visual">
               <li v-for="item in timelineCards" :key="item.id" class="timeline-row timeline-card" :class="item.stateClass">
                 <div class="timeline-marker">
@@ -949,11 +1152,10 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="timeline-body">
                   <div class="timeline-topline">
+                    <span class="pill mono">{{ item.timestampLabel }}</span>
                     <strong>{{ item.title }}</strong>
-                    <span class="pill">{{ item.offsetLabel }}</span>
                   </div>
                   <div class="timeline-detail">{{ item.detail }}</div>
-                  <div class="muted">{{ item.gapLabel }}</div>
                 </div>
               </li>
               <li v-if="!timelineCards.length" class="timeline-row timeline-card timeline-neutral">
@@ -962,27 +1164,22 @@ onBeforeUnmount(() => {
                 </div>
                 <div>
                   <strong>还没有时间线</strong>
-                  <div class="muted">开始运行之后，这里会显示关键事件。</div>
+                  <div class="muted">开始之后，这里会显示关键事件。</div>
                 </div>
               </li>
             </ul>
           </article>
         </section>
 
-        <section v-if="!running" class="result-stack">
+        <section class="result-stack">
           <article class="panel">
-            <h3>测试结果</h3>
-            <template v-if="latestSessionGroup">
+            <template v-if="mainSessionGroup">
               <div class="detail-headline">
-                <div>
-                  <div class="muted">统计范围</div>
-                  <strong>{{ formatSessionTime(latestSessionGroup.session.startedAt) }}</strong>
-                  <div class="muted">按最新一轮、按 app 分开汇总，不跟下面列表点击联动。</div>
-                </div>
-                <span class="pill">{{ sessionStatusText(latestSessionGroup.session.status) }}</span>
+                <strong>测试统计 {{ formatSessionTimestamp(mainSessionGroup.session.startedAt) }}</strong>
+                <span class="pill">{{ sessionStatusText(mainSessionGroup.session.status) }}</span>
               </div>
               <div class="app-summary-stack">
-                <section v-for="appSummary in latestSessionAppStats" :key="appSummary.appName" class="app-summary-block">
+                <section v-for="appSummary in mainSessionAppStats" :key="appSummary.appName" class="app-summary-block">
                   <div class="app-summary-header">
                     <strong>{{ appSummary.appName }}</strong>
                     <span>{{ appSummary.summary }}</span>
@@ -1008,88 +1205,18 @@ onBeforeUnmount(() => {
             </template>
             <p v-else class="muted">还没有测试结果。先跑一轮再看这里的汇总。</p>
           </article>
-
-          <article class="panel">
-            <div class="panel-header-row">
-              <h3>结果列表</h3>
-            </div>
-            <div class="session-stack">
-              <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
-                <div class="session-header">
-                  <button class="session-toggle" @click="toggleSession(group.session.id)">
-                    <div>
-                      <strong>{{ formatSessionTime(group.session.startedAt) }}</strong>
-                      <div class="muted">
-                        {{ sessionStatusText(group.session.status) }}
-                        · 共 {{ group.session.runCount }} 条
-                        · 成功 {{ group.session.successCount }}
-                        · 失败 {{ group.session.failedCount }}
-                        · 取消 {{ group.session.cancelledCount }}
-                      </div>
-                    </div>
-                    <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
-                  </button>
-                  <button class="secondary-button" @click="exportCsv(group.session.id)">导出本轮 CSV</button>
-                </div>
-
-                <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
-                  <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
-                    <div class="app-group-header">
-                      <div>
-                        <strong>{{ appGroup.appName }}</strong>
-                        <div class="muted">
-                          共 {{ appGroup.runs.length }} 条
-                          · 成功 {{ appGroup.successCount }}
-                          · 失败 {{ appGroup.failedCount }}
-                          · 取消 {{ appGroup.cancelledCount }}
-                        </div>
-                      </div>
-                    </div>
-
-                    <table class="result-table">
-                      <thead>
-                        <tr>
-                          <th>样本</th>
-                          <th>状态</th>
-                          <th>停止到首字</th>
-                          <th>停止到定稿</th>
-                          <th>长度</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr
-                          v-for="result in appGroup.runs"
-                          :key="result.id"
-                        >
-                          <td>{{ result.samplePath }}</td>
-                          <td><span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span></td>
-                          <td>{{ formatLatencyMs(result.triggerStopToFirstCharMs) }}</td>
-                          <td>{{ formatLatencyMs(result.triggerStopToFinalTextMs) }}</td>
-                          <td>{{ result.finalTextLength }}</td>
-                        </tr>
-                        <tr v-if="!appGroup.runs.length">
-                          <td colspan="5">这个应用在本轮还没有结果。</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </section>
-                </div>
-              </article>
-
-              <div v-if="!resultSessionGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
-            </div>
-          </article>
         </section>
+
       </template>
 
       <section v-else-if="page === 'checks'" class="stack">
-        <article class="panel">
+        <article class="panel" data-guide-target="samples">
           <div class="panel-header-row">
             <div>
               <h3>运行前检查</h3>
               <p class="muted">这里只看当前能不能跑，以及具体卡在哪一项。</p>
             </div>
-            <button class="ghost-button" @click="refreshEnvironment">刷新</button>
+            <button class="ghost-button" @click="inspectRunReadiness">刷新</button>
           </div>
           <ul class="meta-list">
             <li
@@ -1106,7 +1233,7 @@ onBeforeUnmount(() => {
             <li v-if="!preflightReport" class="check-row">
               <div>
                 <strong>还没开始检查</strong>
-                <div class="muted">直接点“开始运行”，或者先在设置页把目标应用和样本确认好。</div>
+                <div class="muted">点右上角“刷新”，立即开始检测当前配置。</div>
               </div>
             </li>
           </ul>
@@ -1120,31 +1247,99 @@ onBeforeUnmount(() => {
       <section v-else-if="page === 'samples'" class="stack">
         <article class="panel">
           <div class="panel-header-row">
-            <div>
-              <h3>样本</h3>
-              <p class="muted">这里只保留目录和当前可用样本。</p>
-            </div>
+            <strong>{{ config.sampleRoot || "未选择目录" }}</strong>
             <div class="toolbar">
               <button class="ghost-button" @click="chooseSampleRoot">选择目录</button>
               <button class="secondary-button" @click="rescanSamples">重新扫描</button>
             </div>
           </div>
-          <div class="field" style="margin-bottom: 12px">
-            <span class="muted">外部样本目录</span>
-            <strong>{{ config.sampleRoot || "还没选，当前只跑内建自测" }}</strong>
-          </div>
-          <ul class="meta-list">
-            <li v-for="sample in config.audioSamples" :key="sample.id" class="sample-row">
-              <div>
+        </article>
+
+        <article class="panel">
+          <div v-if="config.audioSamples.length" class="sample-list-clean">
+            <div v-for="(sample, index) in config.audioSamples" :key="sample.id" class="sample-row-clean">
+              <div class="sample-row-index">{{ index + 1 }}、</div>
+              <div class="sample-row-main">
                 <strong>{{ sample.relativePath }}</strong>
-                <div class="muted">
-                  {{ sampleMeta(sample.language, sample.durationMs) }}
-                  <span v-if="sample.enabled"> · 已启用</span>
-                </div>
+                <div class="muted">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</div>
               </div>
               <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
-            </li>
-          </ul>
+            </div>
+          </div>
+          <div v-else class="muted">还没有样本。</div>
+        </article>
+      </section>
+
+      <section v-else-if="page === 'history'" class="result-stack">
+        <article class="panel">
+          <div class="panel-header-row">
+            <h3>历史列表</h3>
+          </div>
+          <div class="session-stack">
+            <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
+              <div class="session-header">
+                <button class="session-toggle" @click="toggleSession(group.session.id)">
+                  <div>
+                    <strong>{{ formatSessionTime(group.session.startedAt) }}</strong>
+                    <div class="muted">
+                      {{ sessionStatusText(group.session.status) }}
+                      · 共 {{ group.session.runCount }} 条
+                      · 成功 {{ group.session.successCount }}
+                      · 失败 {{ group.session.failedCount }}
+                      · 取消 {{ group.session.cancelledCount }}
+                    </div>
+                  </div>
+                  <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
+                </button>
+                <button class="secondary-button" @click="exportCsv(group.session.id)">导出本轮 CSV</button>
+              </div>
+
+              <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
+                <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
+                  <div class="app-group-header">
+                    <div>
+                      <strong>{{ appGroup.appName }}</strong>
+                      <div class="muted">
+                        共 {{ appGroup.runs.length }} 条
+                        · 成功 {{ appGroup.successCount }}
+                        · 失败 {{ appGroup.failedCount }}
+                        · 取消 {{ appGroup.cancelledCount }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <table class="result-table">
+                    <thead>
+                      <tr>
+                        <th>样本</th>
+                        <th>状态</th>
+                        <th>收口到首字</th>
+                        <th>收口到定稿</th>
+                        <th>长度</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="result in appGroup.runs"
+                        :key="result.id"
+                      >
+                        <td>{{ result.samplePath }}</td>
+                        <td><span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span></td>
+                        <td>{{ formatLatencyMs(result.triggerStopToFirstCharMs) }}</td>
+                        <td>{{ formatLatencyMs(result.triggerStopToFinalTextMs) }}</td>
+                        <td>{{ result.finalTextLength }}</td>
+                      </tr>
+                      <tr v-if="!appGroup.runs.length">
+                        <td colspan="5">这个应用在本轮还没有结果。</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+            </article>
+
+            <div v-if="!resultSessionGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
+          </div>
         </article>
       </section>
 
@@ -1214,7 +1409,7 @@ onBeforeUnmount(() => {
             <button class="secondary-button" @click="addApp">新增应用</button>
           </div>
           <p class="muted">如果你现在只想确认工具能不能跑，保留“内建自测”开启就够了。</p>
-          <div v-for="app in config.targetApps" :key="app.id" class="app-editor-card">
+          <div v-for="app in config.targetApps" :key="app.id" class="app-editor-card" :data-guide-target="app.enabled ? 'apps' : undefined">
             <div class="panel-header-row">
               <div>
                 <strong>{{ app.name }}</strong>
@@ -1226,10 +1421,10 @@ onBeforeUnmount(() => {
               </label>
             </div>
             <div class="settings-grid">
-              <label><span>名称</span><input v-model="app.name" /></label>
-              <label><span>.app 文件名</span><input v-model="app.appFileName" :disabled="Boolean(app.launchCommand?.startsWith('selftest://'))" /></label>
-              <label>
-                <span>热键</span>
+              <label><span>名称 <em class="required-mark">*</em></span><input v-model="app.name" /></label>
+              <label><span>.app 文件名 <em class="required-mark">*</em></span><input v-model="app.appFileName" :disabled="Boolean(app.launchCommand?.startsWith('selftest://'))" /></label>
+              <label :data-guide-target="app.enabled ? 'hotkey' : undefined">
+                <span>热键 <em class="required-mark">*</em></span>
                 <div class="inline-field">
                   <input :value="app.hotkeyChord" readonly />
                   <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
@@ -1237,11 +1432,11 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
               </label>
-              <label>
-                <span>触发方式</span>
-                <select v-model="app.hotkeyTriggerMode">
-                  <option value="hold_release">按住开始，松开结束</option>
-                  <option value="press_start_press_stop">按一次开始，再按一次结束</option>
+              <label class="compact-field">
+                <span>触发方式 <em class="required-mark">*</em></span>
+                <select v-model="app.hotkeyTriggerMode" class="compact-select">
+                  <option value="hold_release">按住热键，松开收口</option>
+                  <option value="press_start_press_stop">按一次触发，再按一次收口</option>
                 </select>
               </label>
               <label><span>启动命令</span><input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" /></label>
@@ -1285,18 +1480,27 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-else-if="page === 'intro'" class="panel">
+      <section v-else-if="page === 'intro'" class="panel intro-panel">
         <h3>怎么开始</h3>
-        <p>先别急着配真实 app。默认已经启用了“内建自测”，你直接点主控台的“开始运行”就能验证主流程。</p>
-        <p>确认主流程没问题之后，再去设置页打开真实目标应用，录入快捷键，选择外部 WAV 目录。</p>
-        <pre>
-+------------------------------+
-| 先跑内建自测                |
-| 看能不能写 SQLite           |
-| 看结果列表和详情有没有数据   |
-| 再接真实目标应用             |
-+------------------------------+
-        </pre>
+        <p class="muted">先按这个顺序走。</p>
+        <div class="intro-steps">
+          <button class="intro-step" @click="jumpToGuideTarget('apps')">
+            <strong>1）添加 app</strong>
+            <span>去设置页添加或启用目标应用。</span>
+          </button>
+          <button class="intro-step" @click="jumpToGuideTarget('hotkey')">
+            <strong>2）热键</strong>
+            <span>录入热键，并确认触发方式。</span>
+          </button>
+          <button class="intro-step" @click="jumpToGuideTarget('samples')">
+            <strong>3）样本添加</strong>
+            <span>选择样本目录，确认样本已启用。</span>
+          </button>
+          <button class="intro-step" @click="jumpToGuideTarget('run')">
+            <strong>4）开始</strong>
+            <span>回到主控台，点击开始。</span>
+          </button>
+        </div>
       </section>
 
       <section v-else class="about-grid">
@@ -1315,31 +1519,55 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
+      <div v-if="preRunDialogVisible" class="dialog-backdrop dialog-backdrop--countdown">
+        <div class="dialog-card dialog-card--countdown" role="dialog" aria-modal="true" aria-labelledby="pre-run-dialog-title">
+          <div class="countdown-orb countdown-orb--confirm">
+            <span>!</span>
+            <small>等待确认</small>
+          </div>
+          <div class="dialog-hero dialog-hero--countdown">
+            <div class="dialog-hero-copy">
+              <span class="dialog-kicker">开始前提示</span>
+              <h3 id="pre-run-dialog-title">开始后请不要操作鼠标和键盘</h3>
+              <p>点击按钮后会立即开始正式测试。</p>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button class="ghost-button" @click="cancelPreRunDialog">还没准备好</button>
+            <button class="primary-button" @click="confirmPreRunDialog">我已准备好，开始测试</button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="completionDialogVisible && completedDialogSummary" class="dialog-backdrop" @click.self="completionDialogVisible = false">
         <div class="dialog-card">
-          <div class="panel-header-row">
-            <div>
-              <h3>测试结束</h3>
-              <p class="muted">这一轮已经跑完，汇总如下。</p>
+          <div class="dialog-hero">
+            <div class="dialog-hero-copy">
+              <span class="dialog-kicker">Batch Finished</span>
+              <h3>已结束</h3>
+              <p>结果已经落库，可以继续看明细，或者直接再次开始。</p>
             </div>
-            <span class="pill">{{ completedDialogSummary.status }}</span>
+            <div class="dialog-status-badge">
+              <span class="pill">{{ completedDialogSummary.status }}</span>
+            </div>
           </div>
           <div class="dialog-stat-grid">
-            <div class="field">
-              <span class="muted">应用数</span>
+            <div class="dialog-stat-card">
+              <span class="dialog-stat-label">应用数</span>
               <strong>{{ completedDialogSummary.appCount }}</strong>
             </div>
-            <div class="field">
-              <span class="muted">样本数</span>
+            <div class="dialog-stat-card">
+              <span class="dialog-stat-label">样本数</span>
               <strong>{{ completedDialogSummary.sampleCount }}</strong>
             </div>
-            <div class="field">
-              <span class="muted">总耗时</span>
+            <div class="dialog-stat-card">
+              <span class="dialog-stat-label">总耗时</span>
               <strong>{{ completedDialogSummary.elapsed }}</strong>
             </div>
           </div>
-          <div class="toolbar">
-            <button class="secondary-button" @click="completionDialogVisible = false">知道了</button>
+          <div class="dialog-actions">
+            <button class="ghost-button" @click="page = 'main'; completionDialogVisible = false">回主控台</button>
+            <button class="primary-button" @click="completionDialogVisible = false">知道了</button>
           </div>
         </div>
       </div>

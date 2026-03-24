@@ -124,16 +124,17 @@ The current app shell has these first-level pages:
 - 主控台
 - 运行前检查
 - 样本
+- 测试历史
 - 设置
 - 怎么开始
 - 当前实现
 
 Configuration already lives in the dedicated `设置` page rather than a modal.
 
-The result area on the main page is split into:
+The result experience is split into:
 
-- top aggregated summary
-- bottom per-session list
+- `主控台` for the current timeline and latest-session summary
+- `测试历史` for browsing persisted sessions and exporting one batch at a time
 
 The current renderer is Chinese-first.
 
@@ -154,6 +155,7 @@ Overall shell:
 | 主控台               |---------------------------------------------------------------|
 | 运行前检查           | Page content                                                  |
 | 样本                 |                                                               |
+| 测试历史             |                                                               |
 | 设置                 |                                                               |
 | 怎么开始             |                                                               |
 | 当前实现             |                                                               |
@@ -195,34 +197,28 @@ It should answer these questions at a glance:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| Main                                                     [Run] [Stop] [Theme] [Language] |
+| Main                                                                    [Start] [Close] |
 |--------------------------------------------------------------------------------------------------|
 | Summary strip                                                                                   |
 | [Apps: 3] [Samples: 24] [Permission: Ready] [Device: BlackHole 2ch] [Progress: 12 / 24]        |
 |--------------------------------------------------------------------------------------------------|
-| Left: Targets / Samples                      | Center: Live Test Box      | Right: Live Timeline |
+| Left: Targets                                | Center: Live Test Box      | Right: Timeline      |
 |-----------------------------------------------|-----------------------------|----------------------|
-| Target Apps                                   | Input Box                   | 16:02:01 hotkey down|
-| > Xiguashuo        Ready                      | +-------------------------+ | 16:02:01 audio start|
-|   Wispr Flow       Ready                      | | voice typing appears... | | 16:02:03 audio end  |
-|   App C            Missing hotkey             | |                         | | 16:02:04 first text |
-|-----------------------------------------------| +-------------------------+ | 16:02:04 last text  |
-| Audio Samples                                 | Run Snapshot               |                      |
-| zh-basic-01.wav   2.4s                        | Status: success            |                      |
-| zh-basic-02.wav   3.1s                        | First char: 850 ms         |                      |
-| zh-basic-03.wav   1.8s                        | Final text: 1440 ms        |                      |
-|-----------------------------------------------| Text length: 18            |                      |
-| Batch Progress                                |                             |                      |
-| [##########------] 12 / 24                    |                             |                      |
+| Target Apps                                   | +-------------------------+ | Start                |
+| > Xiguashuo        Enabled                    | | voice typing appears... | | App start            |
+|   Wispr Flow       Enabled                    | |                         | | Sample start         |
+|   App C            Disabled                   | +-------------------------+ | Trigger start        |
+|-----------------------------------------------| Current status             | Audio start          |
+| App / sample / phase / message                | Current app + sample       | Trigger stop         |
+|                                               |                            | End                  |
 |--------------------------------------------------------------------------------------------------|
-| Test Summary                                                                                     |
+| Latest Session Summary                                                                           |
 | Xiguashuo -> total / success / avg first char / median / total time                              |
 | Wispr Flow -> total / success / avg first char / median / total time                             |
-|--------------------------------------------------------------------------------------------------|
-| Result List                                                                                      |
-| session -> app -> sample rows                                                                    |
 +--------------------------------------------------------------------------------------------------+
 ```
+
+The main timeline should read from the same per-run timeline data that is stored with each run record. Live events may be merged with persisted per-run timelines while a session is active, but the renderer should not maintain a separate display-only event model after the run finishes.
 
 ### 5.3 Regions
 
@@ -244,11 +240,7 @@ Each chip has:
 
 #### Left column
 
-Split into compact cards:
-
-- target apps
-- audio samples
-- sample source and app readiness
+Use a compact target-app overview card.
 
 The target app list should show:
 
@@ -256,25 +248,18 @@ The target app list should show:
 - readiness state
 - trigger mode tag
 
-The sample list should show:
-
-- file name
-- duration
-- expected text available or not
-
 #### Center column
 
 This is the visual anchor.
 
 The input box card should be the largest area because it is the thing being measured.
 
-Under the input box, show a compact status strip:
+Under the input box, show a compact status stack:
 
 - current state
-- first char latency
-- final latency
-- text length
-- failure reason if any
+- current message
+- current app
+- current sample
 
 Below the main region, show one summary area for the latest session:
 
@@ -289,22 +274,31 @@ Use a narrow event log card.
 
 Each row shows:
 
-- timestamp
+- elapsed timestamp
 - event label
-- subtle state dot
+- explanatory detail
+
+Timeline color semantics:
+
+- bookend rows for start and end
+- blue rows for app-level milestones
+- green rows for sample-level milestones
+- neutral rows for ordinary actions
+- red rows for failures
+- only the currently live row gets the pulse treatment
 
 ### 5.4 Main actions
 
 Top-right actions on the main page:
 
-- `开始运行`
-- `关闭本轮`
+- `开始`
+- `关闭`
 - no global run buttons on other pages
 
 Rules:
 
-- `开始运行` is dark gray filled
-- `关闭本轮` is white with gray border
+- `开始` is dark gray filled
+- `关闭` is white with gray border
 ## 6. Settings Page
 
 ### 6.1 Rule
@@ -461,18 +455,26 @@ It should feel factual and lightweight.
 - the current running sample row gets a soft dark outline
 - the current target app row gets a filled pale highlight
 - timeline list auto-scrolls
-- result list updates in real time
+- latest-session summary switches to the active session once progress has a `sessionId`
+- canceling the pre-start confirmation restores the previously visible latest session summary
 
-### 10.2 Feedback style
+### 10.2 History page behavior
+
+- `测试历史` owns the persisted session list
+- each session card expands to app groups and sample rows
+- `导出本轮 CSV` belongs to the session header
+- history reads run timelines from persisted per-run timeline snapshots
+
+### 10.3 Feedback style
 
 Use restrained motion only:
 
 - `120ms` hover fade
-- green pulse is allowed only for the currently running timeline item
+- dark pulse is allowed only for the currently running timeline item
 
 No bouncing and no animated charts during idle state.
 
-### 10.3 Empty states
+### 10.4 Empty states
 
 Keep empty states plain:
 

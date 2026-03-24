@@ -1,3 +1,4 @@
+import { systemPreferences } from "electron";
 import type { AudioDevice, FailureCategory, PermissionSnapshot, PreflightItem, PreflightReport } from "../shared/types";
 import { defaultDevices, defaultPermissions } from "../shared/defaults";
 import { HelperClient } from "./helper-client";
@@ -6,7 +7,11 @@ export class PermissionManager {
   constructor(private readonly helper: HelperClient) {}
 
   async snapshot(): Promise<{ permissions: PermissionSnapshot[]; devices: AudioDevice[] }> {
-    const permissions = this.helper.available ? (await this.helper.checkPermissions()).permissions : defaultPermissions();
+    const helperPermissions = this.helper.available ? (await this.helper.checkPermissions()).permissions : defaultPermissions();
+    const accessibilityGranted = this.checkAccessibilityPermission();
+    const permissions = helperPermissions.map((item) => (item.id === "accessibility"
+      ? { ...item, granted: accessibilityGranted }
+      : item));
     const devices = this.helper.available ? (await this.helper.listAudioDevices()).devices : defaultDevices();
     if (!devices.some((item) => item.id === "system-default")) {
       devices.unshift({
@@ -21,8 +26,21 @@ export class PermissionManager {
 
   async requestAccessibilityPermission(): Promise<boolean> {
     try {
-      const result = await this.helper.requestAccessibilityPermission();
-      return result.granted;
+      systemPreferences.isTrustedAccessibilityClient(true);
+      return this.checkAccessibilityPermission();
+    } catch {
+      try {
+        const result = await this.helper.requestAccessibilityPermission();
+        return result.granted;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  private checkAccessibilityPermission(): boolean {
+    try {
+      return systemPreferences.isTrustedAccessibilityClient(false);
     } catch {
       return false;
     }
@@ -48,7 +66,7 @@ export class PermissionManager {
           ? (accessibility ? "辅助功能权限已授权" : "缺少辅助功能权限")
           : "当前只运行内建自测，不要求辅助功能权限",
         category: checks.requiresAccessibility && !accessibility ? ("permission_denied_accessibility" satisfies FailureCategory) : undefined,
-        hint: checks.requiresAccessibility && !accessibility ? "先到系统设置里给这个应用打开辅助功能权限，再回来点开始运行。" : undefined,
+        hint: checks.requiresAccessibility && !accessibility ? "先到系统设置里给这个应用打开辅助功能权限，再回来点开始。" : undefined,
       },
       {
         key: "device",
@@ -61,7 +79,7 @@ export class PermissionManager {
         key: "samples",
         ok: checks.hasSamples,
         message: checks.hasSamples ? "样本已准备好" : "当前没有启用的样本",
-        hint: checks.hasSamples ? undefined : "先用内建自测样本，或者在设置页选择一个 WAV 根目录后重新扫描。",
+        hint: checks.hasSamples ? undefined : "先用内建自测样本，或者在设置页选择一个包含 WAV / MP3 / OGG 的目录后重新扫描。",
       },
       {
         key: "apps",

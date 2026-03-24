@@ -12,6 +12,9 @@ const api = {
   openPermissionSettings: async (pane: string) => await ipcRenderer.invoke("permissions:openSettings", pane),
   focusBenchmarkWindow: async () => await ipcRenderer.invoke("window:focusBenchmark"),
   startRun: async () => await ipcRenderer.invoke("run:start"),
+  emitRunTimelineEvent: async (runId: string, eventType: string, payload: Record<string, unknown>) =>
+    await ipcRenderer.invoke("run:emitTimelineEvent", runId, eventType, payload),
+  inspectRun: async () => await ipcRenderer.invoke("run:inspect"),
   stopRun: async () => await ipcRenderer.invoke("run:stop"),
   listResults: async () => await ipcRenderer.invoke("results:list"),
   listResultSessions: async () => await ipcRenderer.invoke("results:listSessions"),

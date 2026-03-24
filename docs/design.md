@@ -196,7 +196,8 @@ Responsibilities:
 - permission status UI
 - built-in input box for typed output
 - live run timeline
-- aggregated result summary and per-session result list
+- latest-session summary on `主控台`
+- dedicated `测试历史` page for browsing persisted sessions and exporting one batch at a time
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 
@@ -512,6 +513,14 @@ Suggested main screen:
 ```
 
 The main console timeline should render from the same per-run timeline data saved with each test record, with the UI responsible only for selecting which events to show and formatting them for readability.
+
+The current renderer uses three timeline sources with clear roles:
+
+- pre-run prompt events exist only for the current in-memory start flow
+- live `run:event` records drive the active session while it is running
+- persisted `test_runs.timeline_json` is the source of truth for history views and for restoring the main console after a session finishes
+
+`主控台` should focus on "what is happening now / what just finished", while `测试历史` owns session browsing, expansion, and batch export actions.
 
 ## 18. Delivery Phases
 

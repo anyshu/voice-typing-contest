@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from "electron";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigStore } from "./config-store";
@@ -9,8 +10,9 @@ import { PermissionManager } from "./permission-manager";
 import { TargetAppManager } from "./target-app-manager";
 import { RunController } from "./run-controller";
 import { registerIpc } from "./ipc";
-import type { AppConfig, AudioDevice, PermissionSnapshot } from "../shared/types";
+import type { AppConfig, AudioDevice, PermissionSnapshot, RunEventRecord, TestRunRecord } from "../shared/types";
 import { defaultDevices, defaultPermissions } from "../shared/defaults";
+import { formatResultLog, formatTimelineLog } from "./run-logging";
 
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined;
@@ -18,10 +20,18 @@ let config: AppConfig;
 let devices: AudioDevice[] = defaultDevices();
 let permissions: PermissionSnapshot[] = defaultPermissions();
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const appIconPath = fileURLToPath(new URL("../../cb4a0819-0b67-4a69-94c8-53f37e73c304.png", import.meta.url));
+const devAppIconPath = fileURLToPath(new URL("../../resources/icon-macos.png", import.meta.url));
+
+function resolveAppIconPath(): string {
+  const packagedIconPath = join(process.resourcesPath, "icon-macos.png");
+  if (existsSync(packagedIconPath)) {
+    return packagedIconPath;
+  }
+  return devAppIconPath;
+}
 
 function loadAppIcon() {
-  const icon = nativeImage.createFromPath(appIconPath);
+  const icon = nativeImage.createFromPath(resolveAppIconPath());
   return icon.isEmpty() ? undefined : icon;
 }
 
@@ -196,9 +206,23 @@ async function createWindow(): Promise<void> {
     },
   );
 
+  const timelineFirstTsByRunId = new Map<string, number>();
   runController.on("progress", (payload) => win?.webContents.send("run:stateChanged", payload));
-  runController.on("timeline", (payload) => win?.webContents.send("run:event", payload));
-  runController.on("result", (payload) => win?.webContents.send("run:resultAppended", payload));
+  runController.on("timeline", (payload) => {
+    const record = payload as RunEventRecord;
+    console.log(formatTimelineLog(record, timelineFirstTsByRunId));
+    win?.webContents.send("run:event", record);
+  });
+  runController.on("result", (payload) => {
+    const record = payload as TestRunRecord;
+    const log = formatResultLog(record);
+    if (record.status === "failed") {
+      console.error(log);
+    } else {
+      console.log(log);
+    }
+    win?.webContents.send("run:resultAppended", record);
+  });
   installSmokeHooks(win, runController);
 
   const snapshot = await permissionManager.snapshot();

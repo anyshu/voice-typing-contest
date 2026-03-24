@@ -121,7 +121,7 @@ try {
         respond({ status: "ok" });
         break;
       }
-      execFileSync("open", ["-g", "-a", input.appFileName], { stdio: "ignore" });
+      execFileSync("open", ["-a", input.appFileName], { stdio: "ignore" });
       respond({ status: "ok" });
       break;
     }

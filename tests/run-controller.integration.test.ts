@@ -93,6 +93,7 @@ describe("RunController integration", () => {
       playWav: async () => undefined,
       sendHotkey: async () => undefined,
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => false;
     const controller = new RunController(
       store,
       permissions,
@@ -118,8 +119,81 @@ describe("RunController integration", () => {
     expect(runs[0]?.triggerStopToFinalTextMs).toBeGreaterThanOrEqual(runs[0]?.triggerStopToFirstCharMs ?? 0);
     const detail = store.getRunDetail(runs[0]!.id);
     expect(detail?.events.length).toBeGreaterThan(0);
+    expect(detail?.record.timeline.length).toBe(detail?.events.length);
+    expect(detail?.record.timeline.some((event) => event.eventType === "app_start")).toBe(true);
     expect(store.exportCsv()).toContain("trigger_stop_to_first_char_ms");
     expect(store.exportCsv()).toContain("self test transcript");
+    store.close();
+  });
+
+  it("persists the terminal failure event inside the run timeline snapshot", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-run-failed-"));
+    const sampleRoot = join(root, "samples");
+    await mkdir(sampleRoot, { recursive: true });
+    const wavPath = join(sampleRoot, "selftest.wav");
+    await writeFile(wavPath, createWav());
+
+    const config = defaultConfig();
+    config.appLaunchDelayMs = 0;
+    config.focusInputDelayMs = 0;
+    config.closeAppDelayMs = 0;
+    config.sampleRoot = sampleRoot;
+    config.databasePath = join(root, "vtc.sqlite");
+    config.betweenSamplesDelayMs = 0;
+    config.resultTimeoutMs = 120;
+    config.targetApps = config.targetApps.map((app) => ({
+      ...app,
+      enabled: app.id === "selftest",
+      hotkeyToAudioDelayMs: app.id === "selftest" ? 0 : app.hotkeyToAudioDelayMs,
+      audioToTriggerStopDelayMs: app.id === "selftest" ? 0 : app.audioToTriggerStopDelayMs,
+      settleWindowMs: app.id === "selftest" ? 20 : app.settleWindowMs,
+    }));
+    config.audioSamples = [
+      {
+        id: "sample-1",
+        filePath: wavPath,
+        relativePath: "selftest.wav",
+        displayName: "selftest.wav",
+        expectedText: "self test transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["selftest"],
+        enabled: true,
+      },
+    ];
+
+    const store = new ResultStore(config.databasePath);
+    const permissions = new PermissionManager({
+      available: true,
+      checkPermissions: async () => ({
+        permissions: [
+          { id: "accessibility", name: "Accessibility", required: true, granted: true },
+          { id: "automation", name: "Automation", required: false, granted: true },
+          { id: "input-monitoring", name: "Input Monitoring", required: false, granted: true },
+        ],
+      }),
+      listAudioDevices: async () => ({
+        devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
+      }),
+    } as any);
+    (permissions as any).checkAccessibilityPermission = () => false;
+
+    const controller = new RunController(
+      store,
+      permissions,
+      new TargetAppManager(),
+      { activateApp: async () => undefined, closeApp: async () => undefined, playWav: async () => undefined, sendHotkey: async () => undefined } as any,
+      () => {
+        // Intentionally emit no self-test text so the run fails on timeout.
+      },
+    );
+
+    const preflight = await controller.run(config);
+    expect(preflight.ok).toBe(true);
+    const run = store.listRuns()[0];
+    expect(run?.status).toBe("failed");
+    expect(run?.timeline.at(-1)?.eventType).toBe("run_failed");
+    expect(store.getRunDetail(run!.id)?.record.timeline.at(-1)?.eventType).toBe("run_failed");
     store.close();
   });
 
@@ -260,6 +334,7 @@ describe("RunController integration", () => {
         devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
       }),
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
 
     let playedPath = "";
     let controller!: RunController;
@@ -350,6 +425,7 @@ describe("RunController integration", () => {
         devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
       }),
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
 
     let playedPath = "";
     let controller!: RunController;
@@ -449,6 +525,7 @@ describe("RunController integration", () => {
         devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
       }),
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
 
     let controller!: RunController;
     const activateApp = vi.fn(async () => undefined);
@@ -521,6 +598,7 @@ describe("RunController integration", () => {
         devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
       }),
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
 
     let controller!: RunController;
     const helper = {
@@ -554,7 +632,7 @@ describe("RunController integration", () => {
     store.close();
   });
 
-  it("cancels the current run immediately instead of waiting for timeout", async () => {
+  it("cancels the current self-test run immediately when the user closes the test", async () => {
     root = await mkdtemp(join(tmpdir(), "vtc-cancel-"));
     const sampleRoot = join(root, "samples");
     await mkdir(sampleRoot, { recursive: true });
@@ -606,6 +684,7 @@ describe("RunController integration", () => {
         devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
       }),
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
     const controller = new RunController(
       store,
       permissions,
@@ -642,7 +721,7 @@ describe("RunController integration", () => {
     store.close();
   });
 
-  it("aborts real-app playback when the user closes the current run", async () => {
+  it("aborts the current real-app sample immediately when the user closes the test", async () => {
     root = await mkdtemp(join(tmpdir(), "vtc-cancel-playback-"));
     const sampleRoot = join(root, "samples");
     await mkdir(sampleRoot, { recursive: true });
@@ -696,6 +775,7 @@ describe("RunController integration", () => {
         devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
       }),
     } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
 
     let aborted = false;
     const controller = new RunController(
@@ -710,7 +790,9 @@ describe("RunController integration", () => {
         sendHotkey: async () => undefined,
         playWav: async (_filePath: string, _outputDeviceId: string, signal?: AbortSignal) => {
           await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, 120);
             signal?.addEventListener("abort", () => {
+              clearTimeout(timer);
               aborted = true;
               reject(new Error("Run cancelled"));
             }, { once: true });
@@ -722,7 +804,7 @@ describe("RunController integration", () => {
 
     const startedAt = Date.now();
     const runPromise = controller.run(config);
-    await new Promise((resolve) => setTimeout(resolve, 260));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     controller.stop();
     const preflight = await runPromise;
     const elapsedMs = Date.now() - startedAt;
@@ -731,6 +813,10 @@ describe("RunController integration", () => {
     expect(aborted).toBe(true);
     expect(elapsedMs).toBeLessThan(1500);
     expect(store.listRuns()[0]?.status).toBe("cancelled");
+    const db = new DatabaseSync(config.databasePath);
+    const session = db.prepare("SELECT status FROM run_sessions LIMIT 1").get() as { status: string } | undefined;
+    db.close();
+    expect(session?.status).toBe("cancelled");
     store.close();
   });
 
@@ -826,4 +912,97 @@ describe("RunController integration", () => {
     expect(store.listRuns()).toHaveLength(2);
     store.close();
   }, 10000);
+
+  it("treats close during between-samples wait as a normal cancellation", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-cancel-gap-"));
+    const sampleRoot = join(root, "samples");
+    await mkdir(sampleRoot, { recursive: true });
+    const firstWavPath = join(sampleRoot, "first.wav");
+    const secondWavPath = join(sampleRoot, "second.wav");
+    await writeFile(firstWavPath, createWav(40));
+    await writeFile(secondWavPath, createWav(40));
+
+    const config = defaultConfig();
+    config.appLaunchDelayMs = 0;
+    config.focusInputDelayMs = 0;
+    config.closeAppDelayMs = 0;
+    config.sampleRoot = sampleRoot;
+    config.databasePath = join(root, "vtc.sqlite");
+    config.resultTimeoutMs = 1200;
+    config.betweenSamplesDelayMs = 600;
+    config.targetApps = config.targetApps.map((app) => ({
+      ...app,
+      enabled: app.id === "selftest",
+      preHotkeyDelayMs: app.id === "selftest" ? 20 : app.preHotkeyDelayMs,
+      hotkeyToAudioDelayMs: app.id === "selftest" ? 20 : app.hotkeyToAudioDelayMs,
+      audioToTriggerStopDelayMs: app.id === "selftest" ? 20 : app.audioToTriggerStopDelayMs,
+      settleWindowMs: app.id === "selftest" ? 80 : app.settleWindowMs,
+      postRunCooldownMs: app.id === "selftest" ? 0 : app.postRunCooldownMs,
+    }));
+    config.audioSamples = [
+      {
+        id: "sample-1",
+        filePath: firstWavPath,
+        relativePath: "first.wav",
+        displayName: "first.wav",
+        expectedText: "first sample",
+        language: "en",
+        durationMs: 40,
+        tags: [],
+        enabled: true,
+      },
+      {
+        id: "sample-2",
+        filePath: secondWavPath,
+        relativePath: "second.wav",
+        displayName: "second.wav",
+        expectedText: "second sample",
+        language: "en",
+        durationMs: 40,
+        tags: [],
+        enabled: true,
+      },
+    ];
+
+    const store = new ResultStore(config.databasePath);
+    const permissions = new PermissionManager({
+      available: true,
+      checkPermissions: async () => ({
+        permissions: [
+          { id: "accessibility", name: "Accessibility", required: true, granted: true },
+          { id: "automation", name: "Automation", required: false, granted: true },
+          { id: "input-monitoring", name: "Input Monitoring", required: false, granted: true },
+        ],
+      }),
+      listAudioDevices: async () => ({
+        devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
+      }),
+    } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
+
+    const controller = new RunController(
+      store,
+      permissions,
+      new TargetAppManager(),
+      { activateApp: async () => undefined, closeApp: async () => undefined, playWav: async () => undefined, sendHotkey: async () => undefined } as any,
+      (chunks) => {
+        chunks.forEach((value, index) => {
+          setTimeout(() => {
+            controller.onInputEvent({ type: "input", tsMs: performance.now(), value });
+          }, 30 * (index + 1));
+        });
+      },
+    );
+
+    const runPromise = controller.run(config);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    controller.stop();
+
+    await expect(runPromise).resolves.toMatchObject({ ok: true });
+    expect(controller.getProgress().phase).toBe("cancelled");
+    const runs = store.listRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.status).toBe("success");
+    store.close();
+  });
 });

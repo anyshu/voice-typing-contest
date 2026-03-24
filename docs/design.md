@@ -229,6 +229,10 @@ Responsibilities:
 - enumerate and verify audio devices
 - play WAV audio to a specific device
 
+Packaging note:
+
+- release builds must bundle both `vtc-helper` and `vtc-audioctl` from the release helper output path so `dist:mac` works from a clean checkout without depending on debug helper artifacts
+
 Native modules:
 
 - `PermissionProbe`
@@ -444,9 +448,12 @@ Stores one app + one sample execution result, including:
 - expected text
 - latency metrics
 - failure reason
+- timeline snapshot
 - created time
 
 `run_session_id` links each test run back to the batch context so one benchmark pass can be queried, compared, and exported as a group.
+
+Each test run record should persist the full timeline for that run so later queries, history views, and the main console can all reuse the same source data instead of rebuilding a separate display-only timeline model.
 
 ### 14.3 `run_events`
 
@@ -458,6 +465,8 @@ Stores detailed timeline events as append-only records:
 - `payload_json`
 
 This keeps future metrics extensible without repeated schema churn.
+
+`run_events` is still useful as the append-only event log, but the query path should treat the per-run timeline snapshot on `test_runs` as the canonical UI-facing data bundle for one test record.
 
 ## 16. Preflight Checklist
 
@@ -501,6 +510,8 @@ Suggested main screen:
 | status: success   first_char: 850 ms   final: 1440 ms   text_len: 18             |
 +----------------------------------------------------------------------------------+
 ```
+
+The main console timeline should render from the same per-run timeline data saved with each test record, with the UI responsible only for selecting which events to show and formatting them for readability.
 
 ## 18. Delivery Phases
 

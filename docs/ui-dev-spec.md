@@ -196,6 +196,24 @@ On desktop widths, the sample path and the `ZH · 8.93 秒` style language-durat
 
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
 
+### 4.7 App page
+
+The `App管理` page should show:
+
+- a compact summary strip with total apps, enabled apps, enabled real apps, and builtin self-test state
+- one compact card per app
+- the nav entry in the upper group, directly below `样本管理`
+
+Each app card should keep the header on one row whenever width allows:
+
+- app name first
+- then app kind and enabled-state pills
+- then the enable toggle and delete action on the right
+
+The editable fields should prefer single-row label-and-control layout when the content is short enough, including `名称`, `.app 文件名`, `启动命令`, and `触发方式`.
+
+`备注` should follow the same aligned form-row structure as the rest of the fields, even though it uses a textarea.
+
 ## 5. Settings Page Structure
 
 The settings page has three functional blocks:

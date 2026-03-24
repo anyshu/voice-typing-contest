@@ -466,7 +466,14 @@ It should feel factual and lightweight.
 - `导出本轮 CSV` belongs to the session header
 - history reads run timelines from persisted per-run timeline snapshots
 
-### 10.3 Feedback style
+### 10.3 App page behavior
+
+- `App管理` lives in the upper navigation group directly below `样本管理`
+- each app card keeps `App 名称 + 类型/状态 pills + 启用/删除操作` on one row when there is enough width
+- compact fields should use one-row label/control alignment instead of stacked labels
+- hover on an app card should only add a restrained lift, border emphasis, and soft shadow
+
+### 10.4 Feedback style
 
 Use restrained motion only:
 
@@ -475,7 +482,7 @@ Use restrained motion only:
 
 No bouncing and no animated charts during idle state.
 
-### 10.4 Empty states
+### 10.5 Empty states
 
 Keep empty states plain:
 

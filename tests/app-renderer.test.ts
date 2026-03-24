@@ -63,6 +63,23 @@ function setupDesktopApi(options?: {
     listResultSessions: vi.fn(async (): Promise<RunSessionSummary[]> => sessions),
     getResultDetail: vi.fn(async () => undefined),
     exportCsv: vi.fn(async () => undefined),
+    pickImportCsv: vi.fn(async () => undefined),
+    importCsv: vi.fn(async () => ({
+      sessionId: "import-session-1",
+      importedCount: 2,
+      appCount: 1,
+      startedAt: "2026-03-23T10:00:00.000Z",
+      finishedAt: "2026-03-23T10:01:00.000Z",
+      sourcePath: "/tmp/import.csv",
+    })),
+    importCsvContent: vi.fn(async () => ({
+      sessionId: "import-session-1",
+      importedCount: 2,
+      appCount: 1,
+      startedAt: "2026-03-23T10:00:00.000Z",
+      finishedAt: "2026-03-23T10:01:00.000Z",
+      sourcePath: "import.csv",
+    })),
     sendInputEvent: vi.fn(),
     onProgress: vi.fn((handler: Handler) => {
       handlers.progress = handler;
@@ -101,6 +118,49 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("样本");
     expect(wrapper.text()).toContain("测试历史");
     expect(wrapper.text()).toContain("内建自测");
+  });
+
+  it("keeps App management directly below sample management in the upper navigation group", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const navGroups = wrapper.findAll(".sidebar .nav-list");
+    expect(navGroups).toHaveLength(2);
+
+    const topNavItems = navGroups[0].findAll("button.nav-button").map((item) => item.text());
+    const lowerNavItems = navGroups[1].findAll("button.nav-button").map((item) => item.text());
+
+    expect(topNavItems).toContain("App管理");
+    expect(lowerNavItems).not.toContain("App管理");
+    expect(topNavItems.indexOf("App管理")).toBe(topNavItems.indexOf("样本管理") + 1);
+  });
+
+  it("keeps sidebar nav labels on one line", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    expect(sampleButton!.find(".nav-label").exists()).toBe(true);
+    expect(sampleButton!.find(".nav-label").text()).toBe("样本管理");
+  });
+
+  it("shows preflight in the lower navigation group directly below settings", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const navGroups = wrapper.findAll(".sidebar .nav-list");
+    expect(navGroups).toHaveLength(2);
+
+    const topNavItems = navGroups[0].findAll("button.nav-button").map((item) => item.text());
+    const lowerNavItems = navGroups[1].findAll("button.nav-button").map((item) => item.text());
+
+    expect(topNavItems).not.toContain("运行前检查");
+    expect(lowerNavItems).toContain("运行前检查");
+    expect(lowerNavItems.indexOf("运行前检查")).toBe(lowerNavItems.indexOf("设置") + 1);
   });
 
   it("lets the user choose an output device in settings", async () => {
@@ -332,6 +392,22 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("已录入");
   });
 
+  it("renders a flatter App management layout with summary and direct form fields", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+    const appsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "App管理");
+    expect(appsButton).toBeTruthy();
+    await appsButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("目标总数");
+    expect(wrapper.text()).toContain("真实 App");
+    expect(wrapper.text()).toContain("启动命令");
+    expect(wrapper.text()).toContain("热键");
+    expect(wrapper.text()).toContain("备注");
+  });
+
   it("renders timeline entries as readable cards instead of raw event names", async () => {
     const { handlers } = setupDesktopApi();
     const wrapper = mount(App);
@@ -461,8 +537,57 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("导出本轮 CSV");
+    expect(wrapper.text()).toContain("历史列表");
+    expect(wrapper.text()).toContain("导入CSV");
+    expect(wrapper.find('button[aria-label="导出本轮 CSV"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain("输入检测区");
+  });
+
+  it("opens the CSV import dialog from the history header", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    await wrapper.get("button.history-import-link").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("导入外部测试结果");
+    expect(wrapper.text()).toContain("拖拽 CSV 到这里");
+  });
+
+  it("imports a CSV dropped into the history dialog", async () => {
+    const { api } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    await wrapper.get("button.history-import-link").trigger("click");
+    await flushPromises();
+
+    const dropzone = wrapper.get("button.import-dropzone");
+    await dropzone.trigger("drop", {
+      dataTransfer: {
+        files: [{
+          text: async () => "app_name,sample_path,status,final_text_length,raw_text,created_at\nAutoGLM,a.mp3,success,5,hello,2026-03-24T03:50:22.741Z",
+          name: "import.csv",
+        }],
+      },
+    });
+    await flushPromises();
+
+    expect(api.importCsvContent).toHaveBeenCalledWith(
+      "app_name,sample_path,status,final_text_length,raw_text,created_at\nAutoGLM,a.mp3,success,5,hello,2026-03-24T03:50:22.741Z",
+      "import.csv",
+    );
   });
 
   it("shows the Q&A entry in the footer nav with the mute-during-dictation troubleshooting note", async () => {
@@ -645,12 +770,84 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("03/23");
     expect(wrapper.text()).toContain("Wispr Flow");
 
-    const exportButton = wrapper.findAll("button").find((item) => item.text() === "导出本轮 CSV");
-    expect(exportButton).toBeTruthy();
-    await exportButton!.trigger("click");
+    const exportButton = wrapper.find('button[aria-label="导出本轮 CSV"]');
+    expect(exportButton.exists()).toBe(true);
+    await exportButton.trigger("click");
     await flushPromises();
 
     expect(api.exportCsv).toHaveBeenCalledWith("session-1");
+  });
+
+  it("highlights failed history session summary text in red", async () => {
+    const { api } = setupDesktopApi();
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-failed-session-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "zh.wav",
+        status: "failed",
+        phase: "failed",
+        rawText: "",
+        normalizedText: "",
+        inputEventCount: 0,
+        finalTextLength: 0,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".session-summary--danger").text()).toContain("失败 1");
+  });
+
+  it("shows the app name next to the history session timestamp", async () => {
+    const { api, sessions } = setupDesktopApi();
+    sessions[0] = {
+      ...sessions[0],
+      runCount: 1,
+      successCount: 0,
+      failedCount: 0,
+      cancelledCount: 1,
+      status: "cancelled",
+    };
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-typeless-1",
+        runSessionId: "session-1",
+        appId: "typeless",
+        appName: "Typeless",
+        sampleId: "sample-1",
+        samplePath: "zh.wav",
+        status: "cancelled",
+        phase: "cancelled",
+        rawText: "",
+        normalizedText: "",
+        inputEventCount: 0,
+        finalTextLength: 0,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    const sessionToggle = wrapper.get("button.session-toggle");
+    expect(sessionToggle.text()).toContain("Typeless");
+    expect(wrapper.get(".session-app-name").text()).toBe("Typeless");
   });
 
   it("shows a retry icon for failed history rows and reruns only that app/sample", async () => {
@@ -684,7 +881,7 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    const retryButton = wrapper.find('button[title="重新测试"]');
+    const retryButton = wrapper.find('button[aria-label="重新测试"]');
     expect(retryButton.exists()).toBe(true);
 
     await retryButton.trigger("click");
@@ -743,7 +940,7 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    await wrapper.find('button[title="重新测试"]').trigger("click");
+    await wrapper.find('button[aria-label="重新测试"]').trigger("click");
     await flushPromises();
     await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
     await flushPromises();
@@ -800,7 +997,7 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    await wrapper.find('button[title="重新测试"]').trigger("click");
+    await wrapper.find('button[aria-label="重新测试"]').trigger("click");
     await flushPromises();
     await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
     await flushPromises();
@@ -840,7 +1037,74 @@ describe("App renderer", () => {
 
     expect(wrapper.text()).toContain("重试");
     expect(wrapper.text()).toContain("2");
-    expect(wrapper.find(".history-sample-text").attributes("title")).toBe("内建自测/english-01.wav");
+    expect(wrapper.find(".history-sample-text").attributes("data-tooltip")).toBe("内建自测/english-01.wav");
+  });
+
+  it("uses the retry completion time as the displayed session time for merged history rows", async () => {
+    const { api, sessions } = setupDesktopApi();
+    sessions[0] = {
+      ...sessions[0],
+      startedAt: "2026-03-23T10:00:00.000Z",
+    };
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-merged-time-1",
+        runSessionId: "session-1",
+        appId: "typeless",
+        appName: "Typeless",
+        sampleId: "builtin-en-01",
+        samplePath: "内建自测/english-01.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "ok",
+        normalizedText: "ok",
+        inputEventCount: 1,
+        finalTextLength: 2,
+        createdAt: "2026-03-24T07:25:27.000Z",
+        retryCount: 1,
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("03/24 15:25:27");
+  });
+
+  it("shows the retry action for successful rows too", async () => {
+    const { api } = setupDesktopApi();
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-success-1",
+        runSessionId: "session-1",
+        appId: "typeless",
+        appName: "Typeless",
+        sampleId: "builtin-en-01",
+        samplePath: "内建自测/english-01.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "ok",
+        normalizedText: "ok",
+        inputEventCount: 1,
+        finalTextLength: 2,
+        createdAt: "2026-03-23T10:03:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('button[aria-label="重新测试"]').exists()).toBe(true);
   });
 
   it("clears the previous main-page results when a new run starts", async () => {

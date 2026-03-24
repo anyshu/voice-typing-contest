@@ -194,14 +194,14 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `测试历史`, `App管理`, `设置`, `怎么开始`, `当前实现`
+- page navigation for `主控台`, `样本管理`, `App管理`, `测试历史`, `设置`, `运行前检查`, `怎么开始`, `当前实现`
 - configuration UI
 - target app CRUD now lives in dedicated `App管理`
 - permission status UI
 - built-in input box for typed output
 - live run timeline
 - latest-session summary on `主控台`
-- dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter
+- dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, importing compatible result CSV files as synthetic history sessions, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 

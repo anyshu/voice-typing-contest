@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { nanoid } from "nanoid";
 import type { AppConfig, InputObservationEvent, RunStartOptions } from "../shared/types";
@@ -145,6 +145,32 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     if (result.canceled || !result.filePath) return undefined;
     await writeFile(result.filePath, deps.resultStore.exportCsv(runSessionId), "utf8");
     return result.filePath;
+  });
+  ipcMain.handle("results:pickImportCsv", async () => {
+    const result = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    return result.canceled ? undefined : result.filePaths[0];
+  });
+  ipcMain.handle("results:importCsv", async (_event, filePath: string) => {
+    const csvText = await readFile(filePath, "utf8");
+    return deps.resultStore.importCsv(
+      csvText,
+      filePath,
+      deps.getConfig(),
+      deps.getPermissions() as any,
+      deps.getDevices() as any,
+    );
+  });
+  ipcMain.handle("results:importCsvContent", async (_event, csvText: string, sourceName: string) => {
+    return deps.resultStore.importCsv(
+      csvText,
+      sourceName,
+      deps.getConfig(),
+      deps.getPermissions() as any,
+      deps.getDevices() as any,
+    );
   });
   ipcMain.on("run:inputEvent", (_event, payload: InputObservationEvent) => deps.runController.onInputEvent(payload));
 }

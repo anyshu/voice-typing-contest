@@ -206,6 +206,15 @@ export interface ResultDetail {
   events: RunEventRecord[];
 }
 
+export interface CsvImportSummary {
+  sessionId: string;
+  importedCount: number;
+  appCount: number;
+  startedAt: string;
+  finishedAt: string;
+  sourcePath: string;
+}
+
 export interface SettingsPayload extends AppConfig {
   permissions: PermissionSnapshot[];
   devices: AudioDevice[];

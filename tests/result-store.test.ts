@@ -137,4 +137,34 @@ describe("ResultStore", () => {
     expect(csv).not.toContain("session-2");
     store.close();
   });
+
+  it("imports exported csv rows as a new history session", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-db-import-"));
+    const store = new ResultStore(join(root, "import.sqlite"));
+    const config = defaultConfig();
+    const originalNow = Date.now;
+    try {
+      Date.now = () => new Date("2026-03-24T12:34:56.000Z").getTime();
+
+      const summary = store.importCsv([
+        "app_name,sample_path,status,failure_category,failure_reason,trigger_stop_to_first_char_ms,trigger_stop_to_final_text_ms,final_text_length,raw_text,created_at",
+        "\"AutoGLM\",\"6.3/en/sample.mp3\",\"success\",\"\",\"\",\"1356\",\"1356\",\"11\",\"hello world\",\"2026-03-24T03:50:22.741Z\"",
+      ].join("\n"), "/tmp/sample.csv", config, defaultPermissions(), defaultDevices());
+
+      const sessions = store.listSessions();
+      const runs = store.listRuns(summary.sessionId);
+
+      expect(summary.importedCount).toBe(1);
+      expect(sessions[0]?.id).toBe(summary.sessionId);
+      expect(summary.startedAt).toBe("2026-03-24T12:34:56.000Z");
+      expect(runs[0]?.appName).toBe("AutoGLM");
+      expect(runs[0]?.samplePath).toBe("6.3/en/sample.mp3");
+      expect(runs[0]?.triggerStopToFirstCharMs).toBe(1356);
+      expect(runs[0]?.createdAt).toBe("2026-03-24T12:34:56.000Z");
+      expect(runs[0]?.timeline).toEqual([]);
+    } finally {
+      Date.now = originalNow;
+      store.close();
+    }
+  });
 });

@@ -11,10 +11,10 @@ The renderer currently uses a desktop shell with:
 Current first-level pages:
 
 - `主控台`
-- `运行前检查`
 - `样本`
 - `测试历史`
 - `设置`
+- `运行前检查`
 - `怎么开始`
 - `当前实现`
 
@@ -78,10 +78,10 @@ Current first-level pages:
 | Scene | Hugeicon |
 |---|---|
 | 主控台 | `DashboardSquare01Icon` |
-| 运行前检查 | `CheckListIcon` |
 | 样本 | `FolderAudioIcon` |
 | 测试历史 | `Analytics01Icon` |
 | 设置 | `Settings01Icon` |
+| 运行前检查 | `CheckListIcon` |
 | 怎么开始 | `BookOpen01Icon` |
 | 当前实现 | `InformationCircleIcon` |
 | 开始 | `PlayCircleIcon` |
@@ -176,7 +176,9 @@ The `测试历史` page is grouped as:
 - app
 - sample row
 
-The session header owns the `导出本轮 CSV` action.
+The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 CSV` action.
+
+If a session contains one or more failed rows, only the session summary line text should switch to the danger color; do not add a red background, border, or full-row highlight.
 
 Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
 
@@ -187,6 +189,8 @@ The `样本管理` page should show:
 - the selected sample root
 - a compact summary strip with enabled / disabled / total sample counts
 - one row per sample with path, language, duration, current status, and an enable toggle
+
+On desktop widths, the sample path and the `ZH · 8.93 秒` style language-duration metadata should stay on the same line, with the path truncating first if horizontal space runs short.
 
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
 

@@ -3,10 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { HugeiconsIcon } from "@hugeicons/vue";
 import {
   Analytics01Icon,
+  AppStoreIcon,
   BookOpen01Icon,
   CheckListIcon,
   DashboardSquare01Icon,
   Delete02Icon,
+  FileExportIcon,
   FolderAudioIcon,
   InformationCircleIcon,
   PlayCircleIcon,
@@ -21,6 +23,7 @@ import { safeTimelinePayload, timelineDetail, timelineTitle } from "../shared/ti
 import type {
   AppConfig,
   AudioDevice,
+  CsvImportSummary,
   FailureCategory,
   PermissionSnapshot,
   PreflightReport,
@@ -30,6 +33,7 @@ import type {
   RunProgress,
   RunStartOptions,
   SettingsPayload,
+  TargetAppProfile,
   TestRunRecord,
 } from "../shared/types";
 
@@ -61,6 +65,9 @@ const pendingRunStart = ref(false);
 const preRunDialogVisible = ref(false);
 const preRunTimelineEvents = ref<RunEventRecord[]>([]);
 const showLatestSessionTimeline = ref(true);
+const importCsvDialogVisible = ref(false);
+const importCsvDragActive = ref(false);
+const importCsvBusy = ref(false);
 let resolvePreRunConfirm: (() => void) | null = null;
 let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
 
@@ -105,30 +112,37 @@ const modeLabels = {
 
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
 const enabledApps = computed(() => config.value.targetApps.filter((item) => item.enabled));
+const builtinApps = computed(() => config.value.targetApps.filter((item) => isBuiltinApp(item)));
+const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
+const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
 const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
 const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
-const resultSessionGroups = computed(() => sessions.value.map((session) => {
-  const runs = results.value.filter((item) => item.runSessionId === session.id);
-  const appNames = [...new Set(runs.map((item) => item.appName))];
-  return {
-    session,
-    runs,
-    appGroups: appNames.map((appName) => {
-      const appRuns = runs.filter((item) => item.appName === appName);
-      return {
-        appName,
-        runs: appRuns,
-        successCount: appRuns.filter((item) => item.status === "success").length,
-        failedCount: appRuns.filter((item) => item.status === "failed").length,
-        cancelledCount: appRuns.filter((item) => item.status === "cancelled").length,
-      };
-    }),
-  };
-}));
+const resultSessionGroups = computed(() => sessions.value
+  .map((session) => {
+    const runs = results.value.filter((item) => item.runSessionId === session.id);
+    const appNames = [...new Set(runs.map((item) => item.appName))];
+    const displayTime = runs.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, session.startedAt);
+    return {
+      session,
+      runs,
+      displayTime,
+      appGroups: appNames.map((appName) => {
+        const appRuns = runs.filter((item) => item.appName === appName);
+        return {
+          appName,
+          runs: appRuns,
+          successCount: appRuns.filter((item) => item.status === "success").length,
+          failedCount: appRuns.filter((item) => item.status === "failed").length,
+          cancelledCount: appRuns.filter((item) => item.status === "cancelled").length,
+        };
+      }),
+    };
+  })
+  .sort((left, right) => right.displayTime.localeCompare(left.displayTime)));
 const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
@@ -220,6 +234,20 @@ function buildTimelineCards(
   }
 
   return cards;
+}
+
+function isBuiltinApp(app: TargetAppProfile): boolean {
+  return Boolean(app.launchCommand?.startsWith("selftest://"));
+}
+
+function appKindLabel(app: TargetAppProfile): string {
+  return isBuiltinApp(app) ? "内建自测" : "真实 App";
+}
+
+function appLaunchSummary(app: TargetAppProfile): string {
+  return isBuiltinApp(app)
+    ? "内建流程"
+    : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
 }
 
 function plainConfig(): AppConfig {
@@ -339,6 +367,12 @@ function formatSessionTime(value: string): string {
   });
 }
 
+function sessionAppLabel(appGroups: Array<{ appName: string }>): string {
+  if (appGroups.length === 0) return "";
+  if (appGroups.length === 1) return appGroups[0].appName;
+  return `${appGroups[0].appName} 等 ${appGroups.length} 个 App`;
+}
+
 function formatSessionTimestamp(value: string): string {
   const date = new Date(value);
   const year = date.getFullYear();
@@ -352,8 +386,8 @@ function formatSessionTimestamp(value: string): string {
 
 function formatLatencyMs(value?: number): string {
   if (value === undefined) return "-";
-  if (value < 0) return `提前 ${Math.abs(value)} ms`;
-  return `${value} ms`;
+  if (value < 0) return `提前 ${Math.abs(value)}`;
+  return `${value}`;
 }
 
 function average(values: number[]): number | undefined {
@@ -792,6 +826,86 @@ async function exportCsv(runSessionId?: string): Promise<void> {
   }
 }
 
+function openImportCsvDialog(): void {
+  importCsvDialogVisible.value = true;
+  importCsvDragActive.value = false;
+}
+
+function closeImportCsvDialog(): void {
+  if (importCsvBusy.value) return;
+  importCsvDialogVisible.value = false;
+  importCsvDragActive.value = false;
+}
+
+async function importCsvFromPath(filePath?: string): Promise<void> {
+  if (!filePath) {
+    showToast("已取消导入。");
+    return;
+  }
+
+  try {
+    importCsvBusy.value = true;
+    const summary = await window.vtc.importCsv(filePath) as CsvImportSummary;
+    await refreshResultData();
+    ensureSessionExpanded(summary.sessionId);
+    page.value = "history";
+    importCsvDialogVisible.value = false;
+    importCsvDragActive.value = false;
+    showToast(`已导入 CSV：${summary.importedCount} 条记录，来自 ${summary.appCount} 个应用。`);
+  } catch (error) {
+    notice.value = `导入失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    importCsvBusy.value = false;
+  }
+}
+
+async function chooseImportCsvFile(): Promise<void> {
+  const picked = await window.vtc.pickImportCsv() as string | undefined;
+  await importCsvFromPath(picked);
+}
+
+function handleImportCsvDragEnter(event: DragEvent): void {
+  event.preventDefault();
+  importCsvDragActive.value = true;
+}
+
+function handleImportCsvDragOver(event: DragEvent): void {
+  event.preventDefault();
+  importCsvDragActive.value = true;
+}
+
+function handleImportCsvDragLeave(event: DragEvent): void {
+  event.preventDefault();
+  const relatedTarget = event.relatedTarget as Node | null;
+  if (relatedTarget && (event.currentTarget as HTMLElement | null)?.contains(relatedTarget)) return;
+  importCsvDragActive.value = false;
+}
+
+async function handleImportCsvDrop(event: DragEvent): Promise<void> {
+  event.preventDefault();
+  importCsvDragActive.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) {
+    showToast("没有检测到可导入的 CSV 文件。");
+    return;
+  }
+
+  try {
+    importCsvBusy.value = true;
+    const csvText = await file.text();
+    const summary = await window.vtc.importCsvContent(csvText, file.name) as CsvImportSummary;
+    await refreshResultData();
+    ensureSessionExpanded(summary.sessionId);
+    page.value = "history";
+    importCsvDialogVisible.value = false;
+    showToast(`已导入 CSV：${summary.importedCount} 条记录，来自 ${summary.appCount} 个应用。`);
+  } catch (error) {
+    notice.value = `导入失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    importCsvBusy.value = false;
+  }
+}
+
 function addApp(): void {
   config.value.targetApps.push({
     id: `app-${Date.now()}`,
@@ -1129,25 +1243,25 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'main' }" @click="page = 'main'">
               <HugeiconsIcon :icon="DashboardSquare01Icon" :size="18" class="nav-icon" />
-              <span>主控台</span>
-            </button>
-          </li>
-          <li>
-            <button class="nav-button" :class="{ active: page === 'checks' }" @click="page = 'checks'">
-              <HugeiconsIcon :icon="CheckListIcon" :size="18" class="nav-icon" />
-              <span>运行前检查</span>
+              <span class="nav-label">主控台</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'samples' }" @click="page = 'samples'">
               <HugeiconsIcon :icon="FolderAudioIcon" :size="18" class="nav-icon" />
-              <span>样本管理</span>
+              <span class="nav-label">样本管理</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-button" :class="{ active: page === 'apps' }" @click="page = 'apps'">
+              <HugeiconsIcon :icon="AppStoreIcon" :size="18" class="nav-icon" />
+              <span class="nav-label">App管理</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'history' }" @click="page = 'history'">
               <HugeiconsIcon :icon="Analytics01Icon" :size="18" class="nav-icon" />
-              <span>测试历史</span>
+              <span class="nav-label">测试历史</span>
             </button>
           </li>
         </ul>
@@ -1157,33 +1271,33 @@ onBeforeUnmount(() => {
         <div class="sidebar-label">其他</div>
         <ul class="nav-list">
           <li>
-            <button class="nav-button" :class="{ active: page === 'apps' }" @click="page = 'apps'">
+            <button class="nav-button" :class="{ active: page === 'settings' }" @click="page = 'settings'">
               <HugeiconsIcon :icon="Settings01Icon" :size="18" class="nav-icon" />
-              <span>App管理</span>
+              <span class="nav-label">设置</span>
             </button>
           </li>
           <li>
-            <button class="nav-button" :class="{ active: page === 'settings' }" @click="page = 'settings'">
-              <HugeiconsIcon :icon="Settings01Icon" :size="18" class="nav-icon" />
-              <span>设置</span>
+            <button class="nav-button" :class="{ active: page === 'checks' }" @click="page = 'checks'">
+              <HugeiconsIcon :icon="CheckListIcon" :size="18" class="nav-icon" />
+              <span class="nav-label">运行前检查</span>
             </button>
           </li>
           <li>
             <button class="nav-button nav-button-guide" :class="{ active: page === 'intro' }" @click="page = 'intro'">
               <HugeiconsIcon :icon="BookOpen01Icon" :size="18" class="nav-icon" />
-              <span>怎么开始</span>
+              <span class="nav-label">怎么开始</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'faq' }" @click="page = 'faq'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span>Q&A</span>
+              <span class="nav-label">Q&A</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'about' }" @click="page = 'about'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span>当前实现</span>
+              <span class="nav-label">当前实现</span>
             </button>
           </li>
         </ul>
@@ -1330,7 +1444,7 @@ onBeforeUnmount(() => {
           <article class="panel">
             <template v-if="mainSessionGroup">
               <div class="detail-headline">
-                <strong>测试统计 {{ formatSessionTimestamp(mainSessionGroup.session.startedAt) }}</strong>
+                <strong>测试统计 {{ formatSessionTimestamp(mainSessionGroup.displayTime) }}</strong>
                 <span class="pill">{{ sessionStatusText(mainSessionGroup.session.status) }}</span>
               </div>
               <div class="app-summary-stack">
@@ -1465,12 +1579,25 @@ onBeforeUnmount(() => {
 
       <section v-else-if="page === 'history'" class="result-stack">
         <article class="panel">
+          <div class="panel-header-row history-page-header">
+            <div>
+              <h3>历史列表</h3>
+              <p class="muted">支持导出每轮结果，也支持把外部 CSV 补录成历史测试记录。</p>
+            </div>
+            <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
+          </div>
           <div class="session-stack">
             <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
               <div class="session-header">
                 <button class="session-toggle" @click="toggleSession(group.session.id)">
-                  <strong>{{ formatSessionTime(group.session.startedAt) }}</strong>
-                  <div class="muted">
+                  <strong>{{ formatSessionTime(group.displayTime) }}</strong>
+                  <span v-if="sessionAppLabel(group.appGroups)" class="session-app-name">
+                    {{ sessionAppLabel(group.appGroups) }}
+                  </span>
+                  <div
+                    class="muted session-summary"
+                    :class="{ 'session-summary--danger': group.session.failedCount > 0 }"
+                  >
                     {{ sessionStatusText(group.session.status) }}
                     · 共 {{ group.session.runCount }} 条
                     · 成功 {{ group.session.successCount }}
@@ -1479,12 +1606,19 @@ onBeforeUnmount(() => {
                   </div>
                   <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
                 </button>
-                <button class="secondary-button" @click="exportCsv(group.session.id)">导出本轮 CSV</button>
+                <button
+                  class="history-export-button"
+                  aria-label="导出本轮 CSV"
+                  data-tooltip="导出本轮 CSV"
+                  @click="exportCsv(group.session.id)"
+                >
+                  <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
+                </button>
               </div>
 
               <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
                 <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
-                  <div class="app-group-header">
+                  <div v-if="group.appGroups.length > 1" class="app-group-header">
                     <strong>{{ appGroup.appName }}</strong>
                     <div class="muted">
                       共 {{ appGroup.runs.length }} 条
@@ -1495,12 +1629,21 @@ onBeforeUnmount(() => {
                   </div>
 
                   <table class="result-table">
+                    <colgroup>
+                      <col style="width: 61%" />
+                      <col style="width: 5%" />
+                      <col style="width: 8%" />
+                      <col style="width: 8%" />
+                      <col style="width: 8%" />
+                      <col style="width: 5%" />
+                      <col style="width: 5%" />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>样本</th>
                         <th>状态</th>
-                        <th>首字</th>
-                        <th>定稿</th>
+                        <th>首字ms</th>
+                        <th>定稿ms</th>
                         <th>长度</th>
                         <th>重试</th>
                         <th>操作</th>
@@ -1511,11 +1654,15 @@ onBeforeUnmount(() => {
                         v-for="result in appGroup.runs"
                         :key="result.id"
                       >
-                        <td>
-                          <span class="history-sample-text" :title="result.samplePath">{{ result.samplePath }}</span>
+                        <td class="history-sample-cell">
+                          <span
+                            class="history-sample-text"
+                            tabindex="0"
+                            :data-tooltip="result.samplePath"
+                          >{{ result.samplePath }}</span>
                         </td>
-                        <td>
-                          <div class="history-status-cell">
+                        <td class="history-status-cell">
+                          <div class="history-status-wrap">
                             <span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span>
                           </div>
                         </td>
@@ -1523,18 +1670,16 @@ onBeforeUnmount(() => {
                         <td>{{ formatLatencyMs(result.triggerStopToFinalTextMs) }}</td>
                         <td>{{ result.finalTextLength }}</td>
                         <td>{{ result.retryCount ?? 0 }}</td>
-                        <td>
+                        <td class="history-action-cell">
                           <button
-                            v-if="result.status === 'failed'"
                             class="history-retry-button"
                             :disabled="running || pendingRunStart || preRunDialogVisible"
                             aria-label="重新测试"
-                            title="重新测试"
+                            data-tooltip="重新测试"
                             @click.stop="retryHistoryResult(result)"
                           >
                             <HugeiconsIcon :icon="ReloadIcon" :size="14" class="button-icon" />
                           </button>
-                          <span v-else class="muted">-</span>
                         </td>
                       </tr>
                       <tr v-if="!appGroup.runs.length">
@@ -1551,58 +1696,116 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section v-else-if="page === 'apps'" class="settings-page">
-        <article class="panel">
-          <div class="panel-header-row">
-            <h3>目标App</h3>
+      <section v-else-if="page === 'apps'" class="settings-page apps-page">
+        <article class="panel apps-page__panel">
+          <div class="panel-header-row apps-page__header">
+            <div>
+              <h3>目标App</h3>
+              <p class="muted">把真实目标 App 和内建自测都收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
+            </div>
             <div class="toolbar">
               <button class="secondary-button" @click="addApp">新增应用</button>
               <button class="secondary-button" @click="saveSettings">保存设置</button>
             </div>
           </div>
-          <p class="muted">如果你现在只想确认工具能不能跑，保留“内建自测”开启就够了。</p>
-          <div v-for="app in config.targetApps" :key="app.id" class="app-editor-card" :data-guide-target="app.enabled ? 'apps' : undefined">
-            <div class="panel-header-row">
-              <div>
-                <strong>{{ app.name }}</strong>
-                <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "这是工具自带的自测目标，不依赖真实应用。" : "真实目标App配置" }}</div>
-              </div>
-              <div class="toolbar">
-                <label class="switch-row">
-                  <span>启用</span>
-                  <input v-model="app.enabled" type="checkbox" />
-                </label>
-                <button
-                  class="ghost-button icon-only-button"
-                  :aria-label="`删除 ${app.name}`"
-                  :title="`删除 ${app.name}`"
-                  @click="removeApp(app.id)"
-                >
-                  <HugeiconsIcon :icon="Delete02Icon" :size="18" class="button-icon" />
-                </button>
-              </div>
+
+          <section class="summary-strip summary-strip--apps">
+            <div class="summary-item">
+              <HugeiconsIcon :icon="AppStoreIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">目标总数</span>
+              <strong>{{ config.targetApps.length }}</strong>
             </div>
-            <div class="settings-grid">
-              <label><span>名称 <em class="required-mark">*</em></span><input v-model="app.name" /></label>
-              <label><span>.app 文件名 <em class="required-mark">*</em></span><input v-model="app.appFileName" :disabled="Boolean(app.launchCommand?.startsWith('selftest://'))" /></label>
-              <label :data-guide-target="app.enabled ? 'hotkey' : undefined">
-                <span>热键 <em class="required-mark">*</em></span>
-                <div class="inline-field">
-                  <input :value="app.hotkeyChord" readonly />
-                  <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
-                  <button class="ghost-button" @click="setHotkeyForApp(app.id, 'Fn')">设为 Fn</button>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="PlayCircleIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">已启用</span>
+              <strong>{{ enabledApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="DashboardSquare01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">真实 App</span>
+              <strong>{{ enabledRealApps.length }} / {{ realApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">内建自测</span>
+              <strong>{{ builtinApps.length ? (builtinApps[0]?.enabled ? "已启用" : "未启用") : "未配置" }}</strong>
+            </div>
+          </section>
+
+          <div class="app-editor-list">
+            <div
+              v-for="app in config.targetApps"
+              :key="app.id"
+              class="app-editor-card"
+              :class="{ 'app-editor-card--builtin': isBuiltinApp(app) }"
+              :data-guide-target="app.enabled ? 'apps' : undefined"
+            >
+              <div class="app-editor-card__top">
+                <div class="app-editor-card__headline">
+                  <strong>{{ app.name }}</strong>
+                  <div class="app-editor-card__badges">
+                    <span class="pill" :class="isBuiltinApp(app) ? 'warning' : ''">{{ appKindLabel(app) }}</span>
+                    <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                  </div>
                 </div>
-                <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
-              </label>
-              <label class="compact-field">
-                <span>触发方式 <em class="required-mark">*</em></span>
-                <select v-model="app.hotkeyTriggerMode" class="compact-select">
-                  <option value="hold_release">按住并保持，松开结束</option>
-                  <option value="press_start_press_stop">按下抬起开始，再按下抬起结束</option>
-                </select>
-              </label>
-              <label><span>启动命令</span><input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" /></label>
-              <label style="grid-column: 1 / -1"><span>备注</span><textarea v-model="app.notes" rows="2" /></label>
+                <div class="toolbar app-editor-card__actions">
+                  <label class="switch-row">
+                    <span>启用</span>
+                    <input v-model="app.enabled" type="checkbox" />
+                  </label>
+                  <button
+                    class="ghost-button icon-only-button"
+                    :aria-label="`删除 ${app.name}`"
+                    :title="`删除 ${app.name}`"
+                    @click="removeApp(app.id)"
+                  >
+                    <HugeiconsIcon :icon="Delete02Icon" :size="18" class="button-icon" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="app-editor-card__summary">
+                <span class="muted">热键 {{ app.hotkeyChord || "未设置" }}</span>
+                <span class="muted">·</span>
+                <span class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</span>
+                <span class="muted">·</span>
+                <span class="muted">启动目标：{{ appLaunchSummary(app) }}</span>
+              </div>
+
+              <div class="settings-grid app-editor-form">
+                <label class="app-form-row">
+                  <span class="app-form-label">名称 <em class="required-mark">*</em></span>
+                  <input v-model="app.name" />
+                </label>
+                <label class="app-form-row">
+                  <span class="app-form-label">.app 文件名 <em class="required-mark">*</em></span>
+                  <input v-model="app.appFileName" :disabled="isBuiltinApp(app)" />
+                </label>
+                <label class="app-form-row app-form-row--wide" style="grid-column: 1 / -1">
+                  <span class="app-form-label">启动命令</span>
+                  <input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" />
+                </label>
+                <label class="app-form-row app-form-row--wide" :data-guide-target="app.enabled ? 'hotkey' : undefined" style="grid-column: 1 / -1">
+                  <span class="app-form-label">热键 <em class="required-mark">*</em></span>
+                  <div class="inline-field inline-field--triple">
+                    <input :value="app.hotkeyChord" readonly />
+                    <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
+                    <button class="ghost-button" @click="setHotkeyForApp(app.id, 'Fn')">设为 Fn</button>
+                  </div>
+                  <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
+                </label>
+                <label class="app-form-row compact-field">
+                  <span class="app-form-label">触发方式 <em class="required-mark">*</em></span>
+                  <select v-model="app.hotkeyTriggerMode" class="compact-select">
+                    <option value="hold_release">按住并保持，松开结束</option>
+                    <option value="press_start_press_stop">按下抬起开始，再按下抬起结束</option>
+                  </select>
+                </label>
+                <label class="app-form-row app-form-row--wide" style="grid-column: 1 / -1">
+                  <span class="app-form-label">备注</span>
+                  <textarea v-model="app.notes" rows="2" placeholder="例如：先关闭“语音输入时静音”，或者需要登录后再触发。" />
+                </label>
+              </div>
             </div>
           </div>
         </article>
@@ -1819,6 +2022,34 @@ onBeforeUnmount(() => {
           <div class="dialog-actions">
             <button class="ghost-button" @click="page = 'main'; completionDialogVisible = false">回主控台</button>
             <button class="primary-button" @click="completionDialogVisible = false">知道了</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="importCsvDialogVisible" class="dialog-backdrop" @click.self="closeImportCsvDialog()">
+        <div class="dialog-card import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-csv-dialog-title">
+          <div class="dialog-hero">
+            <div class="dialog-hero-copy">
+              <span class="dialog-kicker">CSV Import</span>
+              <h3 id="import-csv-dialog-title">导入外部测试结果</h3>
+              <p>把导出的结果 CSV 拖进来，系统会补录成一轮新的历史测试记录。</p>
+            </div>
+          </div>
+          <button
+            class="import-dropzone"
+            :class="{ 'import-dropzone--active': importCsvDragActive, 'import-dropzone--busy': importCsvBusy }"
+            :disabled="importCsvBusy"
+            @dragenter="handleImportCsvDragEnter"
+            @dragover="handleImportCsvDragOver"
+            @dragleave="handleImportCsvDragLeave"
+            @drop="handleImportCsvDrop"
+            @click="chooseImportCsvFile"
+          >
+            <strong>{{ importCsvBusy ? "正在导入..." : "拖拽 CSV 到这里" }}</strong>
+            <span>{{ importCsvBusy ? "请稍候，不要关闭窗口。" : "或者点击这里选择一个 .csv 文件" }}</span>
+          </button>
+          <div class="dialog-actions">
+            <button class="ghost-button" :disabled="importCsvBusy" @click="closeImportCsvDialog()">取消</button>
           </div>
         </div>
       </div>

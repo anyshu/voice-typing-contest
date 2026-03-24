@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import type { AppConfig, ResultDetail, RunEventRecord, RunSessionRecord, RunSessionSummary, TestRunRecord } from "../shared/types";
+import { nanoid } from "nanoid";
+import type { AppConfig, AudioDevice, CsvImportSummary, PermissionSnapshot, ResultDetail, ResultStatus, RunEventRecord, RunSessionRecord, RunSessionSummary, TestRunRecord } from "../shared/types";
 
 type DatabaseLike = {
   exec(sql: string): void;
@@ -23,6 +24,135 @@ function openDatabase(dbPath: string): DatabaseLike {
 
   const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
   return new DatabaseSync(dbPath);
+}
+
+type ImportedCsvRow = {
+  appName: string;
+  samplePath: string;
+  status: ResultStatus;
+  failureCategory?: string;
+  failureReason?: string;
+  triggerStopToFirstCharMs?: number;
+  triggerStopToFinalTextMs?: number;
+  finalTextLength: number;
+  rawText: string;
+  createdAt: string;
+};
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        cell += "\"";
+        index += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === ",") {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") {
+        index += 1;
+      }
+      row.push(cell);
+      if (row.some((value) => value.length > 0)) {
+        rows.push(row);
+      }
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    if (row.some((value) => value.length > 0)) {
+      rows.push(row);
+    }
+  }
+
+  return rows;
+}
+
+function normalizeImportedStatus(value: string): ResultStatus {
+  if (value === "failed" || value === "cancelled" || value === "success") {
+    return value;
+  }
+  return "success";
+}
+
+function phaseFromImportedStatus(status: ResultStatus): TestRunRecord["phase"] {
+  if (status === "success") return "completed";
+  if (status === "cancelled") return "cancelled";
+  return "failed";
+}
+
+function parseOptionalInteger(value?: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeImportedRows(csvText: string): ImportedCsvRow[] {
+  const rows = parseCsv(csvText);
+  const [header, ...body] = rows;
+  if (!header?.length) {
+    throw new Error("CSV 为空，无法导入。");
+  }
+
+  const indexByName = new Map(header.map((name, index) => [name.trim(), index]));
+  const requiredColumns = [
+    "app_name",
+    "sample_path",
+    "status",
+    "final_text_length",
+    "raw_text",
+    "created_at",
+  ];
+
+  for (const column of requiredColumns) {
+    if (!indexByName.has(column)) {
+      throw new Error(`CSV 缺少必需列：${column}`);
+    }
+  }
+
+  return body.map((row, rowIndex) => {
+    const getValue = (name: string): string => row[indexByName.get(name) ?? -1] ?? "";
+    const createdAt = getValue("created_at").trim();
+    if (!createdAt) {
+      throw new Error(`第 ${rowIndex + 2} 行缺少 created_at，无法导入。`);
+    }
+
+    return {
+      appName: getValue("app_name").trim() || "Imported App",
+      samplePath: getValue("sample_path").trim() || `imported-sample-${rowIndex + 1}`,
+      status: normalizeImportedStatus(getValue("status").trim()),
+      failureCategory: getValue("failure_category").trim() || undefined,
+      failureReason: getValue("failure_reason").trim() || undefined,
+      triggerStopToFirstCharMs: parseOptionalInteger(getValue("trigger_stop_to_first_char_ms")),
+      triggerStopToFinalTextMs: parseOptionalInteger(getValue("trigger_stop_to_final_text_ms")),
+      finalTextLength: parseOptionalInteger(getValue("final_text_length")) ?? getValue("raw_text").length,
+      rawText: getValue("raw_text"),
+      createdAt,
+    };
+  });
 }
 
 export class ResultStore {
@@ -392,6 +522,87 @@ export class ResultStore {
       csvRows.push(line);
     }
     return csvRows.join("\n");
+  }
+
+  importCsv(
+    csvText: string,
+    sourcePath: string,
+    configSnapshot: AppConfig,
+    permissionSnapshot: PermissionSnapshot[],
+    deviceSnapshot: AudioDevice[],
+  ): CsvImportSummary {
+    const importedRows = normalizeImportedRows(csvText).sort((left, right) => (
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+    ));
+    if (!importedRows.length) {
+      throw new Error("CSV 里没有可导入的结果。");
+    }
+
+    const sessionId = `import-${nanoid(8)}`;
+    const sampleIds = new Map<string, string>();
+    const appIds = new Map<string, string>();
+    const importStartedAtMs = Date.now();
+    const importedCreatedAts = importedRows.map((_, index) => new Date(importStartedAtMs + index * 1000).toISOString());
+    const startedAt = importedCreatedAts[0]!;
+    const finishedAt = importedCreatedAts[importedCreatedAts.length - 1]!;
+
+    for (const row of importedRows) {
+      if (!appIds.has(row.appName)) {
+        appIds.set(row.appName, `imported-app-${nanoid(8)}`);
+      }
+      if (!sampleIds.has(row.samplePath)) {
+        sampleIds.set(row.samplePath, `imported-sample-${nanoid(8)}`);
+      }
+    }
+
+    this.createSession({
+      id: sessionId,
+      startedAt,
+      finishedAt,
+      selectedAppIds: [...appIds.values()],
+      selectedSampleIds: [...sampleIds.values()],
+      permissionSnapshot,
+      deviceSnapshot,
+      configSnapshot,
+      status: importedRows.some((row) => row.status === "failed")
+        ? "failed"
+        : importedRows.some((row) => row.status === "cancelled")
+          ? "cancelled"
+          : "completed",
+    });
+
+    for (const [index, row] of importedRows.entries()) {
+      const samplePath = row.samplePath;
+      this.insertRun({
+        id: `imported-run-${nanoid(10)}`,
+        runSessionId: sessionId,
+        appId: appIds.get(row.appName)!,
+        appName: row.appName,
+        sampleId: sampleIds.get(samplePath)!,
+        samplePath,
+        status: row.status,
+        phase: phaseFromImportedStatus(row.status),
+        failureCategory: row.failureCategory as TestRunRecord["failureCategory"],
+        failureReason: row.failureReason ?? (row.status === "failed" ? "Imported from CSV" : undefined),
+        rawText: row.rawText,
+        normalizedText: row.rawText,
+        triggerStopToFirstCharMs: row.triggerStopToFirstCharMs,
+        triggerStopToFinalTextMs: row.triggerStopToFinalTextMs,
+        inputEventCount: 0,
+        finalTextLength: row.finalTextLength,
+        createdAt: importedCreatedAts[index]!,
+        timeline: [],
+      });
+    }
+
+    return {
+      sessionId,
+      importedCount: importedRows.length,
+      appCount: appIds.size,
+      startedAt,
+      finishedAt,
+      sourcePath,
+    };
   }
 
   close(): void {

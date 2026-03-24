@@ -1571,7 +1571,7 @@ onBeforeUnmount(() => {
             <div v-for="(sample, index) in config.audioSamples" :key="sample.id" class="sample-row-clean">
               <div class="sample-row-index">{{ index + 1 }}、</div>
               <div class="sample-row-main">
-                <strong>{{ sample.relativePath }}</strong>
+                <span>{{ sample.relativePath }}</span>
                 <span class="muted sample-row-meta">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</span>
               </div>
               <div class="sample-row-actions">

@@ -55,7 +55,7 @@ export function timelineDetail(item: RunEventRecord): string {
     case "sample_start":
       return `样本：${timelineTailName(payload.sample ?? "-")}。`;
     case "focus_input":
-      return "把焦点拉回实时输入框，后面的文本应该落在这里。";
+      return "把焦点拉回输入检测区，后面的文本应该落在这里。";
     case "selftest_mode":
       return `当前使用的是 ${String(payload.app ?? "内建自测")}。`;
     case "app_launch":

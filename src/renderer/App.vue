@@ -43,9 +43,9 @@ const liveTimelineByRunId = ref<Record<string, RunEventRecord[]>>({});
 const lastTimelineRunId = ref<string | null>(null);
 const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
-const liveInput = ref("");
-const liveTextarea = ref<HTMLTextAreaElement | null>(null);
-const notice = ref("默认启用的是“内建自测”，先用它确认流程通了，再去接真实目标应用。");
+const inputProbeText = ref("");
+const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
+const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
 const completedSessionId = ref<string | null>(null);
@@ -123,7 +123,7 @@ const resultSessionGroups = computed(() => sessions.value.map((session) => {
 const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
-  if (page.value === "samples") return "样本";
+  if (page.value === "samples") return "样本管理";
   if (page.value === "history") return "测试历史";
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
@@ -551,14 +551,14 @@ async function runBatch(): Promise<void> {
   try {
     pendingRunStart.value = true;
     preflightReport.value = null;
-    liveInput.value = "";
+    inputProbeText.value = "";
     liveTimelineByRunId.value = {};
     lastTimelineRunId.value = null;
     liveTimelineEvents.value = [];
     preRunTimelineEvents.value = [];
     showLatestSessionTimeline.value = false;
     notice.value = "开始前提示已弹出，确认开始后请不要操作鼠标和键盘。";
-    await focusLiveTextarea();
+    await focusInputProbe();
     await saveSettings(false);
     await runPreStartCountdown();
     const report = await window.vtc.startRun() as PreflightReport;
@@ -627,15 +627,15 @@ function cancelPreRunDialog(): void {
   notice.value = "已取消开始，准备好之后再点开始。";
 }
 
-async function focusLiveTextarea(): Promise<void> {
-  const textarea = liveTextarea.value;
+async function focusInputProbe(): Promise<void> {
+  const textarea = inputProbeTextarea.value;
   if (document.hasFocus() && textarea && document.activeElement === textarea) {
     return;
   }
 
   await window.vtc.focusBenchmarkWindow();
   await nextTick();
-  const currentTextarea = liveTextarea.value;
+  const currentTextarea = inputProbeTextarea.value;
   if (!currentTextarea) return;
   currentTextarea.focus({ preventScroll: true });
   const end = currentTextarea.value.length;
@@ -844,9 +844,9 @@ async function requestAccessibilityPermission(): Promise<void> {
   }
 }
 
-function onLiveInput(event: Event): void {
+function onInputProbeChange(event: Event): void {
   const target = event.target as HTMLTextAreaElement;
-  liveInput.value = target.value;
+  inputProbeText.value = target.value;
   window.vtc.sendInputEvent({
     type: "input",
     tsMs: performance.now(),
@@ -905,12 +905,12 @@ onMounted(async () => {
     }
     maybeShowCompletionDialog();
     if (progress.value.textValue !== undefined) {
-      liveInput.value = progress.value.textValue;
+      inputProbeText.value = progress.value.textValue;
     }
     const shouldReclaimInputFocus = progress.value.phase === "observing_text"
       || (progress.value.phase === "focus_input" && progress.value.message.includes("回到检测框"));
     if (shouldReclaimInputFocus) {
-      void focusLiveTextarea();
+      void focusInputProbe();
     }
   });
 
@@ -942,7 +942,7 @@ onMounted(async () => {
         window.clearInterval(timer);
         return;
       }
-      liveInput.value = chunks[index];
+      inputProbeText.value = chunks[index];
       window.vtc.sendInputEvent({
         type: "input",
         tsMs: performance.now(),
@@ -1004,7 +1004,7 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'samples' }" @click="page = 'samples'">
               <HugeiconsIcon :icon="FolderAudioIcon" :size="18" class="nav-icon" />
-              <span>样本</span>
+              <span>样本管理</span>
             </button>
           </li>
           <li>
@@ -1088,9 +1088,6 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div v-if="page !== 'main'" class="notice-bar">
-        <span>{{ notice }}</span>
-      </div>
 
       <template v-if="page === 'main'">
         <div v-if="preflightFailures.length" class="banner">
@@ -1125,15 +1122,15 @@ onBeforeUnmount(() => {
 
           <article class="panel panel-main panel-live">
             <div class="panel-header-row">
-              <h3>实时输入</h3>
+              <h3>输入检测区</h3>
               <span class="pill" :class="statusTone(progress.phase)">{{ phaseText(progress.phase) }}</span>
             </div>
-            <p class="muted">这里是唯一输入落点。真实目标应用要把文本打到这里，内建自测也会往这里回写文本。</p>
+            <p class="muted">这里是统一的输入检测区。真实目标应用和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
             <textarea
-              ref="liveTextarea"
+              ref="inputProbeTextarea"
               class="live-textarea"
-              :value="liveInput"
-              @input="onLiveInput"
+              :value="inputProbeText"
+              @input="onInputProbeChange"
               @beforeinput="onBeforeInput"
               @compositionstart="onComposition"
               @compositionend="onComposition"
@@ -1247,6 +1244,10 @@ onBeforeUnmount(() => {
       <section v-else-if="page === 'samples'" class="stack">
         <article class="panel">
           <div class="panel-header-row">
+            <div>
+              <h3>样本管理</h3>
+              <p class="muted">集中查看样本目录、扫描结果和启用状态。</p>
+            </div>
             <strong>{{ config.sampleRoot || "未选择目录" }}</strong>
             <div class="toolbar">
               <button class="ghost-button" @click="chooseSampleRoot">选择目录</button>
@@ -1272,9 +1273,6 @@ onBeforeUnmount(() => {
 
       <section v-else-if="page === 'history'" class="result-stack">
         <article class="panel">
-          <div class="panel-header-row">
-            <h3>历史列表</h3>
-          </div>
           <div class="session-stack">
             <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
               <div class="session-header">
@@ -1342,6 +1340,7 @@ onBeforeUnmount(() => {
           </div>
         </article>
       </section>
+
 
       <section v-else-if="page === 'settings'" class="settings-page">
         <article class="panel">

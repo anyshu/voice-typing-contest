@@ -428,7 +428,7 @@ It should feel factual and lightweight.
 | About                                                                            |
 |----------------------------------------------------------------------------------|
 | Voice Typing Contest                                                             |
-| Version 0.1.0                                                                    |
+| Version 0.0.1                                                                    |
 |                                                                                  |
 | This app benchmarks multiple macOS voice typing apps with the same audio set.   |
 | It records typed output, key timestamps, and failure reasons into local storage. |

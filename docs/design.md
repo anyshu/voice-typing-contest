@@ -203,7 +203,7 @@ Responsibilities:
 - built-in input box for typed output
 - live run timeline
 - latest-session summary on `主控台`
-- dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, importing compatible result CSV files as synthetic history sessions, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter
+- dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, importing compatible result CSV files as synthetic history sessions, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter; CSV export should keep the original `run_id` while exposing the latest attempt as `latest_run_id`
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 

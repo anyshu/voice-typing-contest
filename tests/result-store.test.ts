@@ -45,6 +45,7 @@ describe("ResultStore", () => {
     });
     const csv = store.exportCsv();
     expect(csv).toContain("run_id");
+    expect(csv).toContain("latest_run_id");
     expect(csv).toContain("retry_root_run_id");
     expect(csv).toContain("retry_attempt");
     expect(csv).toContain("app_name");
@@ -130,10 +131,11 @@ describe("ResultStore", () => {
 
     const csv = store.exportCsv("session-1");
     expect(csv).toContain("retry_count");
+    expect(csv).toContain("latest_run_id");
     expect(csv).toContain("retry_root_run_id");
-    expect(csv).toContain("run-2");
-    expect(csv).toContain("run-1");
+    expect(csv).toContain("\"run-1\",\"run-2\",\"run-1\",\"1\"");
     expect(csv).toContain("fixed");
+    expect(csv).not.toContain("\"run-2\",\"run-2\"");
     expect(csv).not.toContain("session-2");
     store.close();
   });

@@ -487,6 +487,7 @@ export class ResultStore {
     const rows = this.listRuns(sessionId);
     const headers = [
       "run_id",
+      "latest_run_id",
       "retry_root_run_id",
       "retry_attempt",
       "app_name",
@@ -503,9 +504,11 @@ export class ResultStore {
     ];
     const csvRows = [headers.join(",")];
     for (const row of rows) {
+      const rootRunId = row.retryRootRunId ?? row.id;
       const line = [
+        rootRunId,
         row.id,
-        row.retryRootRunId ?? row.id,
+        rootRunId,
         row.retryAttempt ?? 0,
         row.appName,
         row.samplePath,

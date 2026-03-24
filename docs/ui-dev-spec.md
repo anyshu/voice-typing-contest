@@ -178,6 +178,8 @@ The `测试历史` page is grouped as:
 
 The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 CSV` action.
 
+When a sample row has retry history, the exported CSV should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+
 Each session header should render the session start time first and then the app label in a heavier weight, so a single-app session reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`.
 
 If a session contains one or more failed rows, only the session summary line text should switch to the danger color; do not add a red background, border, or full-row highlight.

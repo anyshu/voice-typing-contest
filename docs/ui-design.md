@@ -464,6 +464,7 @@ It should feel factual and lightweight.
 - each session card expands to app groups and sample rows
 - each session header shows `时间 + App 名称 + 汇总` on the same row, with the app name visually heavier than the summary text
 - `导出本轮 CSV` belongs to the session header
+- exported CSV rows should stay anchored to the original history row, so `run_id` remains the root run id while `latest_run_id` points at the newest retry attempt
 - history reads run timelines from persisted per-run timeline snapshots
 
 ### 10.3 App page behavior

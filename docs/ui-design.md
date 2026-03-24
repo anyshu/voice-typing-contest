@@ -462,6 +462,7 @@ It should feel factual and lightweight.
 
 - `测试历史` owns the persisted session list
 - each session card expands to app groups and sample rows
+- each session header shows `时间 + App 名称 + 汇总` on the same row, with the app name visually heavier than the summary text
 - `导出本轮 CSV` belongs to the session header
 - history reads run timelines from persisted per-run timeline snapshots
 

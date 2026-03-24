@@ -1,5 +1,7 @@
 # Voice Typing Contest Design
 
+Current spec baseline: `v0.1.2`
+
 ## 1. Goal
 
 Build a macOS Electron benchmark tool for horizontal evaluation of voice typing apps, with the renderer implemented in Vue.

@@ -114,4 +114,4 @@ The real automation path depends mainly on:
 
 ## Version
 
-Current version: `0.1.0`
+Current version: `0.1.2`

@@ -105,6 +105,20 @@ func getDeviceName(_ deviceId: AudioDeviceID) -> String {
     return deviceName as String
 }
 
+func deviceHasOutput(_ deviceId: AudioDeviceID) -> Bool {
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreams,
+        mScope: kAudioDevicePropertyScopeOutput,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    if !AudioObjectHasProperty(deviceId, &address) {
+        return false
+    }
+    var size: UInt32 = 0
+    let status = AudioObjectGetPropertyDataSize(deviceId, &address, 0, nil, &size)
+    return status == noErr && size >= UInt32(MemoryLayout<AudioStreamID>.size)
+}
+
 func listAudioDevices() -> [String: [AudioDeviceRow]] {
     var address = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDevices,
@@ -127,7 +141,7 @@ func listAudioDevices() -> [String: [AudioDeviceRow]] {
     AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &defaultSize, &defaultDevice)
 
     return [
-        "devices": devices.map { device in
+        "devices": devices.filter(deviceHasOutput).map { device in
             AudioDeviceRow(id: String(device), name: getDeviceName(device), available: true, isDefault: device == defaultDevice)
         }
     ]

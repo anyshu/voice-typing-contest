@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { AppConfig, InputObservationEvent } from "../shared/types";
 
 const api = {
+  getVersion: async () => await ipcRenderer.invoke("app:getVersion"),
   getSettings: async () => await ipcRenderer.invoke("settings:get"),
   saveSettings: async (config: AppConfig) => await ipcRenderer.invoke("settings:save", config),
   pickSampleRoot: async () => await ipcRenderer.invoke("samples:pickRoot"),

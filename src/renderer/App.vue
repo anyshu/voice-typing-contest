@@ -30,6 +30,7 @@ import type {
   TestRunRecord,
 } from "../shared/types";
 
+const brandIconUrl = new URL("../../resources/icon-macos.png", import.meta.url).href;
 const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "about" | "settings">("main");
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
@@ -45,6 +46,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
+const appVersion = ref("v0.1.0");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -459,6 +461,7 @@ function timelineStateClass(item: RunEventRecord, isLatest: boolean): string {
 }
 
 async function loadBootstrap(): Promise<void> {
+  appVersion.value = `v${await window.vtc.getVersion() as string}`;
   const settings = await window.vtc.getSettings() as SettingsPayload;
   config.value = settings;
   permissions.value = settings.permissions;
@@ -979,7 +982,9 @@ onBeforeUnmount(() => {
   <div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-mark">VT</div>
+        <div class="brand-mark">
+          <img :src="brandIconUrl" alt="Logo" class="brand-mark__image" />
+        </div>
         <div class="brand-copy">
           <strong>Voice Typing</strong>
           <span>{{ config.workspaceLabel }}</span>
@@ -1038,6 +1043,10 @@ onBeforeUnmount(() => {
             </button>
           </li>
         </ul>
+      </div>
+
+      <div class="sidebar-version">
+        <strong>{{ appVersion }}</strong>
       </div>
     </aside>
 

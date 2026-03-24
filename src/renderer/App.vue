@@ -152,7 +152,7 @@ const pageTitle = computed(() => {
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
   if (page.value === "faq") return "Q&A";
-  return "当前实现";
+  return "版本说明";
 });
 const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
@@ -163,7 +163,7 @@ const pageSubtitle = computed(() => {
   if (page.value === "settings") return "运行参数与环境设置";
   if (page.value === "intro") return "准备路径与使用说明";
   if (page.value === "faq") return "常见问题与排查";
-  return "当前实现状态";
+  return "当前能力与限制";
 });
 const noticeTone = computed(() => {
   if (!notice.value) return "info";
@@ -388,6 +388,19 @@ function formatLatencyMs(value?: number): string {
   if (value === undefined) return "-";
   if (value < 0) return `提前 ${Math.abs(value)}`;
   return `${value}`;
+}
+
+function historyResultTooltip(result: TestRunRecord): string {
+  const capturedText = result.normalizedText.trim() || result.rawText.trim();
+  const lines = [`样本：${result.samplePath}`];
+  if (capturedText) {
+    lines.push(`ASR：${capturedText}`);
+  } else if (result.failureReason?.trim()) {
+    lines.push(`失败：${result.failureReason.trim()}`);
+  } else {
+    lines.push("ASR：未捕获到结果");
+  }
+  return lines.join("\n");
 }
 
 function average(values: number[]): number | undefined {
@@ -1297,7 +1310,7 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'about' }" @click="page = 'about'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span class="nav-label">当前实现</span>
+              <span class="nav-label">版本说明</span>
             </button>
           </li>
         </ul>
@@ -1656,10 +1669,10 @@ onBeforeUnmount(() => {
                       >
                         <td class="history-sample-cell">
                           <span
-                            class="history-sample-text"
+                            class="history-sample-tooltip"
                             tabindex="0"
-                            :data-tooltip="result.samplePath"
-                          >{{ result.samplePath }}</span>
+                            :data-tooltip="historyResultTooltip(result)"
+                          ><span class="history-sample-text">{{ result.samplePath }}</span></span>
                         </td>
                         <td class="history-status-cell">
                           <div class="history-status-wrap">
@@ -1959,17 +1972,17 @@ onBeforeUnmount(() => {
 
       <section v-else class="about-grid">
         <article class="panel">
-          <h3>现在这版有什么</h3>
-          <div class="field"><span class="muted">桌面壳</span><strong>Electron + Vue</strong></div>
-          <div class="field"><span class="muted">结果存储</span><strong>{{ config.databasePath }}</strong></div>
-          <div class="field"><span class="muted">默认可跑路径</span><strong>内建自测</strong></div>
-          <div class="field"><span class="muted">当前 helper</span><strong>当前机器优先走备用 helper</strong></div>
+          <h3>这版能做什么</h3>
+          <div class="field"><span class="muted">测试配置</span><strong>可管理样本、目标 App 和运行参数</strong></div>
+          <div class="field"><span class="muted">批量执行</span><strong>可按当前配置直接发起整轮测试</strong></div>
+          <div class="field"><span class="muted">结果记录</span><strong>测试结果会保存到本地数据库</strong></div>
+          <div class="field"><span class="muted">自检方式</span><strong>可先用内建自测确认流程是否跑通</strong></div>
         </article>
         <article class="panel">
-          <h3>还没做完的地方</h3>
-          <pre>1. 真实目标App的全量手工回归还没补齐。
-2. Swift 原生 helper 在这台机器上还没编过。
-3. 现在先以“能跑通流程、能看清错误”为第一目标。</pre>
+          <h3>当前限制</h3>
+          <pre>1. 真实目标 App 仍需要逐个验证兼容性和触发稳定性。
+2. 部分运行链路目前还有兼容性兜底。
+3. 当前版本优先保证流程可跑通、问题可定位，体验会继续打磨。</pre>
         </article>
       </section>
 

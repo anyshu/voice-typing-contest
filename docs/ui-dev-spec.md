@@ -16,7 +16,7 @@ Current first-level pages:
 - `设置`
 - `运行前检查`
 - `怎么开始`
-- `当前实现`
+- `版本说明`
 
 `开始` and `关闭` belong only to `主控台`.
 
@@ -83,7 +83,7 @@ Current first-level pages:
 | 设置 | `Settings01Icon` |
 | 运行前检查 | `CheckListIcon` |
 | 怎么开始 | `BookOpen01Icon` |
-| 当前实现 | `InformationCircleIcon` |
+| 版本说明 | `InformationCircleIcon` |
 | 开始 | `PlayCircleIcon` |
 | 关闭 | `StopCircleIcon` |
 | 权限 | `Shield01Icon` |
@@ -177,6 +177,8 @@ The `测试历史` page is grouped as:
 - sample row
 
 The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 CSV` action.
+
+Each sample row should keep the path text truncated in the table cell, but hovering or keyboard focusing that path must reveal a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip should fall back to the failure reason or an explicit "未捕获到结果" message.
 
 When a sample row has retry history, the exported CSV should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
 

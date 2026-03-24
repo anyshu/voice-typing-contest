@@ -127,14 +127,14 @@ The current app shell has these first-level pages:
 - 设置
 - 运行前检查
 - 怎么开始
-- 当前实现
+- 版本说明
 
 Configuration already lives in the dedicated `设置` page rather than a modal.
 
 The result experience is split into:
 
 - `主控台` for the current timeline and latest-session summary
-- `测试历史` for browsing persisted sessions and exporting one batch at a time
+- `测试历史` for browsing persisted sessions and exporting one batch at a time, with hover/focus tooltips on sample paths so long ASR output can still be inspected without widening the table
 
 The current renderer is Chinese-first.
 
@@ -158,7 +158,7 @@ Overall shell:
 | 设置                 |                                                               |
 | 运行前检查           |                                                               |
 | 怎么开始             |                                                               |
-| 当前实现             |                                                               |
+| 版本说明             |                                                               |
 +--------------------------------------------------------------------------------------+
 ```
 

@@ -1,14 +1,36 @@
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import type { AppConfig, ResultDetail, RunEventRecord, RunSessionRecord, RunSessionSummary, TestRunRecord } from "../shared/types";
 
+type DatabaseLike = {
+  exec(sql: string): void;
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown;
+    get(...params: unknown[]): unknown;
+    all(...params: unknown[]): unknown[];
+  };
+  close(): void;
+};
+
+const require = createRequire(import.meta.url);
+
+function openDatabase(dbPath: string): DatabaseLike {
+  if (process.versions.electron) {
+    const BetterSqlite3 = require("better-sqlite3") as typeof import("better-sqlite3");
+    return new BetterSqlite3(dbPath);
+  }
+
+  const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+  return new DatabaseSync(dbPath);
+}
+
 export class ResultStore {
-  private readonly db: DatabaseSync;
+  private readonly db: DatabaseLike;
 
   constructor(private readonly dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new DatabaseSync(dbPath);
+    this.db = openDatabase(dbPath);
     this.migrate();
   }
 

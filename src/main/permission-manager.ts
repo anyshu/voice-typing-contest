@@ -85,13 +85,13 @@ export class PermissionManager {
         key: "apps",
         ok: checks.hasRunnableApps,
         message: !checks.hasEnabledApps
-          ? "当前没有启用的目标应用"
+          ? "当前没有启用的目标App"
           : checks.hasRunnableApps
-            ? "目标应用列表已选择"
-            : "已经启用了目标应用，但当前没有一个能真正跑起来",
+            ? "目标App列表已选择"
+            : "已经启用了目标App，但当前没有一个能真正跑起来",
         category: checks.hasRunnableApps ? undefined : ("target_app_not_ready" satisfies FailureCategory),
         hint: !checks.hasEnabledApps
-          ? "至少启用一个目标应用。想先验证流程的话，直接启用“内建自测”。"
+          ? "至少启用一个目标App。想先验证流程的话，直接启用“内建自测”。"
           : checks.hasRunnableApps
             ? undefined
             : "先看下面每个应用自己的提示。只要有一个应用能跑，这里就不会拦你。",

@@ -180,6 +180,16 @@ The session header owns the `导出本轮 CSV` action.
 
 Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
 
+### 4.6 Sample page
+
+The `样本管理` page should show:
+
+- the selected sample root
+- a compact summary strip with enabled / disabled / total sample counts
+- one row per sample with path, language, duration, current status, and an enable toggle
+
+Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
+
 ## 5. Settings Page Structure
 
 The settings page has three functional blocks:
@@ -226,6 +236,11 @@ Per-app settings currently keep only app-specific trigger behavior:
 - enabled flag
 
 Standalone `Fn` is not captured reliably by Electron keyboard events, so the UI must provide an explicit `设为 Fn` action.
+
+Built-in presets:
+
+- `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
+- `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
 
 ### 5.3 Permissions and devices
 

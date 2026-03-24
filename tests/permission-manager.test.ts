@@ -75,6 +75,6 @@ describe("PermissionManager", () => {
     });
 
     const appsItem = report.items.find((item) => item.key === "apps");
-    expect(appsItem?.message).toBe("已经启用了目标应用，但当前没有一个能真正跑起来");
+    expect(appsItem?.message).toBe("已经启用了目标App，但当前没有一个能真正跑起来");
   });
 });

@@ -122,8 +122,8 @@ select {
 }
 
 .sidebar-version {
-  margin-top: 2px;
-  padding: 2px 12px 6px;
+  margin-top: 0;
+  padding: 0 12px 6px;
   text-align: right;
 }
 
@@ -249,7 +249,7 @@ select {
 }
 
 .main-grid {
-  grid-template-columns: 280px minmax(420px, 1fr) 280px;
+  grid-template-columns: 280px minmax(360px, 1fr) 360px;
   align-items: stretch;
 }
 
@@ -348,6 +348,11 @@ select {
   text-overflow: ellipsis;
 }
 
+.summary-strip--samples {
+  margin-bottom: 18px;
+  padding: 0;
+}
+
 .sample-list-clean {
   display: grid;
   gap: 0;
@@ -355,7 +360,7 @@ select {
 
 .sample-row-clean {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 12px 0;
@@ -388,6 +393,17 @@ select {
 .sample-row-main strong {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sample-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.sample-switch-row {
+  color: var(--muted);
 }
 
 
@@ -887,6 +903,67 @@ select {
   box-shadow: 0 10px 28px rgba(245, 158, 11, 0.12);
 }
 
+.faq-page {
+  gap: 14px;
+}
+
+.faq-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.faq-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.faq-card__copy {
+  display: grid;
+  gap: 10px;
+}
+
+.faq-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8b5e00;
+}
+
+.faq-callout {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.26);
+  background: linear-gradient(180deg, #fffaf0, #fff5df);
+}
+
+.faq-shot {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.faq-shot img {
+  width: 100%;
+  display: block;
+  border-radius: 16px;
+  border: 1px solid rgba(217, 222, 231, 0.92);
+  background: #f8fafc;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.faq-shot figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .intro-steps {
   display: grid;
   gap: 10px;
@@ -1259,6 +1336,20 @@ pre {
     gap: 8px;
   }
 
+  .sample-row-clean {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .sample-row-index {
+    padding-top: 0;
+  }
+
+  .sample-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
   .summary-item + .summary-item::before {
     display: none;
   }
@@ -1266,6 +1357,12 @@ pre {
   .dialog-hero,
   .dialog-stat-grid,
   .countdown-tip-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .faq-hero,
+  .faq-card {
+    display: grid;
     grid-template-columns: 1fr;
   }
 

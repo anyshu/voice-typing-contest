@@ -31,7 +31,8 @@ import type {
 } from "../shared/types";
 
 const brandIconUrl = new URL("../../resources/icon-macos.png", import.meta.url).href;
-const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "about" | "settings">("main");
+const muteDuringDictationImageUrl = new URL("./assets/mute-during-dictation.svg", import.meta.url).href;
+const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "faq" | "about" | "settings">("main");
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
 const devices = ref<AudioDevice[]>([]);
@@ -81,9 +82,9 @@ const phaseLabels: Record<RunPhase, string> = {
 const failureLabels: Record<FailureCategory, string> = {
   permission_denied_accessibility: "缺少辅助功能权限",
   permission_denied_automation: "缺少自动化权限",
-  target_app_not_installed: "目标应用未安装",
-  target_app_not_ready: "目标应用不可运行",
-  target_app_launch_timeout: "目标应用启动超时",
+  target_app_not_installed: "目标App未安装",
+  target_app_not_ready: "目标App不可运行",
+  target_app_launch_timeout: "目标App启动超时",
   input_focus_failed: "输入框聚焦失败",
   device_not_found: "输出设备不可用",
   audio_play_failed: "音频播放失败",
@@ -101,6 +102,7 @@ const modeLabels = {
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
 const enabledApps = computed(() => config.value.targetApps.filter((item) => item.enabled));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
+const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
@@ -129,6 +131,7 @@ const pageTitle = computed(() => {
   if (page.value === "history") return "测试历史";
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
+  if (page.value === "faq") return "Q&A";
   return "当前实现";
 });
 const pageSubtitle = computed(() => {
@@ -136,8 +139,9 @@ const pageSubtitle = computed(() => {
   if (page.value === "checks") return "开跑前检查清单";
   if (page.value === "samples") return "测试集与目录视图";
   if (page.value === "history") return "历史结果与分轮导出";
-  if (page.value === "settings") return "运行参数与目标应用";
+  if (page.value === "settings") return "运行参数与目标App";
   if (page.value === "intro") return "准备路径与使用说明";
+  if (page.value === "faq") return "常见问题与排查";
   return "当前实现状态";
 });
 function buildTimelineCards(
@@ -248,6 +252,17 @@ async function jumpToGuideTarget(target: "apps" | "hotkey" | "samples" | "run"):
 function sampleMeta(language: string, durationMs?: number): string {
   if (!durationMs) return language;
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
+}
+
+function toggleSampleEnabled(sampleId: string, enabled: boolean): void {
+  const sample = config.value.audioSamples.find((item) => item.id === sampleId);
+  if (!sample) return;
+  sample.enabled = enabled;
+  notice.value = `${sample.displayName} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`;
+}
+
+function onSampleToggle(sampleId: string, event: Event): void {
+  toggleSampleEnabled(sampleId, (event.target as HTMLInputElement).checked);
 }
 
 function sessionStatusText(status: RunSessionSummary["status"]): string {
@@ -893,7 +908,14 @@ function lockDialogPointerInput(event: MouseEvent): void {
 }
 
 onMounted(async () => {
-  await loadBootstrap();
+  try {
+    await loadBootstrap();
+  } catch (error) {
+    notice.value = `初始化失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+  void refreshEnvironment().catch((error) => {
+    notice.value = `环境刷新失败：${error instanceof Error ? error.message : String(error)}`;
+  });
   window.addEventListener("keydown", handleGlobalKeydown, true);
   window.addEventListener("keyup", handleGlobalKeyup, true);
   window.addEventListener("mousedown", lockDialogPointerInput, true);
@@ -1037,16 +1059,21 @@ onBeforeUnmount(() => {
             </button>
           </li>
           <li>
+            <button class="nav-button" :class="{ active: page === 'faq' }" @click="page = 'faq'">
+              <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
+              <span>Q&A</span>
+            </button>
+          </li>
+          <li>
             <button class="nav-button" :class="{ active: page === 'about' }" @click="page = 'about'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
               <span>当前实现</span>
             </button>
           </li>
         </ul>
-      </div>
-
-      <div class="sidebar-version">
-        <strong>{{ appVersion }}</strong>
+        <div class="sidebar-version">
+          <strong>{{ appVersion }}</strong>
+        </div>
       </div>
     </aside>
 
@@ -1113,14 +1140,14 @@ onBeforeUnmount(() => {
           <div class="stack">
             <article class="panel panel-main panel-apps">
               <div class="panel-header-row">
-                <h3>目标应用</h3>
+                <h3>目标App</h3>
                 <button class="secondary-button" @click="page = 'settings'">去设置</button>
               </div>
               <ul class="meta-list panel-scroll">
                 <li v-for="app in config.targetApps" :key="app.id" class="app-row">
                   <div>
                     <strong>{{ app.name }}</strong>
-                    <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标应用" : app.appFileName }}</div>
+                    <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
                     <div class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</div>
                   </div>
                   <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
@@ -1134,7 +1161,7 @@ onBeforeUnmount(() => {
               <h3>输入检测区</h3>
               <span class="pill" :class="statusTone(progress.phase)">{{ phaseText(progress.phase) }}</span>
             </div>
-            <p class="muted">这里是统一的输入检测区。真实目标应用和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
+            <p class="muted">这里是统一的输入检测区。真实目标App和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
             <textarea
               ref="inputProbeTextarea"
               class="live-textarea"
@@ -1266,6 +1293,23 @@ onBeforeUnmount(() => {
         </article>
 
         <article class="panel">
+          <section class="summary-strip summary-strip--samples">
+            <div class="summary-item">
+              <HugeiconsIcon :icon="FolderAudioIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">启用</span>
+              <strong>{{ enabledSamples.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="FolderAudioIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">关闭</span>
+              <strong>{{ disabledSamples.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="Analytics01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">总共</span>
+              <strong>{{ config.audioSamples.length }}</strong>
+            </div>
+          </section>
           <div v-if="config.audioSamples.length" class="sample-list-clean">
             <div v-for="(sample, index) in config.audioSamples" :key="sample.id" class="sample-row-clean">
               <div class="sample-row-index">{{ index + 1 }}、</div>
@@ -1273,7 +1317,17 @@ onBeforeUnmount(() => {
                 <strong>{{ sample.relativePath }}</strong>
                 <div class="muted">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</div>
               </div>
-              <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
+              <div class="sample-row-actions">
+                <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
+                <label class="switch-row sample-switch-row">
+                  <span>{{ sample.enabled ? "关闭" : "启用" }}</span>
+                  <input
+                    :checked="sample.enabled"
+                    type="checkbox"
+                    @change="onSampleToggle(sample.id, $event)"
+                  />
+                </label>
+              </div>
             </div>
           </div>
           <div v-else class="muted">还没有样本。</div>
@@ -1413,7 +1467,7 @@ onBeforeUnmount(() => {
 
         <article class="panel">
           <div class="panel-header-row">
-            <h3>目标应用</h3>
+            <h3>目标App</h3>
             <button class="secondary-button" @click="addApp">新增应用</button>
           </div>
           <p class="muted">如果你现在只想确认工具能不能跑，保留“内建自测”开启就够了。</p>
@@ -1421,7 +1475,7 @@ onBeforeUnmount(() => {
             <div class="panel-header-row">
               <div>
                 <strong>{{ app.name }}</strong>
-                <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "这是工具自带的自测目标，不依赖真实应用。" : "真实目标应用配置" }}</div>
+                <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "这是工具自带的自测目标，不依赖真实应用。" : "真实目标App配置" }}</div>
               </div>
               <label class="switch-row">
                 <span>启用</span>
@@ -1494,7 +1548,7 @@ onBeforeUnmount(() => {
         <div class="intro-steps">
           <button class="intro-step" @click="jumpToGuideTarget('apps')">
             <strong>1）添加 app</strong>
-            <span>去设置页添加或启用目标应用。</span>
+            <span>去设置页添加或启用目标App。</span>
           </button>
           <button class="intro-step" @click="jumpToGuideTarget('hotkey')">
             <strong>2）热键</strong>
@@ -1511,6 +1565,33 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
+      <section v-else-if="page === 'faq'" class="stack faq-page">
+        <article class="panel faq-hero">
+          <div>
+            <h3>测试时没听到扬声器声音，先看这里</h3>
+            <p class="muted">有些语音输入 App 会在听写开始时自动把其他活动音频静音。如果测试时听不到扬声器的声音，不一定是输出设备坏了，也可能是目标 App 自己把声音压掉了。</p>
+          </div>
+          <div class="pill warning">常见于语音输入类 App</div>
+        </article>
+
+        <article class="panel faq-card">
+          <div class="faq-card__copy">
+            <div class="faq-eyebrow">Q&A 01</div>
+            <h3>为什么开始测试后，扬声器突然没声音了？</h3>
+            <p>先检查对应 voice-typing App 里是否打开了类似 <strong>“语音输入时静音”</strong> 的选项。</p>
+            <p class="muted">例如 Typeless 这类 App 可能会在语音输入时自动静音其他活动音频。这样一来，测试音频虽然已经发出播放指令，但你主观上会觉得“扬声器没声音”。</p>
+            <div class="faq-callout">
+              <strong>排查建议</strong>
+              <p>如果这轮测试没有听到喇叭出声，先去目标 App 的设置页找这一类开关，临时关闭后再重新跑一轮。</p>
+            </div>
+          </div>
+          <figure class="faq-shot">
+            <img :src="muteDuringDictationImageUrl" alt="语音输入时静音设置示意图" />
+            <figcaption>示意图：开启后，语音输入时会自动静音其他活动音频。</figcaption>
+          </figure>
+        </article>
+      </section>
+
       <section v-else class="about-grid">
         <article class="panel">
           <h3>现在这版有什么</h3>
@@ -1521,7 +1602,7 @@ onBeforeUnmount(() => {
         </article>
         <article class="panel">
           <h3>还没做完的地方</h3>
-          <pre>1. 真实目标应用的全量手工回归还没补齐。
+          <pre>1. 真实目标App的全量手工回归还没补齐。
 2. Swift 原生 helper 在这台机器上还没编过。
 3. 现在先以“能跑通流程、能看清错误”为第一目标。</pre>
         </article>

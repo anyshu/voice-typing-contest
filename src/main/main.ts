@@ -35,6 +35,39 @@ function loadAppIcon() {
   return icon.isEmpty() ? undefined : icon;
 }
 
+async function loadRenderer(win: BrowserWindow): Promise<void> {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    await win.loadURL(process.env.ELECTRON_RENDERER_URL);
+    return;
+  }
+  await win.loadFile(join(__dirname, "../renderer/index.html"));
+}
+
+function installRendererLoadRecovery(win: BrowserWindow): void {
+  let retryCount = 0;
+  const maxRetries = 2;
+
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;
+
+    console.error(`[window] renderer load failed (${errorCode}): ${errorDescription} :: ${validatedURL}`);
+    if (retryCount >= maxRetries) return;
+
+    retryCount += 1;
+    const retryDelayMs = retryCount * 400;
+    setTimeout(() => {
+      if (win.isDestroyed()) return;
+      void loadRenderer(win).catch((error) => {
+        console.error("[window] renderer retry failed", error);
+      });
+    }, retryDelayMs);
+  });
+
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`[window] renderer process gone: ${details.reason}`);
+  });
+}
+
 function installMacBranding(): void {
   const icon = loadAppIcon();
   if (!icon) return;
@@ -188,6 +221,7 @@ async function createWindow(): Promise<void> {
     width: 1480,
     height: 980,
     icon: loadAppIcon(),
+    backgroundColor: "#f5f3ee",
     webPreferences: {
       preload: join(__dirname, "../preload/preload.mjs"),
       contextIsolation: true,
@@ -224,16 +258,7 @@ async function createWindow(): Promise<void> {
     win?.webContents.send("run:resultAppended", record);
   });
   installSmokeHooks(win, runController);
-
-  const snapshot = await permissionManager.snapshot();
-  devices = snapshot.devices;
-  permissions = snapshot.permissions;
-  const normalizedOutputDeviceId = normalizeSelectedOutputDevice(config.selectedOutputDeviceId, devices);
-  if (normalizedOutputDeviceId !== config.selectedOutputDeviceId) {
-    config.selectedOutputDeviceId = normalizedOutputDeviceId;
-    configStore.save(config);
-    resultStore.syncConfig(config);
-  }
+  installRendererLoadRecovery(win);
 
   registerIpc(win, {
     configStore,
@@ -256,11 +281,23 @@ async function createWindow(): Promise<void> {
     getPermissions: () => permissions,
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    await win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    await win.loadFile(join(__dirname, "../renderer/index.html"));
-  }
+  const refreshEnvironment = async (): Promise<void> => {
+    const snapshot = await permissionManager.snapshot();
+    devices = snapshot.devices;
+    permissions = snapshot.permissions;
+    const normalizedOutputDeviceId = normalizeSelectedOutputDevice(config.selectedOutputDeviceId, devices);
+    if (normalizedOutputDeviceId !== config.selectedOutputDeviceId) {
+      config.selectedOutputDeviceId = normalizedOutputDeviceId;
+      configStore.save(config);
+      resultStore.syncConfig(config);
+    }
+  };
+
+  void refreshEnvironment().catch((error) => {
+    console.error("[window] initial environment refresh failed", error);
+  });
+
+  await loadRenderer(win);
 }
 
 app.whenReady().then(async () => {
@@ -270,6 +307,9 @@ app.whenReady().then(async () => {
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) await createWindow();
   });
+}).catch((error) => {
+  console.error("[app] failed to initialize window", error);
+  app.quit();
 });
 
 app.on("window-all-closed", () => {

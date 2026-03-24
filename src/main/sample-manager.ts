@@ -6,33 +6,36 @@ import type { AudioSample } from "../shared/types";
 import { resolveHomePath } from "../shared/paths";
 
 export class SampleManager {
-  async scan(root: string): Promise<AudioSample[]> {
+  async scan(root: string, previousSamples: AudioSample[] = []): Promise<AudioSample[]> {
     const resolvedRoot = resolveHomePath(root);
+    const existingByPath = new Map(previousSamples.map((sample) => [sample.filePath, sample]));
     const found: AudioSample[] = [];
-    await this.walk(resolvedRoot, resolvedRoot, found);
+    await this.walk(resolvedRoot, resolvedRoot, found, existingByPath);
     return found.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   }
 
-  private async walk(root: string, current: string, found: AudioSample[]): Promise<void> {
+  private async walk(root: string, current: string, found: AudioSample[], existingByPath: Map<string, AudioSample>): Promise<void> {
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const filePath = join(current, entry.name);
       if (entry.isDirectory()) {
-        await this.walk(root, filePath, found);
+        await this.walk(root, filePath, found, existingByPath);
         continue;
       }
       if (!isSupportedAudioSample(entry.name)) continue;
       const relativePath = relative(root, filePath);
       const durationMs = await readAudioDurationMs(filePath);
+      const previous = existingByPath.get(filePath);
       found.push({
-        id: nanoid(),
+        id: previous?.id ?? nanoid(),
         filePath,
         relativePath,
         displayName: basename(filePath),
         durationMs,
         language: relativePath.includes("english") ? "en" : "zh",
         tags: relativePath.split("/").slice(0, -1),
-        enabled: true,
+        expectedText: previous?.expectedText,
+        enabled: previous?.enabled ?? true,
       });
     }
   }

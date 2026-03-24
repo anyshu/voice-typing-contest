@@ -45,7 +45,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   });
 
   ipcMain.handle("samples:rescan", async (_event, root: string) => {
-    return await deps.sampleManager.scan(root);
+    return await deps.sampleManager.scan(root, deps.getConfig().audioSamples);
   });
 
   ipcMain.handle("database:pickPath", async () => {

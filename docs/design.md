@@ -11,7 +11,7 @@ The tool drives multiple target apps with the same audio samples and records:
 - pass/fail status and failure reason
 - comparable latency metrics across apps
 
-The initial targets include apps like Xiguashuo and Wispr Flow.
+The initial targets include apps like Xiguashuo, Wispr Flow, and Typeless.
 
 Assumption for v1:
 
@@ -47,6 +47,7 @@ Hotkey constraint for automated runs in the current implementation:
 - standalone `Fn` is exposed by a dedicated UI action because Electron cannot capture it reliably from raw key events
 - `Fn + other key` is supported in the current helper path
 - system-reserved shortcuts may still be intercepted by macOS first, so the tester should still prefer non-reserved chords when possible
+- the built-in Wispr Flow and Typeless presets default to standalone `Fn` with `hold_release`
 
 ### 3.2 Batch flow
 
@@ -170,7 +171,7 @@ The implemented architecture is:
 - Electron main process for orchestration
 - native macOS helper in Swift for privileged system actions
 - fallback helper with the same command contract for local development environments where Swift helper build or runtime is not available
-- SQLite for local result storage
+- SQLite for local result storage, implemented through `better-sqlite3` in the Electron main process to avoid Node's experimental `node:sqlite` runtime warning; plain Node test runs may still use `node:sqlite` for ABI compatibility
 
 ### 6.2 Why a native helper
 
@@ -316,6 +317,8 @@ Suggested fields:
 `relativePath` should preserve subfolder structure under the sample root so the UI can display nested test sets clearly.
 
 `expectedText` is optional, but once present it enables basic accuracy scoring.
+
+`enabled` decides whether the sample joins later benchmark batches. The sample-management page should let the tester toggle each sample individually and show enabled / disabled / total counts at a glance.
 
 ## 11. UI Localization
 

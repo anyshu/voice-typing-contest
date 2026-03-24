@@ -24,7 +24,7 @@ const TRANSLATIONS = {
       folders: "个目录",
     },
     sections: {
-      targetApps: ["目标应用", "自动运行时会高亮当前 app，并把 blocked 项单独标出来。"],
+      targetApps: ["目标App", "自动运行时会高亮当前 app，并把 blocked 项单独标出来。"],
       audioSet: ["音频测试集", "目录按递归方式扫描，子文件夹直接保留相对路径。"],
       progress: ["批量进度", "自动运行时，这里实时显示 app、音频和步骤。"],
       liveInput: ["输入检测区", "这是统一的输入检测区，用来确认文本是否命中测试落点，并观察 first char 与最终稳定文本。"],
@@ -80,7 +80,7 @@ const TRANSLATIONS = {
       ],
       checklistTitle: "检查清单",
       checklistDesc: "开跑前四项都过，失败率会低很多。",
-      checklist: ["Accessibility 已授权", "虚拟设备已安装", "目标应用已配置", "递归样本目录已准备"],
+      checklist: ["Accessibility 已授权", "虚拟设备已安装", "目标App已配置", "递归样本目录已准备"],
       goMain: "回到主控台",
     },
     about: {
@@ -99,7 +99,7 @@ const TRANSLATIONS = {
       title: "设置",
       tabs: {
         general: "通用",
-        targetApps: "目标应用",
+        targetApps: "目标App",
         audioSamples: "音频样本",
         timing: "时间参数",
         devices: "设备",
@@ -117,7 +117,7 @@ const TRANSLATIONS = {
         runNotes: "默认运行备注",
       },
       targetApps: {
-        title: "目标应用",
+        title: "目标App",
         desc: "左边选 app，右边改 app 文件名、热键和触发模式。",
         add: "+ Add App",
         remove: "Remove App",

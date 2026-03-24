@@ -4,6 +4,11 @@ import { defaultConfig } from "../shared/defaults";
 import type { AppConfig } from "../shared/types";
 import { resolveHomePath } from "../shared/paths";
 
+const legacyWisprFlowPreset = {
+  hotkeyChord: "Option+Space",
+  hotkeyTriggerMode: "press_start_press_stop" as const,
+};
+
 export class ConfigStore {
   constructor(private readonly filePath: string) {}
 
@@ -29,6 +34,20 @@ export class ConfigStore {
     const legacyFocusInputDelayMs = config.targetApps.find((app) => typeof app.preHotkeyDelayMs === "number")?.preHotkeyDelayMs;
     const legacyCloseAppDelayMs = config.targetApps.find((app) => typeof app.postRunCooldownMs === "number")?.postRunCooldownMs;
     const appMap = new Map(config.targetApps.map((app) => [app.id, app]));
+    const wisprFlow = appMap.get("wispr-flow");
+    const wisprDefault = defaults.targetApps.find((app) => app.id === "wispr-flow");
+    if (
+      wisprFlow
+      && wisprDefault
+      && wisprFlow.hotkeyChord === legacyWisprFlowPreset.hotkeyChord
+      && wisprFlow.hotkeyTriggerMode === legacyWisprFlowPreset.hotkeyTriggerMode
+    ) {
+      appMap.set("wispr-flow", {
+        ...wisprFlow,
+        hotkeyChord: wisprDefault.hotkeyChord,
+        hotkeyTriggerMode: wisprDefault.hotkeyTriggerMode,
+      });
+    }
     for (const app of defaults.targetApps) {
       if (!appMap.has(app.id)) {
         appMap.set(app.id, app);

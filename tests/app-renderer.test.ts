@@ -41,12 +41,14 @@ function setupDesktopApi(options?: {
   const sessions = makeSessions();
   const handlers: Record<string, Handler | undefined> = {};
   const api = {
+    getVersion: vi.fn(async () => "0.1.0"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),
     rescanSamples: vi.fn(async () => settings.audioSamples),
     pickDatabasePath: vi.fn(async () => undefined),
     refreshPermissions: vi.fn(async () => ({ permissions: settings.permissions, devices: settings.devices })),
+    requestAccessibilityPermission: vi.fn(async () => ({ permissions: settings.permissions, devices: settings.devices })),
     openPermissionSettings: vi.fn(async () => ({ ok: true })),
     focusBenchmarkWindow: vi.fn(async () => ({ ok: true })),
     startRun: vi.fn(async () => options?.startRunResult ?? {
@@ -55,6 +57,7 @@ function setupDesktopApi(options?: {
       permissions: settings.permissions,
       devices: settings.devices,
     }),
+    emitRunTimelineEvent: vi.fn(async () => ({ ok: true })),
     stopRun: vi.fn(async () => undefined),
     listResults: vi.fn(async (): Promise<TestRunRecord[]> => []),
     listResultSessions: vi.fn(async (): Promise<RunSessionSummary[]> => sessions),
@@ -119,6 +122,35 @@ describe("App renderer", () => {
 
     expect((select!.element as HTMLSelectElement).value).toBe("BlackHole 2ch");
     expect(wrapper.text()).toContain("当前选择");
+  });
+
+  it("lets the user disable one sample and shows enabled and disabled counts", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    await sampleButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("启用");
+    expect(wrapper.text()).toContain("关闭");
+    expect(wrapper.text()).toContain("总共");
+
+    const sampleToggles = wrapper.findAll('input[type="checkbox"]');
+    expect(sampleToggles).toHaveLength(2);
+
+    await sampleToggles[0].setValue(false);
+    await flushPromises();
+
+    const toggles = wrapper.findAll('input[type="checkbox"]').map((item) => (item.element as HTMLInputElement).checked);
+    expect(toggles).toEqual([false, true]);
+
+    const text = wrapper.text().replace(/\s+/g, "");
+    expect(text).toContain("启用1");
+    expect(text).toContain("关闭1");
+    expect(text).toContain("总共2");
   });
 
   it("shows preflight failure hints in Chinese after clicking run", async () => {
@@ -299,7 +331,7 @@ describe("App renderer", () => {
     });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("后台启动目标应用");
+    expect(wrapper.text()).toContain("后台启动目标App");
     expect(wrapper.text()).toContain("Wispr Flow 已尝试后台启动");
     expect(wrapper.text()).toContain("触发热键：Fn");
   });
@@ -411,6 +443,22 @@ describe("App renderer", () => {
     expect(wrapper.text()).not.toContain("测试结果");
   });
 
+  it("shows the Q&A entry in the footer nav with the mute-during-dictation troubleshooting note", async () => {
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const faqButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "Q&A");
+    expect(faqButton).toBeTruthy();
+    await faqButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("测试时没听到扬声器声音，先看这里");
+    expect(wrapper.text()).toContain("语音输入时静音");
+    expect(wrapper.text()).toContain("Typeless");
+    expect(wrapper.find('.faq-shot img[alt="语音输入时静音设置示意图"]').exists()).toBe(true);
+  });
+
   it("merges same-app timeline across runs on the main console so launch and close are both visible", async () => {
     const { api } = setupDesktopApi();
     const groupedRuns: TestRunRecord[] = [
@@ -481,8 +529,8 @@ describe("App renderer", () => {
     const wrapper = mount(App);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("后台启动目标应用");
-    expect(wrapper.text()).toContain("关闭目标应用");
+    expect(wrapper.text()).toContain("后台启动目标App");
+    expect(wrapper.text()).toContain("关闭目标App");
     expect(wrapper.text()).toContain("西瓜说 已尝试后台启动");
     expect(wrapper.text()).toContain("西瓜说 已发送关闭指令");
   });
@@ -539,8 +587,8 @@ describe("App renderer", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("开始处理应用");
-    expect(wrapper.text()).toContain("后台启动目标应用");
-    expect(wrapper.text()).toContain("关闭目标应用");
+    expect(wrapper.text()).toContain("后台启动目标App");
+    expect(wrapper.text()).toContain("关闭目标App");
   });
 
   it("groups results under collapsible run sessions and exports the selected session", async () => {

@@ -237,6 +237,11 @@ Per-app settings currently keep only app-specific trigger behavior:
 
 Standalone `Fn` is not captured reliably by Electron keyboard events, so the UI must provide an explicit `设为 Fn` action.
 
+Trigger mode copy should reflect two different behaviors instead of two generic "trigger" variants:
+
+- `hold_release`: press and keep held, then release to finish
+- `press_start_press_stop`: press and release once to start, then press and release again to finish
+
 Built-in presets:
 
 - `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`

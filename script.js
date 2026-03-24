@@ -204,8 +204,8 @@ const TRANSLATIONS = {
       complete: "全部完成",
     },
     mode: {
-      hold_release: "按住开始 -> 松开结束",
-      press_start_press_stop: "按一次开始 -> 再按一次结束",
+      hold_release: "按住并保持 -> 松开结束",
+      press_start_press_stop: "按下抬起开始 -> 再按下抬起结束",
     },
     appState: {
       ready: "Ready",
@@ -462,8 +462,8 @@ const TRANSLATIONS = {
       complete: "Completed",
     },
     mode: {
-      hold_release: "hold -> release",
-      press_start_press_stop: "press start -> press stop",
+      hold_release: "hold and keep -> release to stop",
+      press_start_press_stop: "press+release start -> press+release stop",
     },
     appState: {
       ready: "Ready",

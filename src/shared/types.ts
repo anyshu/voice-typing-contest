@@ -110,6 +110,12 @@ export interface PreflightReport {
   devices: AudioDevice[];
 }
 
+export interface RunStartOptions {
+  appIds?: string[];
+  sampleIds?: string[];
+  retryRootRunId?: string;
+}
+
 export interface RunSessionRecord {
   id: string;
   startedAt: string;
@@ -154,6 +160,9 @@ export interface TestRunRecord {
   inputEventCount: number;
   finalTextLength: number;
   createdAt: string;
+  retryRootRunId?: string;
+  retryAttempt?: number;
+  retryCount?: number;
   timeline: RunEventRecord[];
 }
 

@@ -41,7 +41,7 @@ function setupDesktopApi(options?: {
   const sessions = makeSessions();
   const handlers: Record<string, Handler | undefined> = {};
   const api = {
-    getVersion: vi.fn(async () => "0.1.0"),
+    getVersion: vi.fn(async () => "0.1.1"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),
@@ -139,18 +139,40 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("总共");
 
     const sampleToggles = wrapper.findAll('input[type="checkbox"]');
-    expect(sampleToggles).toHaveLength(2);
+    expect(sampleToggles).toHaveLength(3);
 
-    await sampleToggles[0].setValue(false);
+    await sampleToggles[1].setValue(false);
     await flushPromises();
 
     const toggles = wrapper.findAll('input[type="checkbox"]').map((item) => (item.element as HTMLInputElement).checked);
-    expect(toggles).toEqual([false, true]);
+    expect(toggles).toEqual([false, false, true]);
 
     const text = wrapper.text().replace(/\s+/g, "");
     expect(text).toContain("启用1");
     expect(text).toContain("关闭1");
     expect(text).toContain("总共2");
+  });
+
+  it("auto-dismisses toast notices after a short delay", async () => {
+    vi.useFakeTimers();
+    setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    await sampleButton!.trigger("click");
+    await flushPromises();
+
+    const sampleToggles = wrapper.findAll('input[type="checkbox"]');
+    await sampleToggles[1].setValue(false);
+    await flushPromises();
+
+    expect(wrapper.find(".notice-toast").exists()).toBe(true);
+    vi.advanceTimersByTime(2600);
+    await flushPromises();
+    expect(wrapper.find(".notice-toast").exists()).toBe(false);
+    vi.useRealTimers();
   });
 
   it("shows preflight failure hints in Chinese after clicking run", async () => {
@@ -228,9 +250,9 @@ describe("App renderer", () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
-    const settingsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "设置");
-    expect(settingsButton).toBeTruthy();
-    await settingsButton!.trigger("click");
+    const appsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "App管理");
+    expect(appsButton).toBeTruthy();
+    await appsButton!.trigger("click");
     await flushPromises();
 
     const recordButton = wrapper.findAll("button.ghost-button").find((item) => item.text().includes("Cmd") || item.text().includes("点击录制"));
@@ -248,9 +270,9 @@ describe("App renderer", () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
-    const settingsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "设置");
-    expect(settingsButton).toBeTruthy();
-    await settingsButton!.trigger("click");
+    const appsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "App管理");
+    expect(appsButton).toBeTruthy();
+    await appsButton!.trigger("click");
     await flushPromises();
 
     const recordButton = wrapper.findAll("button.ghost-button").find((item) => item.text().includes("Cmd") || item.text().includes("点击录制"));
@@ -273,9 +295,9 @@ describe("App renderer", () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
-    const settingsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "设置");
-    expect(settingsButton).toBeTruthy();
-    await settingsButton!.trigger("click");
+    const appsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "App管理");
+    expect(appsButton).toBeTruthy();
+    await appsButton!.trigger("click");
     await flushPromises();
 
     const recordButton = wrapper.findAll("button.ghost-button").find((item) => item.text().includes("Cmd") || item.text().includes("点击录制"));
@@ -295,9 +317,9 @@ describe("App renderer", () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
-    const settingsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "设置");
-    expect(settingsButton).toBeTruthy();
-    await settingsButton!.trigger("click");
+    const appsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "App管理");
+    expect(appsButton).toBeTruthy();
+    await appsButton!.trigger("click");
     await flushPromises();
 
     const fnButton = wrapper.findAll("button.ghost-button").find((item) => item.text() === "设为 Fn");
@@ -439,8 +461,8 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("历史列表");
-    expect(wrapper.text()).not.toContain("测试结果");
+    expect(wrapper.text()).toContain("导出本轮 CSV");
+    expect(wrapper.text()).not.toContain("输入检测区");
   });
 
   it("shows the Q&A entry in the footer nav with the mute-during-dictation troubleshooting note", async () => {
@@ -629,6 +651,196 @@ describe("App renderer", () => {
     await flushPromises();
 
     expect(api.exportCsv).toHaveBeenCalledWith("session-1");
+  });
+
+  it("shows a retry icon for failed history rows and reruns only that app/sample", async () => {
+    const { api } = setupDesktopApi();
+    const groupedRuns: TestRunRecord[] = [
+      {
+        id: "run-failed-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-2",
+        samplePath: "内建自测/english-01.wav",
+        status: "failed",
+        phase: "failed",
+        failureCategory: "timeout_waiting_result",
+        failureReason: "Timed out waiting for stable text",
+        rawText: "",
+        normalizedText: "",
+        inputEventCount: 0,
+        finalTextLength: 0,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ];
+    api.listResults.mockResolvedValue(groupedRuns);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    const retryButton = wrapper.find('button[title="重新测试"]');
+    expect(retryButton.exists()).toBe(true);
+
+    await retryButton.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("输入检测区");
+    expect(api.startRun).not.toHaveBeenCalled();
+    await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
+    await flushPromises();
+
+    expect(api.startRun).toHaveBeenCalledWith({
+      appIds: ["wispr-flow"],
+      sampleIds: ["builtin-en-01"],
+      retryRootRunId: "run-failed-1",
+    });
+  });
+
+  it("falls back to current app name and sample path when retrying stale history ids", async () => {
+    const { api, settings } = setupDesktopApi();
+    settings.targetApps = settings.targetApps.map((app) => (
+      app.id === "typeless"
+        ? { ...app, id: "typeless-current", name: "Typeless" }
+        : app
+    ));
+    settings.audioSamples = settings.audioSamples.map((sample) => (
+      sample.id === "builtin-en-01"
+        ? { ...sample, id: "sample-current", relativePath: "failed.wav", displayName: "failed.wav" }
+        : sample
+    ));
+    const groupedRuns: TestRunRecord[] = [
+      {
+        id: "run-failed-2",
+        runSessionId: "session-1",
+        appId: "typeless-old",
+        appName: "Typeless",
+        sampleId: "sample-old",
+        samplePath: "failed.wav",
+        status: "failed",
+        phase: "failed",
+        failureCategory: "timeout_waiting_result",
+        failureReason: "Timed out waiting for stable text",
+        rawText: "",
+        normalizedText: "",
+        inputEventCount: 0,
+        finalTextLength: 0,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ];
+    api.listResults.mockResolvedValue(groupedRuns);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('button[title="重新测试"]').trigger("click");
+    await flushPromises();
+    await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
+    await flushPromises();
+
+    expect(api.startRun).toHaveBeenCalledWith({
+      appIds: ["typeless-current"],
+      sampleIds: ["sample-current"],
+      retryRootRunId: "run-failed-2",
+    });
+  });
+
+  it("shows danger notice styling when a retry preflight fails", async () => {
+    const { api } = setupDesktopApi({
+      startRunResult: {
+        ok: false,
+        permissions: defaultPermissions(),
+        devices: defaultDevices(),
+        items: [
+          {
+            key: "apps",
+            ok: false,
+            message: "当前没有启用的目标App",
+            hint: "至少启用一个目标App。",
+          },
+        ],
+      },
+    });
+    const groupedRuns: TestRunRecord[] = [
+      {
+        id: "run-failed-3",
+        runSessionId: "session-1",
+        appId: "typeless",
+        appName: "Typeless",
+        sampleId: "builtin-en-01",
+        samplePath: "内建自测/english-01.wav",
+        status: "failed",
+        phase: "failed",
+        failureCategory: "timeout_waiting_result",
+        failureReason: "Timed out waiting for stable text",
+        rawText: "",
+        normalizedText: "",
+        inputEventCount: 0,
+        finalTextLength: 0,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ];
+    api.listResults.mockResolvedValue(groupedRuns);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    await wrapper.find('button[title="重新测试"]').trigger("click");
+    await flushPromises();
+    await wrapper.get(".dialog-card--countdown .primary-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".notice-toast--danger").exists()).toBe(true);
+    expect(wrapper.text()).toContain("这次没跑起来，先看上面的红色提示。");
+  });
+
+  it("shows merged retry count on the history row", async () => {
+    const { api } = setupDesktopApi();
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-merged-1",
+        runSessionId: "session-1",
+        appId: "typeless",
+        appName: "Typeless",
+        sampleId: "builtin-en-01",
+        samplePath: "内建自测/english-01.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "ok",
+        normalizedText: "ok",
+        inputEventCount: 1,
+        finalTextLength: 2,
+        createdAt: "2026-03-23T10:03:00.000Z",
+        retryCount: 2,
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("重试");
+    expect(wrapper.text()).toContain("2");
+    expect(wrapper.find(".history-sample-text").attributes("title")).toBe("内建自测/english-01.wav");
   });
 
   it("clears the previous main-page results when a new run starts", async () => {

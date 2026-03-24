@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppConfig, InputObservationEvent } from "../shared/types";
+import type { AppConfig, InputObservationEvent, RunStartOptions } from "../shared/types";
 
 const api = {
   getVersion: async () => await ipcRenderer.invoke("app:getVersion"),
@@ -12,7 +12,7 @@ const api = {
   requestAccessibilityPermission: async () => await ipcRenderer.invoke("permissions:requestAccessibility"),
   openPermissionSettings: async (pane: string) => await ipcRenderer.invoke("permissions:openSettings", pane),
   focusBenchmarkWindow: async () => await ipcRenderer.invoke("window:focusBenchmark"),
-  startRun: async () => await ipcRenderer.invoke("run:start"),
+  startRun: async (options?: RunStartOptions) => await ipcRenderer.invoke("run:start", options),
   emitRunTimelineEvent: async (runId: string, eventType: string, payload: Record<string, unknown>) =>
     await ipcRenderer.invoke("run:emitTimelineEvent", runId, eventType, payload),
   inspectRun: async () => await ipcRenderer.invoke("run:inspect"),

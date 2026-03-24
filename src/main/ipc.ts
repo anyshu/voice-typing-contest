@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { nanoid } from "nanoid";
-import type { AppConfig, InputObservationEvent } from "../shared/types";
+import type { AppConfig, InputObservationEvent, RunStartOptions } from "../shared/types";
 import { SampleManager } from "./sample-manager";
 import { ConfigStore } from "./config-store";
 import { ResultStore } from "./result-store";
@@ -100,7 +100,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return { ok: true };
   });
 
-  ipcMain.handle("run:start", async () => {
+  ipcMain.handle("run:start", async (_event, options?: RunStartOptions) => {
     const phase = deps.runController.getProgress().phase;
     const terminal = phase === "idle" || phase === "completed" || phase === "failed" || phase === "cancelled";
 
@@ -115,7 +115,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
       }
     }
 
-    activeRun = deps.runController.run(deps.getConfig());
+    activeRun = deps.runController.run(deps.getConfig(), options);
     try {
       return await activeRun;
     } finally {

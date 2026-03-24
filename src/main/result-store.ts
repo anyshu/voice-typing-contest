@@ -79,6 +79,8 @@ export class ResultStore {
         input_event_count INTEGER NOT NULL,
         final_text_length INTEGER NOT NULL,
         created_at TEXT NOT NULL,
+        retry_root_run_id TEXT,
+        retry_attempt INTEGER NOT NULL DEFAULT 0,
         timeline_json TEXT NOT NULL DEFAULT '[]'
       );
       CREATE TABLE IF NOT EXISTS run_events (
@@ -100,6 +102,12 @@ export class ResultStore {
     }
     if (!testRunColumnNames.has("timeline_json")) {
       this.db.exec("ALTER TABLE test_runs ADD COLUMN timeline_json TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!testRunColumnNames.has("retry_root_run_id")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN retry_root_run_id TEXT");
+    }
+    if (!testRunColumnNames.has("retry_attempt")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN retry_attempt INTEGER NOT NULL DEFAULT 0");
     }
   }
 
@@ -139,8 +147,9 @@ export class ResultStore {
         id, run_session_id, app_id, app_name, sample_id, sample_path, status, phase,
         failure_category, failure_reason, raw_text, normalized_text, expected_text,
         hotkey_to_audio_ms, trigger_stop_to_first_char_ms, trigger_stop_to_final_text_ms,
-        total_run_ms, input_event_count, final_text_length, created_at, timeline_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_run_ms, input_event_count, final_text_length, created_at,
+        retry_root_run_id, retry_attempt, timeline_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.runSessionId,
@@ -162,8 +171,19 @@ export class ResultStore {
       record.inputEventCount,
       record.finalTextLength,
       record.createdAt,
+      record.retryRootRunId ?? null,
+      record.retryAttempt ?? 0,
       JSON.stringify(record.timeline),
     );
+  }
+
+  getNextRetryAttempt(rootRunId: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM test_runs
+      WHERE id = ? OR retry_root_run_id = ?
+    `).get(rootRunId, rootRunId) as { count?: number } | undefined;
+    return Math.max(0, row?.count ?? 0);
   }
 
   appendEvent(record: RunEventRecord): void {
@@ -203,15 +223,14 @@ export class ResultStore {
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
         created_at AS createdAt,
+        retry_root_run_id AS retryRootRunId,
+        retry_attempt AS retryAttempt,
         timeline_json AS timelineJson
       FROM test_runs
-      ${sessionId ? "WHERE run_session_id = ?" : ""}
       ORDER BY created_at DESC
     `;
-    const rows = (sessionId
-      ? this.db.prepare(query).all(sessionId)
-      : this.db.prepare(query).all()) as Array<TestRunRecord & { timelineJson?: string }>;
-    return rows.map(({ id, timelineJson, ...row }) => {
+    const rows = this.db.prepare(query).all() as Array<TestRunRecord & { timelineJson?: string }>;
+    const normalizedRows = rows.map(({ id, timelineJson, ...row }) => {
       const timeline = this.parseTimeline(timelineJson);
       return {
         id,
@@ -219,24 +238,55 @@ export class ResultStore {
         timeline: timeline.length ? timeline : this.listEventsForRun(id),
       };
     });
+    const rowById = new Map(normalizedRows.map((row) => [row.id, row]));
+    const grouped = new Map<string, TestRunRecord[]>();
+    for (const row of normalizedRows) {
+      const rootId = row.retryRootRunId ?? row.id;
+      grouped.set(rootId, [...(grouped.get(rootId) ?? []), row]);
+    }
+
+    const collapsedRows = [...grouped.entries()].map(([rootId, chain]) => {
+      const root = rowById.get(rootId) ?? chain[chain.length - 1]!;
+      const latest = [...chain].sort((left, right) => {
+        if (left.createdAt === right.createdAt) {
+          return (right.retryAttempt ?? 0) - (left.retryAttempt ?? 0);
+        }
+        return right.createdAt.localeCompare(left.createdAt);
+      })[0]!;
+      return {
+        ...latest,
+        runSessionId: root.runSessionId,
+        retryRootRunId: rootId === latest.id ? latest.retryRootRunId : rootId,
+        retryCount: Math.max(...chain.map((item) => item.retryAttempt ?? 0)),
+      } satisfies TestRunRecord;
+    }).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    return sessionId ? collapsedRows.filter((row) => row.runSessionId === sessionId) : collapsedRows;
   }
 
   listSessions(): RunSessionSummary[] {
-    return this.db.prepare(`
+    const sessions = this.db.prepare(`
       SELECT
-        run_sessions.id AS id,
-        run_sessions.started_at AS startedAt,
-        run_sessions.finished_at AS finishedAt,
-        run_sessions.status AS status,
-        COUNT(test_runs.id) AS runCount,
-        COALESCE(SUM(CASE WHEN test_runs.status = 'success' THEN 1 ELSE 0 END), 0) AS successCount,
-        COALESCE(SUM(CASE WHEN test_runs.status = 'failed' THEN 1 ELSE 0 END), 0) AS failedCount,
-        COALESCE(SUM(CASE WHEN test_runs.status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelledCount
+        id,
+        started_at AS startedAt,
+        finished_at AS finishedAt,
+        status
       FROM run_sessions
-      LEFT JOIN test_runs ON test_runs.run_session_id = run_sessions.id
-      GROUP BY run_sessions.id
-      ORDER BY run_sessions.started_at DESC
-    `).all() as unknown as RunSessionSummary[];
+      ORDER BY started_at DESC
+    `).all() as Array<Pick<RunSessionSummary, "id" | "startedAt" | "finishedAt" | "status">>;
+    const collapsedRuns = this.listRuns();
+    return sessions
+      .map((session) => {
+        const sessionRuns = collapsedRuns.filter((item) => item.runSessionId === session.id);
+        return {
+          ...session,
+          runCount: sessionRuns.length,
+          successCount: sessionRuns.filter((item) => item.status === "success").length,
+          failedCount: sessionRuns.filter((item) => item.status === "failed").length,
+          cancelledCount: sessionRuns.filter((item) => item.status === "cancelled").length,
+        };
+      })
+      .filter((session) => session.runCount > 0);
   }
 
   getRunDetail(runId: string): ResultDetail | undefined {
@@ -262,6 +312,8 @@ export class ResultStore {
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
         created_at AS createdAt,
+        retry_root_run_id AS retryRootRunId,
+        retry_attempt AS retryAttempt,
         timeline_json AS timelineJson
       FROM test_runs
       WHERE id = ?
@@ -304,6 +356,9 @@ export class ResultStore {
   exportCsv(sessionId?: string): string {
     const rows = this.listRuns(sessionId);
     const headers = [
+      "run_id",
+      "retry_root_run_id",
+      "retry_attempt",
       "app_name",
       "sample_path",
       "status",
@@ -311,6 +366,7 @@ export class ResultStore {
       "failure_reason",
       "trigger_stop_to_first_char_ms",
       "trigger_stop_to_final_text_ms",
+      "retry_count",
       "final_text_length",
       "raw_text",
       "created_at",
@@ -318,6 +374,9 @@ export class ResultStore {
     const csvRows = [headers.join(",")];
     for (const row of rows) {
       const line = [
+        row.id,
+        row.retryRootRunId ?? row.id,
+        row.retryAttempt ?? 0,
         row.appName,
         row.samplePath,
         row.status,
@@ -325,6 +384,7 @@ export class ResultStore {
         row.failureReason ?? "",
         row.triggerStopToFirstCharMs ?? "",
         row.triggerStopToFinalTextMs ?? "",
+        row.retryCount ?? row.retryAttempt ?? 0,
         row.finalTextLength,
         row.rawText,
         row.createdAt,

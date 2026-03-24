@@ -44,12 +44,97 @@ describe("ResultStore", () => {
       timeline: [],
     });
     const csv = store.exportCsv();
+    expect(csv).toContain("run_id");
+    expect(csv).toContain("retry_root_run_id");
+    expect(csv).toContain("retry_attempt");
     expect(csv).toContain("app_name");
     expect(csv).toContain("trigger_stop_to_first_char_ms");
     expect(csv).toContain("trigger_stop_to_final_text_ms");
     expect(csv).toContain("hello");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
     expect(store.listRuns()[0]?.timeline).toEqual([]);
+    store.close();
+  });
+
+  it("collapses retry attempts back into the original session row and tracks retry count", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-db-retry-"));
+    const store = new ResultStore(join(root, "test.sqlite"));
+    const config = defaultConfig();
+    store.syncConfig(config);
+    store.createSession({
+      id: "session-1",
+      startedAt: "2026-03-24T10:00:00.000Z",
+      selectedAppIds: [],
+      selectedSampleIds: [],
+      permissionSnapshot: defaultPermissions(),
+      deviceSnapshot: defaultDevices(),
+      configSnapshot: config,
+      status: "completed",
+    });
+    store.createSession({
+      id: "session-2",
+      startedAt: "2026-03-24T10:10:00.000Z",
+      selectedAppIds: [],
+      selectedSampleIds: [],
+      permissionSnapshot: defaultPermissions(),
+      deviceSnapshot: defaultDevices(),
+      configSnapshot: config,
+      status: "completed",
+    });
+    store.insertRun({
+      id: "run-1",
+      runSessionId: "session-1",
+      appId: "app-1",
+      appName: "Typeless",
+      sampleId: "sample-1",
+      samplePath: "a.wav",
+      status: "failed",
+      phase: "failed",
+      rawText: "",
+      normalizedText: "",
+      inputEventCount: 0,
+      finalTextLength: 0,
+      createdAt: "2026-03-24T10:01:00.000Z",
+      timeline: [],
+    });
+    store.insertRun({
+      id: "run-2",
+      runSessionId: "session-2",
+      appId: "app-1",
+      appName: "Typeless",
+      sampleId: "sample-1",
+      samplePath: "a.wav",
+      status: "success",
+      phase: "completed",
+      rawText: "fixed",
+      normalizedText: "fixed",
+      inputEventCount: 1,
+      finalTextLength: 5,
+      createdAt: "2026-03-24T10:11:00.000Z",
+      retryRootRunId: "run-1",
+      retryAttempt: 1,
+      timeline: [],
+    });
+
+    const runs = store.listRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.status).toBe("success");
+    expect(runs[0]?.runSessionId).toBe("session-1");
+    expect(runs[0]?.retryCount).toBe(1);
+
+    const sessions = store.listSessions();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.id).toBe("session-1");
+    expect(sessions[0]?.successCount).toBe(1);
+    expect(sessions[0]?.failedCount).toBe(0);
+
+    const csv = store.exportCsv("session-1");
+    expect(csv).toContain("retry_count");
+    expect(csv).toContain("retry_root_run_id");
+    expect(csv).toContain("run-2");
+    expect(csv).toContain("run-1");
+    expect(csv).toContain("fixed");
+    expect(csv).not.toContain("session-2");
     store.close();
   });
 });

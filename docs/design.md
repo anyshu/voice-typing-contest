@@ -58,13 +58,15 @@ For each target app:
 3. bring the benchmark window back to front
 4. focus the built-in input box
 5. wait global `focusInputDelayMs`
-6. send the configured hotkey trigger start according to the app profile
+6. trigger according to the app profile:
+   - `hold_release`: press and keep holding the configured hotkey
+   - `press_start_press_stop`: send one full press-release cycle as start
 7. wait app-level `hotkeyToAudioDelayMs`
 8. play the WAV sample to the configured output device
 9. when playback ends, wait app-level `audioToTriggerStopDelayMs`
 10. complete the trigger according to mode:
-   - `hold_release`: send key up
-   - `press_start_press_stop`: send the same hotkey again as stop
+   - `hold_release`: release the same held hotkey
+   - `press_start_press_stop`: send the same hotkey again as a second full press-release cycle
 11. observe the input box until text stabilizes or global timeout fires
 12. record result, raw text, timestamps, metrics, and failure reason
 13. wait global `betweenSamplesDelayMs`
@@ -199,7 +201,7 @@ Responsibilities:
 - built-in input box for typed output
 - live run timeline
 - latest-session summary on `主控台`
-- dedicated `测试历史` page for browsing persisted sessions and exporting one batch at a time
+- dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 
@@ -298,6 +300,8 @@ Hotkey automation rule in the current implementation:
 
 - supported automation chords include combinations composed from `Cmd`, `Ctrl`, `Option`, `Shift`, and a regular key
 - `Fn` is also supported, including standalone `Fn`, but standalone `Fn` is set through a dedicated UI action instead of raw keyboard capture
+- `hold_release` means "press and keep held until the audio finishes, then release", not "send a start trigger and later send a stop trigger"
+- for `hold_release`, helper dispatch should keep the entire hold / audio / release sequence inside one helper session so modifier-only keys such as `Fn` are simulated as a continuous hold instead of split fire-and-forget events
 - `Ctrl + Space` and similar reserved shortcuts are still risky in practice when macOS intercepts them first
 - therefore the tester should still prefer a non-reserved chord when possible
 

@@ -30,6 +30,8 @@ struct CommandRequest: Decodable {
     let outputDeviceId: String?
     let chord: String?
     let phase: String?
+    let hotkeyToAudioDelayMs: Int?
+    let audioToTriggerStopDelayMs: Int?
     let appFileName: String?
     let pane: String?
 }
@@ -265,6 +267,20 @@ func playWav(_ filePath: String) throws -> [String: String] {
     return ["status": "ok"]
 }
 
+func sleepMs(_ value: Int) {
+    guard value > 0 else { return }
+    Thread.sleep(forTimeInterval: Double(value) / 1000)
+}
+
+func playWavHoldingHotkey(_ chord: String, filePath: String, hotkeyToAudioDelayMs: Int, audioToTriggerStopDelayMs: Int) throws -> [String: String] {
+    try sendHotkey(chord, phase: "down")
+    sleepMs(hotkeyToAudioDelayMs)
+    try playWav(filePath)
+    sleepMs(audioToTriggerStopDelayMs)
+    try sendHotkey(chord, phase: "up")
+    return ["status": "ok"]
+}
+
 func activateApp(_ appTarget: String) throws -> [String: String] {
     if appTarget.hasPrefix("selftest://") {
         return ["status": "ok"]
@@ -349,6 +365,14 @@ do {
     case "sendHotkey":
         guard let chord = request.chord, let phase = request.phase else { throw HelperError.invalidInput("Missing hotkey arguments") }
         try writeResponse(sendHotkey(chord, phase: phase))
+    case "playWavHoldingHotkey":
+        guard let chord = request.chord, let filePath = request.filePath else { throw HelperError.invalidInput("Missing hold playback arguments") }
+        try writeResponse(playWavHoldingHotkey(
+            chord,
+            filePath: filePath,
+            hotkeyToAudioDelayMs: request.hotkeyToAudioDelayMs ?? 0,
+            audioToTriggerStopDelayMs: request.audioToTriggerStopDelayMs ?? 0
+        ))
     case "activateApp":
         guard let appFileName = request.appFileName else { throw HelperError.invalidInput("Missing appFileName") }
         try writeResponse(activateApp(appFileName))

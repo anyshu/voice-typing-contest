@@ -10,6 +10,7 @@ import {
   FolderAudioIcon,
   InformationCircleIcon,
   PlayCircleIcon,
+  ReloadIcon,
   Settings01Icon,
   Shield01Icon,
   Speaker01Icon,
@@ -27,6 +28,7 @@ import type {
   RunEventRecord,
   RunPhase,
   RunProgress,
+  RunStartOptions,
   SettingsPayload,
   TestRunRecord,
 } from "../shared/types";
@@ -48,7 +50,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
-const appVersion = ref("v0.1.0");
+const appVersion = ref("v0.1.1");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -97,8 +99,8 @@ const failureLabels: Record<FailureCategory, string> = {
 };
 
 const modeLabels = {
-  hold_release: "按住热键，松开收口",
-  press_start_press_stop: "按一次触发，再按一次收口",
+  hold_release: "按住并保持，松开结束",
+  press_start_press_stop: "按下抬起开始，再按下抬起结束",
 } as const;
 
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
@@ -151,7 +153,13 @@ const pageSubtitle = computed(() => {
 });
 const noticeTone = computed(() => {
   if (!notice.value) return "info";
-  if (notice.value.includes("失败") || notice.value.includes("缺少") || notice.value.includes("不能")) return "danger";
+  if (
+    notice.value.includes("失败")
+    || notice.value.includes("缺少")
+    || notice.value.includes("不能")
+    || notice.value.includes("没跑起来")
+    || notice.value.includes("红色提示")
+  ) return "danger";
   if (notice.value.includes("取消") || notice.value.includes("未")) return "warning";
   return "success";
 });
@@ -267,11 +275,19 @@ function sampleMeta(language: string, durationMs?: number): string {
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
 }
 
-function showToast(message: string): void {
-  notice.value = message;
+function clearNoticeTimer(): void {
   if (noticeTimer) {
     window.clearTimeout(noticeTimer);
+    noticeTimer = null;
   }
+}
+
+function showToast(message: string): void {
+  notice.value = message;
+}
+
+function scheduleNoticeDismiss(message: string): void {
+  clearNoticeTimer();
   noticeTimer = window.setTimeout(() => {
     if (notice.value === message) {
       notice.value = "";
@@ -605,6 +621,10 @@ async function chooseDatabasePath(): Promise<void> {
 }
 
 async function runBatch(): Promise<void> {
+  await startRunBatch();
+}
+
+async function startRunBatch(options?: RunStartOptions): Promise<void> {
   try {
     pendingRunStart.value = true;
     preflightReport.value = null;
@@ -618,7 +638,7 @@ async function runBatch(): Promise<void> {
     await focusInputProbe();
     await saveSettings(false);
     await runPreStartCountdown();
-    const report = await window.vtc.startRun() as PreflightReport;
+    const report = await window.vtc.startRun(options) as PreflightReport;
     preflightReport.value = report;
     await refreshResultData();
     if (!report.ok) {
@@ -632,6 +652,35 @@ async function runBatch(): Promise<void> {
     notice.value = `开始失败：${error instanceof Error ? error.message : String(error)}`;
     pendingRunStart.value = false;
   }
+}
+
+async function retryHistoryResult(result: TestRunRecord): Promise<void> {
+  if (running.value || pendingRunStart.value || preRunDialogVisible.value) {
+    notice.value = "当前已有测试在跑，先等这一轮结束。";
+    return;
+  }
+  const targetApp = config.value.targetApps.find((item) => item.id === result.appId)
+    ?? config.value.targetApps.find((item) => item.name === result.appName);
+  const targetSample = config.value.audioSamples.find((item) => item.id === result.sampleId)
+    ?? config.value.audioSamples.find((item) => item.relativePath === result.samplePath);
+  if (!targetApp) {
+    notice.value = `重试失败：当前配置里找不到 ${result.appName}，请先去 App 管理确认它还在。`;
+    return;
+  }
+  if (!targetSample) {
+    notice.value = `重试失败：当前配置里找不到样本 ${result.samplePath}，请先确认样本目录已重新扫描。`;
+    return;
+  }
+  if (page.value !== "main") {
+    page.value = "main";
+    await nextTick();
+  }
+  notice.value = `准备重试 ${result.appName} / ${result.samplePath}。`;
+  await startRunBatch({
+    appIds: [targetApp.id],
+    sampleIds: [targetSample.id],
+    retryRootRunId: result.retryRootRunId ?? result.id,
+  });
 }
 
 async function runPreStartCountdown(): Promise<void> {
@@ -1036,6 +1085,14 @@ watch(() => displayedTimeline.value[displayedTimeline.value.length - 1]?.id, asy
   scrollTimelineToLatest();
 });
 
+watch(() => notice.value, (message) => {
+  if (!message) {
+    clearNoticeTimer();
+    return;
+  }
+  scheduleNoticeDismiss(message);
+});
+
 watch(() => progress.value.phase, async (phase, previousPhase) => {
   if (!isTerminalPhase(phase) || !previousPhase || isTerminalPhase(previousPhase) || previousPhase === "idle") {
     return;
@@ -1044,10 +1101,7 @@ watch(() => progress.value.phase, async (phase, previousPhase) => {
 });
 
 onBeforeUnmount(() => {
-  if (noticeTimer) {
-    window.clearTimeout(noticeTimer);
-    noticeTimer = null;
-  }
+  clearNoticeTimer();
   window.removeEventListener("keydown", handleGlobalKeydown, true);
   window.removeEventListener("keyup", handleGlobalKeyup, true);
   window.removeEventListener("mousedown", lockDialogPointerInput, true);
@@ -1415,15 +1469,13 @@ onBeforeUnmount(() => {
             <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
               <div class="session-header">
                 <button class="session-toggle" @click="toggleSession(group.session.id)">
-                  <div>
-                    <strong>{{ formatSessionTime(group.session.startedAt) }}</strong>
-                    <div class="muted">
-                      {{ sessionStatusText(group.session.status) }}
-                      · 共 {{ group.session.runCount }} 条
-                      · 成功 {{ group.session.successCount }}
-                      · 失败 {{ group.session.failedCount }}
-                      · 取消 {{ group.session.cancelledCount }}
-                    </div>
+                  <strong>{{ formatSessionTime(group.session.startedAt) }}</strong>
+                  <div class="muted">
+                    {{ sessionStatusText(group.session.status) }}
+                    · 共 {{ group.session.runCount }} 条
+                    · 成功 {{ group.session.successCount }}
+                    · 失败 {{ group.session.failedCount }}
+                    · 取消 {{ group.session.cancelledCount }}
                   </div>
                   <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
                 </button>
@@ -1433,14 +1485,12 @@ onBeforeUnmount(() => {
               <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
                 <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
                   <div class="app-group-header">
-                    <div>
-                      <strong>{{ appGroup.appName }}</strong>
-                      <div class="muted">
-                        共 {{ appGroup.runs.length }} 条
-                        · 成功 {{ appGroup.successCount }}
-                        · 失败 {{ appGroup.failedCount }}
-                        · 取消 {{ appGroup.cancelledCount }}
-                      </div>
+                    <strong>{{ appGroup.appName }}</strong>
+                    <div class="muted">
+                      共 {{ appGroup.runs.length }} 条
+                      · 成功 {{ appGroup.successCount }}
+                      · 失败 {{ appGroup.failedCount }}
+                      · 取消 {{ appGroup.cancelledCount }}
                     </div>
                   </div>
 
@@ -1449,9 +1499,11 @@ onBeforeUnmount(() => {
                       <tr>
                         <th>样本</th>
                         <th>状态</th>
-                        <th>收口到首字</th>
-                        <th>收口到定稿</th>
+                        <th>首字</th>
+                        <th>定稿</th>
                         <th>长度</th>
+                        <th>重试</th>
+                        <th>操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1459,14 +1511,34 @@ onBeforeUnmount(() => {
                         v-for="result in appGroup.runs"
                         :key="result.id"
                       >
-                        <td>{{ result.samplePath }}</td>
-                        <td><span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span></td>
+                        <td>
+                          <span class="history-sample-text" :title="result.samplePath">{{ result.samplePath }}</span>
+                        </td>
+                        <td>
+                          <div class="history-status-cell">
+                            <span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span>
+                          </div>
+                        </td>
                         <td>{{ formatLatencyMs(result.triggerStopToFirstCharMs) }}</td>
                         <td>{{ formatLatencyMs(result.triggerStopToFinalTextMs) }}</td>
                         <td>{{ result.finalTextLength }}</td>
+                        <td>{{ result.retryCount ?? 0 }}</td>
+                        <td>
+                          <button
+                            v-if="result.status === 'failed'"
+                            class="history-retry-button"
+                            :disabled="running || pendingRunStart || preRunDialogVisible"
+                            aria-label="重新测试"
+                            title="重新测试"
+                            @click.stop="retryHistoryResult(result)"
+                          >
+                            <HugeiconsIcon :icon="ReloadIcon" :size="14" class="button-icon" />
+                          </button>
+                          <span v-else class="muted">-</span>
+                        </td>
                       </tr>
                       <tr v-if="!appGroup.runs.length">
-                        <td colspan="5">这个应用在本轮还没有结果。</td>
+                        <td colspan="7">这个应用在本轮还没有结果。</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1525,8 +1597,8 @@ onBeforeUnmount(() => {
               <label class="compact-field">
                 <span>触发方式 <em class="required-mark">*</em></span>
                 <select v-model="app.hotkeyTriggerMode" class="compact-select">
-                  <option value="hold_release">按住热键，松开收口</option>
-                  <option value="press_start_press_stop">按一次触发，再按一次收口</option>
+                  <option value="hold_release">按住并保持，松开结束</option>
+                  <option value="press_start_press_stop">按下抬起开始，再按下抬起结束</option>
                 </select>
               </label>
               <label><span>启动命令</span><input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" /></label>

@@ -111,6 +111,30 @@ try {
       respond({ status: "ok" });
       break;
     }
+    case "playWavHoldingHotkey": {
+      execFileSync("osascript", ["-l", "JavaScript", sendHotkeyScript, input.chord, "down"], { stdio: "ignore" });
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(input.hotkeyToAudioDelayMs) || 0);
+      if (input.outputDeviceId && input.outputDeviceId !== "system-default" && spawnSync(audioToolPath, ["get-default"], { encoding: "utf8" }).status === 0) {
+        const current = spawnSync(audioToolPath, ["get-default"], { encoding: "utf8" }).stdout.trim();
+        const selected = String(input.outputDeviceId);
+        try {
+          if (selected && selected !== current) {
+            execFileSync(audioToolPath, ["set-default", selected], { stdio: "ignore" });
+          }
+          execFileSync("afplay", [input.filePath], { stdio: "ignore" });
+        } finally {
+          if (current && current !== selected) {
+            execFileSync(audioToolPath, ["set-default", current], { stdio: "ignore" });
+          }
+        }
+      } else {
+        execFileSync("afplay", [input.filePath], { stdio: "ignore" });
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(input.audioToTriggerStopDelayMs) || 0);
+      execFileSync("osascript", ["-l", "JavaScript", sendHotkeyScript, input.chord, "up"], { stdio: "ignore" });
+      respond({ status: "ok" });
+      break;
+    }
     case "sendHotkey": {
       execFileSync("osascript", ["-l", "JavaScript", sendHotkeyScript, input.chord, input.phase], { stdio: "ignore" });
       respond({ status: "ok" });

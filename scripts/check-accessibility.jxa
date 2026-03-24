@@ -1,0 +1,4 @@
+ObjC.import("AppKit");
+ObjC.import("ApplicationServices");
+
+console.log(String(ObjC.unwrap($.AXIsProcessTrusted())));

@@ -1,0 +1,60 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { defaultConfig } from "../shared/defaults";
+import type { AppConfig } from "../shared/types";
+import { resolveHomePath } from "../shared/paths";
+
+export class ConfigStore {
+  constructor(private readonly filePath: string) {}
+
+  load(): AppConfig {
+    try {
+      const raw = readFileSync(this.filePath, "utf8");
+      const parsed = { ...defaultConfig(), ...JSON.parse(raw) } as AppConfig;
+      return this.normalize(parsed);
+    } catch {
+      return this.normalize(defaultConfig());
+    }
+  }
+
+  save(config: AppConfig): void {
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    writeFileSync(this.filePath, JSON.stringify(config, null, 2), "utf8");
+  }
+
+  private normalize(config: AppConfig): AppConfig {
+    const defaults = defaultConfig();
+    const legacyResultTimeoutMs = config.targetApps.find((app) => typeof app.resultTimeoutMs === "number")?.resultTimeoutMs;
+    const legacyAppLaunchDelayMs = config.targetApps.find((app) => typeof app.launchTimeoutMs === "number")?.launchTimeoutMs;
+    const legacyFocusInputDelayMs = config.targetApps.find((app) => typeof app.preHotkeyDelayMs === "number")?.preHotkeyDelayMs;
+    const legacyCloseAppDelayMs = config.targetApps.find((app) => typeof app.postRunCooldownMs === "number")?.postRunCooldownMs;
+    const appMap = new Map(config.targetApps.map((app) => [app.id, app]));
+    for (const app of defaults.targetApps) {
+      if (!appMap.has(app.id)) {
+        appMap.set(app.id, app);
+      }
+    }
+    const targetApps = Array.from(appMap.values());
+    const audioSamples = config.audioSamples.length ? config.audioSamples : defaults.audioSamples;
+    if (!targetApps.some((app) => app.enabled)) {
+      const selftest = targetApps.find((app) => app.id === "selftest");
+      if (selftest) {
+        selftest.enabled = true;
+      }
+    }
+    return {
+      ...config,
+      appLaunchDelayMs: config.appLaunchDelayMs ?? legacyAppLaunchDelayMs ?? defaults.appLaunchDelayMs,
+      focusInputDelayMs: config.focusInputDelayMs ?? legacyFocusInputDelayMs ?? defaults.focusInputDelayMs,
+      resultTimeoutMs: config.resultTimeoutMs ?? legacyResultTimeoutMs ?? defaults.resultTimeoutMs,
+      betweenSamplesDelayMs: config.betweenSamplesDelayMs ?? defaults.betweenSamplesDelayMs,
+      closeAppDelayMs: config.closeAppDelayMs ?? legacyCloseAppDelayMs ?? defaults.closeAppDelayMs,
+      targetApps,
+      audioSamples,
+      sampleRoot: resolveHomePath(config.sampleRoot),
+      databasePath: resolveHomePath(config.databasePath),
+      logFolder: resolveHomePath(config.logFolder),
+      helperPathOverride: resolveHomePath(config.helperPathOverride),
+    };
+  }
+}

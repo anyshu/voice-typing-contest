@@ -41,33 +41,37 @@ Before running tests, the tester prepares:
 4. each target app's hotkey
 5. each target app's input device set to the virtual microphone path
 
-Hotkey constraint for automated runs in v1:
+Hotkey constraint for automated runs in the current implementation:
 
-- use only automation-safe hotkeys built from standard modifiers and standard keys
-- avoid `fn` / `globe`
-- avoid system-reserved shortcuts unless the tester has explicitly disabled the conflict first
+- the UI supports recording normal modifier chords and also supports `Fn`
+- standalone `Fn` is exposed by a dedicated UI action because Electron cannot capture it reliably from raw key events
+- `Fn + other key` is supported in the current helper path
+- system-reserved shortcuts may still be intercepted by macOS first, so the tester should still prefer non-reserved chords when possible
 
 ### 3.2 Batch flow
 
 For each target app:
 
-1. ensure the app is running and ready
-2. bring the test tool window to front
-3. focus the built-in input box
-4. clear previous text
-5. wait `preHotkeyDelayMs`
+1. launch the app once
+2. wait global `appLaunchDelayMs`
+3. bring the benchmark window back to front
+4. focus the built-in input box
+5. wait global `focusInputDelayMs`
 6. send the configured hotkey trigger start according to the app profile
-7. wait `hotkeyToAudioDelayMs`
-8. play the WAV sample to the configured virtual audio device
-9. when playback ends, wait `audioToTriggerStopDelayMs`
+7. wait app-level `hotkeyToAudioDelayMs`
+8. play the WAV sample to the configured output device
+9. when playback ends, wait app-level `audioToTriggerStopDelayMs`
 10. complete the trigger according to mode:
    - `hold_release`: send key up
    - `press_start_press_stop`: send the same hotkey again as stop
-11. observe the input box until text stabilizes or timeout fires
+11. observe the input box until text stabilizes or global timeout fires
 12. record result, raw text, timestamps, metrics, and failure reason
-13. continue with the next audio sample
+13. wait global `betweenSamplesDelayMs`
+14. continue with the next audio sample
+15. after the last sample for the app, wait global `closeAppDelayMs`
+16. close the app
 
-When all samples finish for one app, switch to the next app and repeat.
+When all samples finish for one app, switch to the next app and repeat the same app-batch cycle.
 
 Important:
 
@@ -85,17 +89,14 @@ It is a macOS automation tool with three responsibilities:
 
 ## 5. High-permission Design
 
-This project is a test tool. Logically it is allowed to hold high system permissions.
-
-That is a design choice, not an accident.
-
-The tool is expected to run in a controlled local test environment, not as a low-privilege consumer app.
+This project is a local test tool. It expects high-permission behavior when needed, but the current implementation also keeps a degraded fallback path so the main workflow remains usable in local development.
 
 ### 5.1 Permission stance
 
 - treat macOS automation permissions as part of the product design
 - check them before every run
-- block execution when required permissions are missing
+- block real-app automation when required permissions are missing
+- keep self-test runnable even when a real app is skipped for permission reasons
 - record the permission snapshot in run metadata
 
 In the main benchmark flow, the tool only needs to emit system-level keyboard events and play audio. It does not rely on the target app owning focus.
@@ -163,11 +164,12 @@ This class of automation tool depends on permissions and system integrations tha
 
 ### 6.1 Overview
 
-The recommended architecture is:
+The implemented architecture is:
 
 - Electron renderer implemented with Vue for UI
 - Electron main process for orchestration
 - native macOS helper in Swift for privileged system actions
+- fallback helper with the same command contract for local development environments where Swift helper build or runtime is not available
 - SQLite for local result storage
 
 ### 6.2 Why a native helper
@@ -177,7 +179,7 @@ Pure Electron is weak in two critical areas for this project:
 - stable global hotkey simulation on macOS
 - precise audio playback to a selected CoreAudio device
 
-A Swift helper provides:
+A Swift helper provides the intended long-term path, while the current product also ships a fallback helper path so the app remains runnable during development:
 
 - better control over Quartz event injection
 - better control over CoreAudio timing
@@ -189,19 +191,15 @@ A Swift helper provides:
 
 Responsibilities:
 
+- page navigation for `主控台`, `运行前检查`, `样本`, `设置`, `怎么开始`, `当前实现`
 - configuration UI
 - permission status UI
 - built-in input box for typed output
-- live run log
-- result list and comparison views
+- live run timeline
+- latest-session summary on `主控台`
+- dedicated `测试历史` page for browsing persisted sessions and exporting one batch at a time
 
-Suggested Vue structure:
-
-- `src/renderer/App.vue`
-- `src/renderer/pages/*`
-- `src/renderer/components/*`
-- `src/renderer/composables/*`
-- `src/renderer/i18n/*`
+Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 
 ### 7.2 Main process
 
@@ -231,6 +229,10 @@ Responsibilities:
 - help recover app and window state when needed
 - enumerate and verify audio devices
 - play WAV audio to a specific device
+
+Packaging note:
+
+- release builds must bundle both `vtc-helper` and `vtc-audioctl` from the release helper output path so `dist:mac` works from a clean checkout without depending on debug helper artifacts
 
 Native modules:
 
@@ -271,7 +273,7 @@ Benefits:
 
 Each target app should be represented by a profile instead of hardcoded logic.
 
-Suggested fields:
+App profile fields currently stored:
 
 - `id`
 - `name`
@@ -280,28 +282,22 @@ Suggested fields:
 - `hotkeyChord`
 - `hotkeyTriggerMode` (`hold_release` or `press_start_press_stop`)
 - `audioInputDeviceName`
-- `launchTimeoutMs`
-- `preHotkeyDelayMs`
 - `hotkeyToAudioDelayMs`
 - `audioToTriggerStopDelayMs`
-- `resultTimeoutMs`
 - `settleWindowMs`
-- `postRunCooldownMs`
 - `enabled`
 - `notes`
 
-`appFileName` is the primary way to identify an installed target app in v1. The tool should locate apps by installed `.app` file name, not by bundle id.
+`appFileName` is the primary way to identify an installed target app in the current version. The tool locates apps by installed `.app` file name, not by bundle id.
 
 `hotkeyChord` stores the exact shortcut the tester enters from a dedicated hotkey capture control. The UI should not split it into a main key field plus modifier chips.
 
-Hotkey automation rule in v1:
+Hotkey automation rule in the current implementation:
 
-- supported automation chords should be limited to combinations composed from `Cmd`, `Ctrl`, `Option`, `Shift`, and a regular key
-- `fn` / `globe` must be treated as unsupported for synthetic dispatch in the automated benchmark path
-- reason: macOS does not provide a stable public injection path that behaves like a normal synthetic key press for `fn`
-- implication: if a target app depends on `fn` / `globe`, the tester must change that app's hotkey before running the benchmark
-- `Ctrl + Space` is logically representable as a synthetic chord, but it may still fail in practice when macOS input source switching or another system shortcut intercepts it first
-- therefore the tester should prefer a non-reserved chord even when the tool technically supports the key combination format
+- supported automation chords include combinations composed from `Cmd`, `Ctrl`, `Option`, `Shift`, and a regular key
+- `Fn` is also supported, including standalone `Fn`, but standalone `Fn` is set through a dedicated UI action instead of raw keyboard capture
+- `Ctrl + Space` and similar reserved shortcuts are still risky in practice when macOS intercepts them first
+- therefore the tester should still prefer a non-reserved chord when possible
 
 ## 10. Audio Sample Model
 
@@ -323,20 +319,13 @@ Suggested fields:
 
 ## 11. UI Localization
 
-The app UI must support both Chinese and English in v1.
+The current codebase is Chinese-first. English support is not yet consistently implemented across all renderer copy, so localization should be treated as partial rather than complete.
 
-Requirements:
+Current direction:
 
-- renderer strings should go through a shared i18n layer
-- Vue components should not hardcode user-facing copy directly
-- settings must expose an interface language option
-- run result data stays language-neutral where possible
-
-Suggested approach:
-
-- `vue-i18n` or equivalent in the renderer
-- shared keys for page labels, settings labels, tooltips, and failure messages
-- fallback locale = English
+- keep run data language-neutral where possible
+- keep page and setting labels Chinese-first
+- leave a later pass to unify renderer strings behind a dedicated i18n layer
 
 ## 12. Input Capture Design
 
@@ -348,7 +337,7 @@ For each sample run:
 - confirm focus before hotkey dispatch
 - observe all text changes, not just final content
 
-Renderer should listen to:
+Renderer listens to:
 
 - `focus`
 - `blur`
@@ -381,23 +370,27 @@ Record at least:
 - `last_input_at`
 - `run_finished_at`
 
-### 12.2 Derived metrics
+### 13.2 Derived metrics
 
-Calculate:
+Calculate in the current implementation:
 
 - `hotkey_to_audio_ms`
-- `audio_to_first_char_ms`
-- `audio_end_to_first_char_ms`
-- `audio_end_to_final_text_ms`
+- `trigger_stop_to_first_char_ms`
+- `trigger_stop_to_final_text_ms`
 - `total_run_ms`
 - `input_event_count`
 - `final_text_length`
 
+Important interpretation rule:
+
+- `trigger_stop_to_first_char_ms` may be negative for apps that stream text before the stop trigger
+- the UI should present this as "提前 xxx ms" instead of hiding it
+
 ### 12.3 Time source
 
-Use monotonic time across main process and native helper whenever possible.
+Use monotonic time across the main process and helper whenever possible.
 
-Renderer timestamps should be collected with high-resolution time and converted into the shared run timeline using a measured offset.
+In the current implementation, renderer observation events are normalized to the main-process clock before latency math is derived, to avoid cross-process timer drift.
 
 ## 14. Failure Classification
 
@@ -456,9 +449,12 @@ Stores one app + one sample execution result, including:
 - expected text
 - latency metrics
 - failure reason
+- timeline snapshot
 - created time
 
 `run_session_id` links each test run back to the batch context so one benchmark pass can be queried, compared, and exported as a group.
+
+Each test run record should persist the full timeline for that run so later queries, history views, and the main console can all reuse the same source data instead of rebuilding a separate display-only timeline model.
 
 ### 14.3 `run_events`
 
@@ -470,6 +466,8 @@ Stores detailed timeline events as append-only records:
 - `payload_json`
 
 This keeps future metrics extensible without repeated schema churn.
+
+`run_events` is still useful as the append-only event log, but the query path should treat the per-run timeline snapshot on `test_runs` as the canonical UI-facing data bundle for one test record.
 
 ## 16. Preflight Checklist
 
@@ -513,6 +511,16 @@ Suggested main screen:
 | status: success   first_char: 850 ms   final: 1440 ms   text_len: 18             |
 +----------------------------------------------------------------------------------+
 ```
+
+The main console timeline should render from the same per-run timeline data saved with each test record, with the UI responsible only for selecting which events to show and formatting them for readability.
+
+The current renderer uses three timeline sources with clear roles:
+
+- pre-run prompt events exist only for the current in-memory start flow
+- live `run:event` records drive the active session while it is running
+- persisted `test_runs.timeline_json` is the source of truth for history views and for restoring the main console after a session finishes
+
+`主控台` should focus on "what is happening now / what just finished", while `测试历史` owns session browsing, expansion, and batch export actions.
 
 ## 18. Delivery Phases
 

@@ -1,0 +1,91 @@
+{
+  "name": "voice-typing-contest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "macOS Electron benchmark app for voice typing tools",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "build:release": "pnpm helper:release && pnpm build",
+    "dist:mac": "pnpm build:release && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "helper:build": "node scripts/build-helper.mjs debug",
+    "helper:release": "node scripts/build-helper.mjs release"
+  },
+  "dependencies": {
+    "@hugeicons/core-free-icons": "^1.0.5",
+    "@hugeicons/vue": "^1.0.5",
+    "better-sqlite3": "^11.10.0",
+    "electron-log": "^5.4.0",
+    "nanoid": "^5.1.5",
+    "vue": "^3.5.13",
+    "vue-i18n": "^10.0.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "electron": "^35.1.5",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.1.0",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.2",
+    "vitest": "^3.0.8"
+  },
+  "build": {
+    "appId": "com.hc.voicetypingcontest",
+    "productName": "Voice Typing Contest",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/icon-macos.png",
+        "to": "icon-macos.png"
+      },
+      {
+        "from": "native/helper/.build/arm64-apple-macosx/release/vtc-helper",
+        "to": "native/helper/.build/release/vtc-helper"
+      },
+      {
+        "from": "native/helper/.build/release/vtc-audioctl",
+        "to": "native/helper/.build/release/vtc-audioctl"
+      },
+      {
+        "from": "scripts/check-accessibility.jxa",
+        "to": "scripts/check-accessibility.jxa"
+      },
+      {
+        "from": "scripts/request-accessibility-permission.jxa",
+        "to": "scripts/request-accessibility-permission.jxa"
+      },
+      {
+        "from": "scripts/send-hotkey.jxa",
+        "to": "scripts/send-hotkey.jxa"
+      },
+      {
+        "from": "scripts/vtc-helper-fallback.mjs",
+        "to": "scripts/vtc-helper-fallback.mjs"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "resources/icon-macos.png"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}

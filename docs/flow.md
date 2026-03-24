@@ -53,18 +53,20 @@
           |
           v
 +----------------------+
-| Select next sample   |
+| Launch app once      |
 +----------------------+
           |
           |
-     +----+----+
-     |         |
-     | yes     | no more sample
-     |         |
-     v         v
-+----------------------+      +----------------------+
-| Bring test tool      |----->| Select next app      |
-| window to front      |      +----------------------+
+          v
++----------------------+
+| Wait appLaunchDelay  |
++----------------------+
+          |
+          |
+          v
++----------------------+
+| Bring benchmark      |
+| window to front      |
 +----------------------+
           |
           |
@@ -77,11 +79,21 @@
           |
           v
 +----------------------+
-| Wait preHotkeyDelay  |
+| Wait focusInputDelay |
 +----------------------+
           |
           |
           v
++----------------------+
+| Select next sample   |
++----------------------+
+          |
+          |
+     +----+----+
+     |         |
+     | yes     | no more sample
+     |         |
+     v         v
 +----------------------+
 | Send trigger start   |
 | by captured hotkey   |
@@ -153,8 +165,30 @@
                        |
                        v
              +----------------------+
-             | Next sample          |
+             | Wait betweenSamples  |
              +----------------------+
+                       |
+                       |
+                  +----+----+
+                  |         |
+                  | more    | done for app
+                  | sample  |
+                  v         v
+        +----------------------+   +----------------------+
+        | Next sample          |   | Wait closeAppDelay   |
+        +----------------------+   +----------------------+
+                                             |
+                                             |
+                                             v
+                                   +----------------------+
+                                   | Close current app    |
+                                   +----------------------+
+                                             |
+                                             |
+                                             v
+                                   +----------------------+
+                                   | Select next app      |
+                                   +----------------------+
 ```
 
 ## Notes
@@ -162,24 +196,25 @@
 ```text
 Main benchmark path:
 
-test tool frontmost
+benchmark tool reclaims frontmost state
         |
         +----- input box keeps focus
         |
-        +----- native helper sends captured system hotkey
+        +----- helper sends captured system hotkey
         |
-        +----- target voice typing app listens in background
+        +----- target voice typing app may launch once per app batch
         |
         +----- target app types text into test tool input box
 ```
 
 ```text
-Optional side path:
+Close path:
 
-start app / relaunch app / maintenance actions
+after last sample for one app
         |
-        +----- may use Automation
+        +----- wait closeAppDelay
         |
-        +----- not required for core benchmark run
+        +----- close target app
+        |
+        +----- continue with next app
 ```
-

@@ -7,10 +7,11 @@ This app should look like a focused local benchmark tool, not a flashy consumer 
 The visual language is:
 
 - gray / white base
-- flat surfaces
+- light, thin, compact surfaces
 - sharp information hierarchy
 - sparse but deliberate icon use
 - low-noise data-first layout
+- clear parent / child grouping in result summaries
 
 Keywords:
 
@@ -18,6 +19,7 @@ Keywords:
 - precise
 - desktop
 - test-lab
+- compact
 
 ## 2. Visual Rules
 
@@ -60,13 +62,13 @@ Suggested fonts:
 
 Type scale:
 
-- page title: `28 / semibold`
-- section title: `18 / semibold`
-- card title: `15 / semibold`
+- page title: `18 / semibold`
+- section title: `16 / semibold`
+- card title: `14 / semibold`
 - body: `13 / regular`
-- meta: `12 / regular`
-- metric number: `24 / semibold`
-- tiny status: `11 / medium`
+- meta: `11 / regular`
+- metric number: `15 / semibold`
+- tiny status: `10 / medium`
 
 ### 2.3 Shape
 
@@ -79,7 +81,7 @@ Type scale:
 
 Flat look:
 
-- no glassmorphism
+- no obvious glassmorphism
 - no strong gradients
 - no deep shadows
 
@@ -117,17 +119,24 @@ Suggested icon mapping:
 
 ## 3. App Structure
 
-The app has three first-level pages:
+The current app shell has these first-level pages:
 
-- Main
-- Intro
-- About
+- 主控台
+- 运行前检查
+- 样本
+- 测试历史
+- 设置
+- 怎么开始
+- 当前实现
 
-All editable configuration lives inside the `Settings` secondary modal.
+Configuration already lives in the dedicated `设置` page rather than a modal.
 
-There is also one run detail drawer on the main page.
+The result experience is split into:
 
-The renderer should support zh-CN and English modes, with language switching visible in the shell rather than hidden deep inside settings.
+- `主控台` for the current timeline and latest-session summary
+- `测试历史` for browsing persisted sessions and exporting one batch at a time
+
+The current renderer is Chinese-first.
 
 ## 4. Window Layout
 
@@ -143,11 +152,13 @@ Overall shell:
 | Sidebar              | Top Bar                                                       |
 |----------------------|---------------------------------------------------------------|
 | Logo / App name      | Current page title                            Quick actions   |
-| Main                 |---------------------------------------------------------------|
-| Intro                | Page content                                                  |
-| About                |                                                               |
-|----------------------|                                                               |
-| Settings button      |                                                               |
+| 主控台               |---------------------------------------------------------------|
+| 运行前检查           | Page content                                                  |
+| 样本                 |                                                               |
+| 测试历史             |                                                               |
+| 设置                 |                                                               |
+| 怎么开始             |                                                               |
+| 当前实现             |                                                               |
 +--------------------------------------------------------------------------------------+
 ```
 
@@ -155,7 +166,7 @@ Overall shell:
 
 Style:
 
-- width `208`
+- width about `196`
 - full-height pale gray panel
 - logo area at top
 - nav in middle
@@ -174,55 +185,52 @@ Sidebar items:
 
 This is the operational center.
 
-It should answer four questions at a glance:
+It should answer these questions at a glance:
 
 - what will run
 - what is running now
 - whether the environment is ready
 - what just happened
+- how the latest batch performed per app
 
 ### 5.2 Layout
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| Main                                                     [Run] [Stop] [Theme] [Language] |
+| Main                                                                    [Start] [Close] |
 |--------------------------------------------------------------------------------------------------|
 | Summary strip                                                                                   |
-| [Apps: 3] [Samples: 24] [Permission: Ready] [Device: BlackHole 2ch] [DB: OK]                   |
+| [Apps: 3] [Samples: 24] [Permission: Ready] [Device: BlackHole 2ch] [Progress: 12 / 24]        |
 |--------------------------------------------------------------------------------------------------|
-| Left: Run Plan                               | Center: Live Test Box      | Right: Live Timeline |
+| Left: Targets                                | Center: Live Test Box      | Right: Timeline      |
 |-----------------------------------------------|-----------------------------|----------------------|
-| Target Apps                                   | Input Box                   | 16:02:01 hotkey down|
-| > Xiguashuo        Ready                      | +-------------------------+ | 16:02:01 audio start|
-|   Wispr Flow       Ready                      | | voice typing appears... | | 16:02:03 audio end  |
-|   App C            Missing hotkey             | |                         | | 16:02:04 first text |
-|-----------------------------------------------| +-------------------------+ | 16:02:04 last text  |
-| Audio Samples                                 | Result Snapshot            |                      |
-| zh-basic-01.wav   2.4s                        | Status: success            |                      |
-| zh-basic-02.wav   3.1s                        | First char: 850 ms         |                      |
-| zh-basic-03.wav   1.8s                        | Final text: 1440 ms        |                      |
-|-----------------------------------------------| Text length: 18            |                      |
-| Batch Progress                                |                             |                      |
-| [##########------] 12 / 24                    |                             |                      |
+| Target Apps                                   | +-------------------------+ | Start                |
+| > Xiguashuo        Enabled                    | | voice typing appears... | | App start            |
+|   Wispr Flow       Enabled                    | |                         | | Sample start         |
+|   App C            Disabled                   | +-------------------------+ | Trigger start        |
+|-----------------------------------------------| Current status             | Audio start          |
+| App / sample / phase / message                | Current app + sample       | Trigger stop         |
+|                                               |                            | End                  |
 |--------------------------------------------------------------------------------------------------|
-| Result Table                                                                                     |
-| App          Sample            Status    First Char    Final Latency    Raw Text...              |
-| Xiguashuo    zh-basic-01.wav   OK        850 ms        1440 ms          你好...                  |
-| Wispr Flow   zh-basic-01.wav   Timeout   --            --               --                       |
+| Latest Session Summary                                                                           |
+| Xiguashuo -> total / success / avg first char / median / total time                              |
+| Wispr Flow -> total / success / avg first char / median / total time                             |
 +--------------------------------------------------------------------------------------------------+
 ```
+
+The main timeline should read from the same per-run timeline data that is stored with each run record. Live events may be merged with persisted per-run timelines while a session is active, but the renderer should not maintain a separate display-only event model after the run finishes.
 
 ### 5.3 Regions
 
 #### Summary strip
 
-Use five compact status chips:
+Use five compact summary items:
 
 - app count
 - sample count
 - permission state
 - selected virtual device
-- database state
+- current batch progress
 
 Each chip has:
 
@@ -232,11 +240,7 @@ Each chip has:
 
 #### Left column
 
-Split into three cards:
-
-- target apps
-- audio samples
-- batch progress
+Use a compact target-app overview card.
 
 The target app list should show:
 
@@ -244,25 +248,25 @@ The target app list should show:
 - readiness state
 - trigger mode tag
 
-The sample list should show:
-
-- file name
-- duration
-- expected text available or not
-
 #### Center column
 
 This is the visual anchor.
 
 The input box card should be the largest area because it is the thing being measured.
 
-Under the input box, show a compact result block:
+Under the input box, show a compact status stack:
 
 - current state
-- first char latency
-- final latency
-- text length
-- failure reason if any
+- current message
+- current app
+- current sample
+
+Below the main region, show one summary area for the latest session:
+
+- grouped by app
+- parent app title is more prominent
+- child stats are smaller and tighter
+- no raw recognized paragraph in this area
 
 #### Right column
 
@@ -270,76 +274,62 @@ Use a narrow event log card.
 
 Each row shows:
 
-- timestamp
+- elapsed timestamp
 - event label
-- subtle state dot
+- explanatory detail
+
+Timeline color semantics:
+
+- bookend rows for start and end
+- blue rows for app-level milestones
+- green rows for sample-level milestones
+- neutral rows for ordinary actions
+- red rows for failures
+- only the currently live row gets the pulse treatment
 
 ### 5.4 Main actions
 
-Top-right actions:
+Top-right actions on the main page:
 
-- `Run`
-- `Stop`
-- theme toggle
-- language toggle
+- `开始`
+- `关闭`
+- no global run buttons on other pages
 
 Rules:
 
-- `Run` is dark gray filled
-- `Stop` is white with gray border
-- theme and language toggles are compact ghost controls
-- `Settings` stays in the lower sidebar, not in the top action area
-
-## 6. Settings Modal
+- `开始` is dark gray filled
+- `关闭` is white with gray border
+## 6. Settings Page
 
 ### 6.1 Rule
 
-All editable settings live here.
-
-This is a second-level modal from any first-level page.
-
-Open behavior:
-
-- centered modal
-- width `980`
-- height `720`
-- inner left tab rail
+All editable settings live on the dedicated `设置` page.
 
 ### 6.2 Structure
 
-```text
-+----------------------------------------------------------------------------------+
-| Settings                                                          [Close]         |
-|----------------------------------------------------------------------------------|
-| Tabs                     | Content                                                |
-|--------------------------|--------------------------------------------------------|
-| General                  | Section title                                          |
-| Target Apps              | form rows / list editor / save actions                 |
-| Audio Samples            |                                                        |
-| Timing                   |                                                        |
-| Devices                  |                                                        |
-| Permissions              |                                                        |
-| Database                 |                                                        |
-| Advanced                 |                                                        |
-+----------------------------------------------------------------------------------+
-```
+The current page has three main blocks:
 
-### 6.3 Tabs
+- base settings
+- target apps
+- permissions and devices
 
-#### General
+### 6.3 Base settings
 
 Fields:
 
-- interface language (`zh-CN` / `en`)
-- default result directory
-- auto-save logs
-- open last project on launch
+- output device
+- database path
+- external sample root
+- app launch delay
+- focus input delay
+- result timeout
+- next sample play delay
+- close app delay
+- run notes
 
 #### Target Apps
 
-This is the most important setting tab.
-
-Use a master-detail flat editor.
+This is the most important editor block.
 
 ```text
 +----------------------------------------------------------------------------------+
@@ -351,61 +341,20 @@ Use a master-detail flat editor.
 |   Wispr Flow                      | Enabled: [on ]                              |
 |   + Add App                       | App file name: [Xiguashuo.app___________]   |
 |                                   | Launch command: [optional________________]  |
-|                                   | Audio input: [BlackHole 2ch______________] |
 |                                   | Hotkey capture: [ press any combination ]  |
 |                                   | Trigger mode: (o) hold->release            |
 |                                   |               ( ) press start->press stop  |
-|                                   | Pre delay:          [120 ] ms              |
 |                                   | Key -> audio delay:  [180 ] ms             |
 |                                   | Audio -> stop trigger: [60 ] ms            |
-|                                   | Timeout:             [5000] ms             |
 |                                   | Settle window:       [600 ] ms             |
 |                                   | Notes:               [...................] |
 |                                   |                    [Disable] [Save] [Delete] |
 +----------------------------------------------------------------------------------+
 ```
 
-#### Audio Samples
+#### Permissions and Devices
 
-Use a folder-based list with import actions.
-
-Fields and actions:
-
-- sample root folder
-- rescan button
-- manual add file
-- expected text editor
-- sample language tag
-- enable / disable
-
-The target app editor should expose both app enable state and the expected audio input route so testers can skip apps without deleting profiles and verify routing before a run.
-
-#### Timing
-
-This tab exists for global defaults, not per-app overrides.
-
-Fields:
-
-- global launch timeout
-- default result timeout
-- default settle window
-- cooldown between runs
-
-Use compact number inputs with `ms` suffix chips.
-
-#### Devices
-
-Show three blocks:
-
-- selected virtual output device
-- available device list
-- recheck devices button
-
-This page should be diagnostic, not decorative.
-
-#### Permissions
-
-This tab is operational and explicit.
+The lower settings region is operational and explicit.
 
 ```text
 +----------------------------------------------------------------------------------+
@@ -420,39 +369,6 @@ This tab is operational and explicit.
 | - Automation is only needed for optional app management flows.                   |
 +----------------------------------------------------------------------------------+
 ```
-
-#### Database
-
-Fields:
-
-- database path
-- rotate log policy
-- export CSV button
-- open folder button
-
-#### Advanced
-
-Only for power users.
-
-Fields:
-
-- store raw event payloads
-- enable verbose log
-- retry failed sample count
-- debug helper path override
-
-### 6.4 Modal Footer
-
-Global footer buttons:
-
-- `Cancel`
-- `Apply`
-- `Save and Close`
-
-Behavior:
-
-- `Apply` saves without closing
-- `Save and Close` is primary
 
 ## 7. Intro Page
 
@@ -521,7 +437,7 @@ It should feel factual and lightweight.
 | - Platform: macOS desktop                                                        |
 | - Runtime: Electron + Vue renderer + native helper                              |
 | - Storage: local SQLite                                                          |
-| - UI language: zh-CN / en                                                        |
+| - UI language: Chinese-first                                                     |
 | - Permissions: Accessibility required                                            |
 |                                                                                  |
 | Paths                                                                            |
@@ -532,60 +448,33 @@ It should feel factual and lightweight.
 +----------------------------------------------------------------------------------+
 ```
 
-## 9. Run Detail Drawer
-
-This is not a first-level page.
-
-It slides from the right when the user clicks a row in the result table.
-
-```text
-+--------------------------------------------------------------+
-| Run Detail                                             [x]   |
-|--------------------------------------------------------------|
-| App: Xiguashuo                                             |
-| Sample: zh-basic-01.wav                                    |
-| Status: success                                            |
-|--------------------------------------------------------------|
-| Timeline                                                    |
-| trigger_start    16:02:01.120                              |
-| audio_started    16:02:01.260                              |
-| audio_ended      16:02:03.840                              |
-| first_input      16:02:04.110                              |
-| last_input       16:02:04.680                              |
-|--------------------------------------------------------------|
-| Raw text                                                    |
-| 你好，今天我们开始测试                                       |
-|--------------------------------------------------------------|
-| Metrics                                                     |
-| First char latency      850 ms                              |
-| Final latency           1440 ms                             |
-| Text length             18                                  |
-|--------------------------------------------------------------|
-| Failure reason                                                |
-| --                                                           |
-+--------------------------------------------------------------+
-```
-
-## 10. Interaction Notes
+## 9. Interaction Notes
 
 ### 10.1 Main page behavior
 
 - the current running sample row gets a soft dark outline
 - the current target app row gets a filled pale highlight
 - timeline list auto-scrolls
-- result table appends rows in real time
+- latest-session summary switches to the active session once progress has a `sessionId`
+- canceling the pre-start confirmation restores the previously visible latest session summary
 
-### 10.2 Feedback style
+### 10.2 History page behavior
+
+- `测试历史` owns the persisted session list
+- each session card expands to app groups and sample rows
+- `导出本轮 CSV` belongs to the session header
+- history reads run timelines from persisted per-run timeline snapshots
+
+### 10.3 Feedback style
 
 Use restrained motion only:
 
 - `120ms` hover fade
-- `160ms` modal appear
-- `160ms` drawer slide
+- dark pulse is allowed only for the currently running timeline item
 
-No bouncing, no pulse loops, no animated charts during idle state.
+No bouncing and no animated charts during idle state.
 
-### 10.3 Empty states
+### 10.4 Empty states
 
 Keep empty states plain:
 
@@ -595,9 +484,9 @@ Keep empty states plain:
 
 Example:
 
-`No audio samples yet. Add a sample folder in Settings.`
+`No audio samples yet. Add a sample folder in 设置.`
 
-## 11. Component Rules
+## 10. Component Rules
 
 ### 11.1 Buttons
 
@@ -612,7 +501,6 @@ Use chips for:
 
 - permission state
 - app state
-- trigger mode
 - sample language
 
 ### 11.3 Tables
@@ -622,7 +510,7 @@ Result table rules:
 - sticky header
 - row height `36`
 - monospaced metric columns
-- raw text column truncates with tooltip
+- keep rows compact and readable
 
 ### 11.4 Inputs
 
@@ -633,18 +521,18 @@ Use flat controls:
 - dark text
 - stronger border on focus
 
-## 12. Icon and Label Tone
+## 11. Icon and Label Tone
 
 Labels should be short and direct.
 
 Good:
 
-- Run
-- Stop
-- Settings
-- Devices
-- Permissions
-- Save and Close
+- 开始运行
+- 关闭本轮
+- 设置
+- 设备
+- 权限
+- 导出本轮 CSV
 
 Avoid:
 

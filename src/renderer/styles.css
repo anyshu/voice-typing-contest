@@ -419,6 +419,13 @@ select {
   max-height: min(62vh, 680px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sample-list-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .sample-list-clean {

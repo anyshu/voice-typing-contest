@@ -29,6 +29,7 @@ export function timelineTitle(item: RunEventRecord): string {
     pre_hotkey_wait: "等待热键发送",
     focus_input_wait: "等待检测框稳定",
     trigger_start: "发送触发热键",
+    audio_route: "音频输出路由",
     audio_start: "开始播放样本",
     audio_end: "样本播放完成",
     trigger_stop: "发送收口热键",
@@ -68,6 +69,8 @@ export function timelineDetail(item: RunEventRecord): string {
       return `等待 ${String(payload.delayMs ?? 0)} ms，确保 ${String(payload.app ?? "目标App")} 已经准备好接热键。`;
     case "trigger_start":
       return `触发热键：${String(payload.chord ?? "-")}`;
+    case "audio_route":
+      return `请求输出=${String(payload.requestedOutputDeviceId ?? "-")}，实际输出=${String(payload.effectiveOutputDeviceId ?? "-")}，切换策略=${String(payload.strategy ?? "-")}。`;
     case "audio_start":
       return `播放样本：${timelineTailName(payload.sample ?? payload.playableSamplePath)}`;
     case "audio_end":

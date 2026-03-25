@@ -4,6 +4,13 @@ import { join } from "node:path";
 import type { AudioDevice, HelperPermissionResult, HelperResponse } from "../shared/types";
 import { resolveHomePath } from "../shared/paths";
 
+export interface PlaybackRouteInfo {
+  requestedOutputDeviceId: string;
+  effectiveOutputDeviceId: string;
+  previousDefaultOutputDeviceId?: string;
+  strategy: "system-default" | "temporary-default-switch";
+}
+
 async function runHelper<T>(helperPath: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
     const useProcessGroup = process.platform !== "win32";
@@ -133,9 +140,9 @@ export class HelperClient {
     return await runHelper<{ granted: boolean }>(this.helperPath, { command: "requestAccessibilityPermission" }, signal);
   }
 
-  async playWav(filePath: string, outputDeviceId: string, signal?: AbortSignal): Promise<void> {
-    if (!this.available) return;
-    await runHelper(this.helperPath, { command: "playWav", filePath, outputDeviceId }, signal);
+  async playWav(filePath: string, outputDeviceId: string, signal?: AbortSignal): Promise<PlaybackRouteInfo | undefined> {
+    if (!this.available) return undefined;
+    return await runHelper<PlaybackRouteInfo>(this.helperPath, { command: "playWav", filePath, outputDeviceId }, signal);
   }
 
   async playWavHoldingHotkey(
@@ -145,9 +152,9 @@ export class HelperClient {
     hotkeyToAudioDelayMs: number,
     audioToTriggerStopDelayMs: number,
     signal?: AbortSignal,
-  ): Promise<void> {
-    if (!this.available) return;
-    await runHelper(this.helperPath, {
+  ): Promise<PlaybackRouteInfo | undefined> {
+    if (!this.available) return undefined;
+    return await runHelper<PlaybackRouteInfo>(this.helperPath, {
       command: "playWavHoldingHotkey",
       chord,
       filePath,

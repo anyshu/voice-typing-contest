@@ -19,6 +19,15 @@ function fail(error) {
   process.exit(1);
 }
 
+function playbackRoute(input, effectiveOutputDeviceId, previousDefaultOutputDeviceId, strategy) {
+  return {
+    requestedOutputDeviceId: String(input.outputDeviceId || "system-default"),
+    effectiveOutputDeviceId,
+    previousDefaultOutputDeviceId,
+    strategy,
+  };
+}
+
 function runAppleScript(lines) {
   return execFileSync("osascript", lines.flatMap((line) => ["-e", line]), { encoding: "utf8" }).trim();
 }
@@ -105,10 +114,11 @@ try {
             execFileSync(audioToolPath, ["set-default", current], { stdio: "ignore" });
           }
         }
+        respond(playbackRoute(input, selected, current || undefined, "temporary-default-switch"));
       } else {
         execFileSync("afplay", [input.filePath], { stdio: "ignore" });
+        respond(playbackRoute(input, String(input.outputDeviceId || "system-default"), undefined, "system-default"));
       }
-      respond({ status: "ok" });
       break;
     }
     case "playWavHoldingHotkey": {
@@ -127,12 +137,15 @@ try {
             execFileSync(audioToolPath, ["set-default", current], { stdio: "ignore" });
           }
         }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(input.audioToTriggerStopDelayMs) || 0);
+        execFileSync("osascript", ["-l", "JavaScript", sendHotkeyScript, input.chord, "up"], { stdio: "ignore" });
+        respond(playbackRoute(input, selected, current || undefined, "temporary-default-switch"));
       } else {
         execFileSync("afplay", [input.filePath], { stdio: "ignore" });
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(input.audioToTriggerStopDelayMs) || 0);
+        execFileSync("osascript", ["-l", "JavaScript", sendHotkeyScript, input.chord, "up"], { stdio: "ignore" });
+        respond(playbackRoute(input, String(input.outputDeviceId || "system-default"), undefined, "system-default"));
       }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(input.audioToTriggerStopDelayMs) || 0);
-      execFileSync("osascript", ["-l", "JavaScript", sendHotkeyScript, input.chord, "up"], { stdio: "ignore" });
-      respond({ status: "ok" });
       break;
     }
     case "sendHotkey": {

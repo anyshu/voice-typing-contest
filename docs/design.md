@@ -523,6 +523,13 @@ Stores detailed timeline events as append-only records:
 - `ts_ms`
 - `payload_json`
 
+Notable playback-related events now include:
+
+- `audio_route` with the requested output device id, the effective output device id, the previous default output device id when a temporary switch is used, and the playback routing strategy
+- `audio_start`
+- `audio_end`
+- `trigger_stop`
+
 This keeps future metrics extensible without repeated schema churn.
 
 `run_events` is still useful as the append-only event log, but the query path should treat the per-run timeline snapshot on `test_runs` as the canonical UI-facing data bundle for one test record.
@@ -567,6 +574,7 @@ Suggested main screen:
 | [ hello this is the live typed text from the target app                         ] |
 |                                                                                  |
 | trigger_start 16:02:01.120                                                       |
+| audio_route   16:02:01.250  requested=BlackHole effective=BlackHole strategy=switch |
 | audio_start   16:02:01.260                                                       |
 | audio_end     16:02:03.840                                                       |
 | first_input   16:02:04.110                                                       |

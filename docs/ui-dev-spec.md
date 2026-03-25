@@ -149,6 +149,7 @@ Timeline rules:
   - ordinary actions
   - failures
 - only the currently live item pulses
+- include an `audio_route` timeline item before `audio_start` whenever helper playback reports routing details, so operators can verify requested vs effective output device ids during debugging
 - `audio_start` should display the original sample filename that the operator picked, not the helper-safe temporary playback copy path
 
 ### 4.4 Latest-session summary

@@ -19,6 +19,7 @@ import { PermissionManager } from "./permission-manager";
 import { ResultStore } from "./result-store";
 import { TargetAppManager } from "./target-app-manager";
 import { HelperClient } from "./helper-client";
+import type { PlaybackRouteInfo } from "./helper-client";
 import { resolveHomePath } from "../shared/paths";
 import { BuiltinSampleMaterializer } from "./builtin-sample-materializer";
 
@@ -72,6 +73,16 @@ export class RunController extends EventEmitter {
 
   getProgress(): RunProgress {
     return this.progress;
+  }
+
+  private playbackRoutePayload(route: PlaybackRouteInfo | undefined): Record<string, unknown> | undefined {
+    if (!route) return undefined;
+    return {
+      requestedOutputDeviceId: route.requestedOutputDeviceId,
+      effectiveOutputDeviceId: route.effectiveOutputDeviceId,
+      previousDefaultOutputDeviceId: route.previousDefaultOutputDeviceId,
+      strategy: route.strategy,
+    };
   }
 
   private isUnsupportedHoldHelper(error: unknown): boolean {
@@ -275,7 +286,7 @@ export class RunController extends EventEmitter {
             this.emit("progress", { ...this.progress });
             const holdAudioStartTs = performance.now();
             try {
-              await this.withAbortableHelper(async (signal) => await this.helper.playWavHoldingHotkey(
+              const route = await this.withAbortableHelper(async (signal) => await this.helper.playWavHoldingHotkey(
                 app.hotkeyChord,
                 playableSamplePath,
                 config.selectedOutputDeviceId,
@@ -283,6 +294,10 @@ export class RunController extends EventEmitter {
                 app.audioToTriggerStopDelayMs,
                 signal,
               ));
+              const routePayload = this.playbackRoutePayload(route);
+              if (routePayload) {
+                pushEvent("audio_route", routePayload, holdAudioStartTs);
+              }
               pushEvent("audio_start", { sample: sample.filePath, playableSamplePath, holdMode: true }, holdAudioStartTs);
               pushEvent("audio_end", { holdMode: true });
               this.progress.phase = "trigger_stop";
@@ -322,12 +337,17 @@ export class RunController extends EventEmitter {
 
             this.progress.phase = "audio_playing";
             this.emit("progress", { ...this.progress });
-            pushEvent("audio_start", { sample: sample.filePath, playableSamplePath });
+            const audioStartTs = performance.now();
+            pushEvent("audio_start", { sample: sample.filePath, playableSamplePath }, audioStartTs);
             if (isSelfTestApp) {
               await this.waitUnlessStopped(Math.max(sample.durationMs, 100));
             } else {
               try {
-                await this.withAbortableHelper(async (signal) => await this.helper.playWav(playableSamplePath, config.selectedOutputDeviceId, signal));
+                const route = await this.withAbortableHelper(async (signal) => await this.helper.playWav(playableSamplePath, config.selectedOutputDeviceId, signal));
+                const routePayload = this.playbackRoutePayload(route);
+                if (routePayload) {
+                  pushEvent("audio_route", routePayload, audioStartTs);
+                }
               } catch (error) {
                 if (error instanceof RunCancelledError) throw error;
                 throw { category: "audio_play_failed", message: (error as Error).message || "Failed to play audio sample" };

@@ -424,12 +424,11 @@ describe("App renderer", () => {
     await appsButton!.trigger("click");
     await flushPromises();
 
-    const websiteButton = wrapper.findAll("button").find((item) => item.text().includes("打开官网"));
+    const websiteButton = wrapper.findAll("button").find((item) => item.text() === "官网");
     expect(websiteButton).toBeTruthy();
     await websiteButton!.trigger("click");
 
     expect(api.openExternalUrl).toHaveBeenCalledWith("https://www.xiguasay.com/");
-    expect(wrapper.text()).toContain("已打开 Xiguashuo 官网");
   });
 
   it("renders timeline entries as readable cards instead of raw event names", async () => {

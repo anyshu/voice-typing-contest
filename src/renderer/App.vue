@@ -290,18 +290,6 @@ function appLaunchSummary(app: TargetAppProfile): string {
     : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
 }
 
-function appWebsiteLabel(app: TargetAppProfile): string {
-  const raw = app.websiteUrl?.trim();
-  if (!raw) return "";
-  try {
-    const normalized = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(raw) ? raw : `https://${raw}`;
-    const url = new URL(normalized);
-    return url.hostname.replace(/^www\./, "");
-  } catch {
-    return raw;
-  }
-}
-
 async function openAppWebsite(app: TargetAppProfile): Promise<void> {
   const url = app.websiteUrl?.trim();
   if (!url) {
@@ -310,7 +298,6 @@ async function openAppWebsite(app: TargetAppProfile): Promise<void> {
   }
   try {
     await window.vtc.openExternalUrl(url);
-    showToast(`已打开 ${app.name} 官网：${appWebsiteLabel(app) || url}`);
   } catch (error) {
     showToast(`打开官网失败：${error instanceof Error ? error.message : String(error)}`);
   }
@@ -2055,7 +2042,18 @@ onBeforeUnmount(() => {
             >
               <div class="app-editor-card__top">
                 <div class="app-editor-card__headline">
-                  <strong>{{ app.name }}</strong>
+                  <div class="app-editor-card__title-row">
+                    <strong>{{ app.name }}</strong>
+                    <button
+                      v-if="app.websiteUrl"
+                      type="button"
+                      class="app-title-link"
+                      :title="`打开 ${app.name} 官网`"
+                      @click="openAppWebsite(app)"
+                    >
+                      官网
+                    </button>
+                  </div>
                   <span v-if="appVersionLabel(app)" class="app-editor-card__version">{{ appVersionLabel(app) }}</span>
                   <div class="app-editor-card__badges">
                     <span class="pill" :class="isBuiltinApp(app) ? 'warning' : ''">{{ appKindLabel(app) }}</span>
@@ -2063,16 +2061,6 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div class="toolbar app-editor-card__actions">
-                  <button
-                    v-if="app.websiteUrl"
-                    type="button"
-                    class="secondary-button action-button app-website-button"
-                    :title="`打开 ${app.name} 官网`"
-                    @click="openAppWebsite(app)"
-                  >
-                    <HugeiconsIcon :icon="BookOpen01Icon" :size="16" class="button-icon" />
-                    打开官网
-                  </button>
                   <label class="switch-row">
                     <span>启用</span>
                     <input v-model="app.enabled" type="checkbox" />
@@ -2094,10 +2082,6 @@ onBeforeUnmount(() => {
                 <span class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</span>
                 <span class="muted">·</span>
                 <span class="muted">启动目标：{{ appLaunchSummary(app) }}</span>
-                <template v-if="app.websiteUrl">
-                  <span class="muted">·</span>
-                  <span class="app-website-chip" :title="app.websiteUrl">官网 {{ appWebsiteLabel(app) }}</span>
-                </template>
               </div>
 
               <div class="settings-grid app-editor-form">

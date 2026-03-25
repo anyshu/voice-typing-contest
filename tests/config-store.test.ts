@@ -99,7 +99,7 @@ describe("ConfigStore", () => {
     expect(config.targetApps.find((app) => app.id === "shandianshuo")).toMatchObject({
       name: "闪电说",
       appFileName: "闪电说.app",
-      hotkeyChord: "Cmd+Shift+2",
+      hotkeyChord: "Fn",
       hotkeyTriggerMode: "hold_release",
       enabled: false,
     });

@@ -47,7 +47,7 @@ export const defaultConfig = (): AppConfig => {
         id: "shandianshuo",
         name: "闪电说",
         appFileName: "闪电说.app",
-        hotkeyChord: "Cmd+Shift+2",
+        hotkeyChord: "Fn",
         hotkeyTriggerMode: "hold_release",
         launchTimeoutMs: 3000,
         preHotkeyDelayMs: 180,

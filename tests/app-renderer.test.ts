@@ -41,7 +41,7 @@ function setupDesktopApi(options?: {
   const sessions = makeSessions();
   const handlers: Record<string, Handler | undefined> = {};
   const api = {
-    getVersion: vi.fn(async () => "0.1.2"),
+    getVersion: vi.fn(async () => "0.1.3"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),

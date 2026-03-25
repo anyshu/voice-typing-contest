@@ -138,6 +138,7 @@ Timeline rules:
 
 - render from per-run timeline data that is persisted with each `test_runs` row
 - merge live `run:event` updates with persisted runs only while the session is active
+- show the whole active session in chronological order across multiple apps; do not collapse the main console down to only the current app
 - auto-scroll with the newest event
 - support distinct visual classes for:
   - start / end bookends
@@ -146,6 +147,7 @@ Timeline rules:
   - ordinary actions
   - failures
 - only the currently live item pulses
+- `audio_start` should display the original sample filename that the operator picked, not the helper-safe temporary playback copy path
 
 ### 4.4 Latest-session summary
 

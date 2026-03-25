@@ -356,6 +356,111 @@ describe("RunController integration", () => {
     store.close();
   });
 
+  it("falls back from an unsupported hold helper without duplicating audio_start", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-run-hold-fallback-"));
+    const sampleRoot = join(root, "samples");
+    const fakeAppPath = join(root, "Typeless.app");
+    await mkdir(sampleRoot, { recursive: true });
+    await mkdir(fakeAppPath, { recursive: true });
+    const wavPath = join(sampleRoot, "hold-fallback.wav");
+    await writeFile(wavPath, createWav());
+
+    const config = defaultConfig();
+    config.appLaunchDelayMs = 0;
+    config.focusInputDelayMs = 0;
+    config.closeAppDelayMs = 0;
+    config.sampleRoot = sampleRoot;
+    config.databasePath = join(root, "vtc.sqlite");
+    config.betweenSamplesDelayMs = 0;
+    config.resultTimeoutMs = 1000;
+    config.targetApps = [
+      {
+        ...config.targetApps.find((app) => app.id === "typeless")!,
+        enabled: true,
+        appFileName: fakeAppPath,
+        hotkeyChord: "Fn",
+        hotkeyTriggerMode: "hold_release",
+        hotkeyToAudioDelayMs: 0,
+        audioToTriggerStopDelayMs: 0,
+        resultTimeoutMs: 1000,
+        settleWindowMs: 80,
+      },
+    ];
+    config.audioSamples = [
+      {
+        id: "sample-1",
+        filePath: wavPath,
+        relativePath: "hold-fallback.wav",
+        displayName: "hold-fallback.wav",
+        expectedText: "hold fallback transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["typeless"],
+        enabled: true,
+      },
+    ];
+
+    const store = new ResultStore(config.databasePath);
+    const helperCalls: string[] = [];
+    let controller: RunController;
+    const helper = {
+      activateApp: async () => {
+        helperCalls.push("activateApp");
+      },
+      closeApp: async () => {
+        helperCalls.push("closeApp");
+      },
+      playWav: async () => {
+        helperCalls.push("playWav");
+        setTimeout(() => {
+          controller.onInputEvent({ type: "input", tsMs: performance.now(), value: "hold fallback transcript" });
+        }, 10);
+      },
+      playWavHoldingHotkey: async () => {
+        helperCalls.push("playWavHoldingHotkey");
+        throw new Error("Unknown command: playWavHoldingHotkey");
+      },
+      sendHotkey: async () => {
+        helperCalls.push("sendHotkey");
+      },
+    };
+    const permissions = new PermissionManager({
+      available: true,
+      checkPermissions: async () => ({
+        permissions: [
+          { id: "accessibility", name: "Accessibility", required: true, granted: true },
+          { id: "automation", name: "Automation", required: false, granted: true },
+          { id: "input-monitoring", name: "Input Monitoring", required: false, granted: true },
+        ],
+      }),
+      listAudioDevices: async () => ({
+        devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
+      }),
+      activateApp: async () => undefined,
+      playWav: async () => undefined,
+      sendHotkey: async () => undefined,
+    } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
+    controller = new RunController(
+      store,
+      permissions,
+      new TargetAppManager(),
+      helper as any,
+      () => undefined,
+    );
+
+    const preflight = await controller.run(config);
+
+    expect(preflight.ok).toBe(true);
+    expect(helperCalls).toContain("playWavHoldingHotkey");
+    expect(helperCalls).toContain("playWav");
+    expect(helperCalls.filter((call) => call === "sendHotkey")).toHaveLength(2);
+    const run = store.listRuns()[0];
+    expect(run).toBeTruthy();
+    expect(run?.timeline.filter((event) => event.eventType === "audio_start")).toHaveLength(1);
+    store.close();
+  });
+
   it("persists the terminal failure event inside the run timeline snapshot", async () => {
     root = await mkdtemp(join(tmpdir(), "vtc-run-failed-"));
     const sampleRoot = join(root, "samples");

@@ -145,6 +145,7 @@ export class RunController extends EventEmitter {
       let pendingAppTimelinePrefix: RunEventRecord[] = [appStartRecord];
       const resolvedApp = resolvedAppMap.get(app.id);
       const isSelfTestApp = Boolean(resolvedApp?.startsWith("selftest://"));
+      let holdHelperAvailable = typeof (this.helper as HelperClient & { playWavHoldingHotkey?: unknown }).playWavHoldingHotkey === "function";
       let appLaunched = false;
       let appLaunchFailure: { category: FailureCategory; message: string } | undefined;
       let lastRunIdForApp: string | undefined;
@@ -190,12 +191,12 @@ export class RunController extends EventEmitter {
         };
         this.emit("progress", { ...this.progress });
         const started = performance.now();
-        const pushEvent = (eventType: string, payload: Record<string, unknown>): void => {
+        const pushEvent = (eventType: string, payload: Record<string, unknown>, tsMs = performance.now()): void => {
           const record: RunEventRecord = {
             id: nanoid(),
             runId,
             eventType,
-            tsMs: performance.now(),
+            tsMs,
             payloadJson: JSON.stringify(payload),
           };
           this.store.appendEvent(record);
@@ -267,14 +268,13 @@ export class RunController extends EventEmitter {
             ? sample.filePath
             : await this.builtinSamples.resolve(sample);
 
-          if (!isSelfTestApp && app.hotkeyTriggerMode === "hold_release"
-            && typeof (this.helper as HelperClient & { playWavHoldingHotkey?: unknown }).playWavHoldingHotkey === "function") {
+          if (!isSelfTestApp && app.hotkeyTriggerMode === "hold_release" && holdHelperAvailable) {
             this.progress.phase = "wait_before_audio";
             this.emit("progress", { ...this.progress });
             this.progress.phase = "audio_playing";
             this.emit("progress", { ...this.progress });
+            const holdAudioStartTs = performance.now();
             try {
-              pushEvent("audio_start", { sample: sample.filePath, playableSamplePath, holdMode: true });
               await this.withAbortableHelper(async (signal) => await this.helper.playWavHoldingHotkey(
                 app.hotkeyChord,
                 playableSamplePath,
@@ -283,6 +283,7 @@ export class RunController extends EventEmitter {
                 app.audioToTriggerStopDelayMs,
                 signal,
               ));
+              pushEvent("audio_start", { sample: sample.filePath, playableSamplePath, holdMode: true }, holdAudioStartTs);
               pushEvent("audio_end", { holdMode: true });
               this.progress.phase = "trigger_stop";
               this.emit("progress", { ...this.progress });
@@ -290,14 +291,17 @@ export class RunController extends EventEmitter {
               triggerStopTs = performance.now();
             } catch (error) {
               if (error instanceof RunCancelledError) throw error;
-              if (!this.isUnsupportedHoldHelper(error)) {
+              if (this.isUnsupportedHoldHelper(error)) {
+                holdHelperAvailable = false;
+              } else {
+                pushEvent("audio_start", { sample: sample.filePath, playableSamplePath, holdMode: true }, holdAudioStartTs);
                 throw { category: "hotkey_dispatch_failed", message: (error as Error).message || "Failed to hold hotkey during audio playback" };
               }
             }
           }
 
           if (isSelfTestApp || app.hotkeyTriggerMode !== "hold_release"
-            || typeof (this.helper as HelperClient & { playWavHoldingHotkey?: unknown }).playWavHoldingHotkey !== "function"
+            || !holdHelperAvailable
             || triggerStopTs === undefined) {
             if (!isSelfTestApp) {
               try {

@@ -744,6 +744,93 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("关闭目标App");
   });
 
+  it("shows the full session timeline across multiple apps in sequence", async () => {
+    const { api, sessions } = setupDesktopApi();
+    sessions[0] = {
+      ...sessions[0],
+      id: "session-multi-app",
+      runCount: 2,
+      successCount: 2,
+      failedCount: 0,
+      cancelledCount: 0,
+      status: "completed",
+      startedAt: "2026-03-25T06:00:00.000Z",
+      finishedAt: "2026-03-25T06:00:45.000Z",
+    };
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-xigua-1",
+        runSessionId: "session-multi-app",
+        appId: "xiguashuo",
+        appName: "西瓜说",
+        sampleId: "sample-1",
+        samplePath: "first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "first",
+        normalizedText: "first",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-25T06:00:20.000Z",
+        timeline: [
+          {
+            id: "event-xigua-start",
+            runId: "run-xigua-1",
+            eventType: "app_start",
+            tsMs: 10,
+            payloadJson: JSON.stringify({ app: "西瓜说" }),
+          },
+          {
+            id: "event-xigua-close",
+            runId: "run-xigua-1",
+            eventType: "app_close",
+            tsMs: 20,
+            payloadJson: JSON.stringify({ app: "西瓜说" }),
+          },
+        ],
+      },
+      {
+        id: "run-shandian-1",
+        runSessionId: "session-multi-app",
+        appId: "shandianshuo",
+        appName: "闪电说",
+        sampleId: "sample-2",
+        samplePath: "second.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "second",
+        normalizedText: "second",
+        inputEventCount: 1,
+        finalTextLength: 6,
+        createdAt: "2026-03-25T06:00:45.000Z",
+        timeline: [
+          {
+            id: "event-shandian-start",
+            runId: "run-shandian-1",
+            eventType: "app_start",
+            tsMs: 30,
+            payloadJson: JSON.stringify({ app: "闪电说" }),
+          },
+          {
+            id: "event-shandian-close",
+            runId: "run-shandian-1",
+            eventType: "app_close",
+            tsMs: 40,
+            payloadJson: JSON.stringify({ app: "闪电说" }),
+          },
+        ],
+      },
+    ]);
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("切到应用：西瓜说。");
+    expect(wrapper.text()).toContain("西瓜说 已发送关闭指令");
+    expect(wrapper.text()).toContain("切到应用：闪电说。");
+    expect(wrapper.text()).toContain("闪电说 已发送关闭指令");
+  });
+
   it("groups results under collapsible run sessions and exports the selected session", async () => {
     const { api } = setupDesktopApi();
     const groupedRuns: TestRunRecord[] = [

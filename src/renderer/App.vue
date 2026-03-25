@@ -639,59 +639,30 @@ const mainSessionGroup = computed(() => {
   return latestSessionGroup.value;
 });
 const latestMainRun = computed(() => mainSessionGroup.value?.runs[0]);
-const mainTimelineAppName = computed(() => progress.value.currentAppName ?? latestMainRun.value?.appName);
-const mainTimelineSessionId = computed(() => progress.value.sessionId ?? mainSessionGroup.value?.session.id);
-const liveRunAppNameMap = computed(() => {
-  const map = new Map<string, string>();
-  for (const run of mainSessionGroup.value?.runs ?? []) {
-    map.set(run.id, run.appName);
-  }
-  for (const event of liveTimelineEvents.value) {
-    const payload = safeTimelinePayload(event);
-    const appName = typeof payload.app === "string" ? payload.app : undefined;
-    if (appName) {
-      map.set(event.runId, appName);
-    }
-  }
-  if (progress.value.runId && progress.value.currentAppName) {
-    map.set(progress.value.runId, progress.value.currentAppName);
-  }
-  return map;
-});
 const displayedTimeline = computed(() => {
   const preRunEvents = preRunTimelineEvents.value;
-  const appName = mainTimelineAppName.value;
-  const sessionId = mainTimelineSessionId.value;
-  if (!appName) {
+  const liveSessionId = progress.value.sessionId;
+  const hasSessionRuns = Boolean(mainSessionGroup.value?.runs.length);
+  const normalizeTimeline = (items: RunEventRecord[]) => [...items]
+    .sort((left, right) => left.tsMs - right.tsMs)
+    .filter((event, index, all) => index === all.findIndex((candidate) => candidate.id === event.id));
+
+  // If the current batch has not been associated with a session yet, keep the
+  // older behavior of showing only the latest run so unrelated stale events do
+  // not get mixed together on first paint.
+  if (!liveSessionId && !hasSessionRuns) {
     const liveRunId = progress.value.runId ?? lastTimelineRunId.value;
     const liveEvents = liveRunId ? (liveTimelineByRunId.value[liveRunId] ?? []) : [];
-    return [...preRunEvents, ...liveEvents];
+    return [...preRunEvents, ...normalizeTimeline(liveEvents)];
   }
 
-  const live = liveTimelineEvents.value.filter((event) => {
-    const payload = safeTimelinePayload(event);
-    if (typeof payload.app === "string" && payload.app === appName) {
-      return true;
-    }
-    const mappedApp = liveRunAppNameMap.value.get(event.runId);
-    if (mappedApp === appName) {
-      return true;
-    }
-    return Boolean(sessionId && event.runId === sessionId && payload.app === appName);
-  });
-  const normalizedLive = live
-    .sort((left, right) => left.tsMs - right.tsMs)
-    .filter((event, index, items) => index === items.findIndex((candidate) => candidate.id === event.id));
+  const normalizedLive = normalizeTimeline(liveTimelineEvents.value);
   if (normalizedLive.length) {
     return [...preRunEvents, ...normalizedLive];
   }
 
-  const persisted = (mainSessionGroup.value?.runs ?? [])
-    .filter((run) => run.appName === appName)
-    .flatMap((run) => run.timeline);
-  const merged = [...persisted]
-    .sort((left, right) => left.tsMs - right.tsMs)
-    .filter((event, index, items) => index === items.findIndex((candidate) => candidate.id === event.id));
+  const persisted = (mainSessionGroup.value?.runs ?? []).flatMap((run) => run.timeline);
+  const merged = normalizeTimeline(persisted);
   return [...preRunEvents, ...merged];
 });
 const timelineCards = computed(() => buildTimelineCards(

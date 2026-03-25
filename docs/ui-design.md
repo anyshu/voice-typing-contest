@@ -470,6 +470,8 @@ It should feel factual and lightweight.
 ### 10.3 Sample page behavior
 
 - the sample list should keep file paths at regular weight instead of bold, so the row reads as a lightweight checklist
+- each sample row should expose a minimal inline preview player with `开始/暂停`, a progress slider, and elapsed / total time
+- sample rows should render as a virtualized list, and the heavier preview controls should mount only for the hovered or actively playing row
 
 ### 10.4 App page behavior
 

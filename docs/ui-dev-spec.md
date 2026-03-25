@@ -16,6 +16,7 @@ Current first-level pages:
 - `设置`
 - `运行前检查`
 - `怎么开始`
+- `常见问题`
 - `版本说明`
 
 `开始` and `关闭` belong only to `主控台`.
@@ -83,6 +84,7 @@ Current first-level pages:
 | 设置 | `Settings01Icon` |
 | 运行前检查 | `CheckListIcon` |
 | 怎么开始 | `BookOpen01Icon` |
+| 常见问题 | `HelpCircleIcon` |
 | 版本说明 | `InformationCircleIcon` |
 | 开始 | `PlayCircleIcon` |
 | 关闭 | `StopCircleIcon` |
@@ -99,6 +101,8 @@ Main page layout is:
 - latest-session summary
 
 The persisted session list now belongs to the dedicated `测试历史` page.
+
+The FAQ entry should be labeled `常见问题`, and the first speaker troubleshooting item should read `为什么开始测试后，扬声器没声音了？`.
 
 ### 4.1 Summary strip
 

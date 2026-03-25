@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppConfig, InputObservationEvent, RunStartOptions } from "../shared/types";
+import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions } from "../shared/types";
 
 const api = {
   getVersion: async () => await ipcRenderer.invoke("app:getVersion"),
@@ -7,6 +7,7 @@ const api = {
   saveSettings: async (config: AppConfig) => await ipcRenderer.invoke("settings:save", config),
   pickSampleRoot: async () => await ipcRenderer.invoke("samples:pickRoot"),
   rescanSamples: async (root: string) => await ipcRenderer.invoke("samples:rescan", root),
+  getSamplePreviewData: async (sample: AudioSample) => await ipcRenderer.invoke("samples:getPreviewData", sample),
   pickDatabasePath: async () => await ipcRenderer.invoke("database:pickPath"),
   refreshPermissions: async () => await ipcRenderer.invoke("permissions:refresh"),
   requestAccessibilityPermission: async () => await ipcRenderer.invoke("permissions:requestAccessibility"),

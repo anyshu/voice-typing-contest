@@ -10,19 +10,24 @@ import {
   Delete02Icon,
   FileExportIcon,
   FolderAudioIcon,
+  HelpCircleIcon,
   InformationCircleIcon,
+  PlayIcon,
   PlayCircleIcon,
   ReloadIcon,
   Settings01Icon,
   Shield01Icon,
   Speaker01Icon,
+  StopIcon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
+import VersionNotesPanel from "./components/VersionNotesPanel.vue";
 import { defaultConfig } from "../shared/defaults";
 import { safeTimelinePayload, timelineDetail, timelineTitle } from "../shared/timeline";
 import type {
   AppConfig,
   AudioDevice,
+  AudioSample,
   CsvImportSummary,
   FailureCategory,
   PermissionSnapshot,
@@ -68,10 +73,22 @@ const showLatestSessionTimeline = ref(true);
 const importCsvDialogVisible = ref(false);
 const importCsvDragActive = ref(false);
 const importCsvBusy = ref(false);
+const previewAudioBySampleId = new Map<string, HTMLAudioElement>();
+const previewSrcBySampleId = ref<Record<string, string>>({});
+const previewProgress = ref<Record<string, number>>({});
+const previewCurrentTime = ref<Record<string, number>>({});
+const previewDuration = ref<Record<string, number>>({});
+const previewPlayingSampleId = ref<string | null>(null);
+const hoveredSampleId = ref<string | null>(null);
+const sampleListViewport = ref<HTMLElement | null>(null);
+const sampleListScrollTop = ref(0);
+const sampleListViewportHeight = ref(520);
 let resolvePreRunConfirm: (() => void) | null = null;
 let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const PRE_RUN_RUN_ID_PREFIX = "prep:";
+const SAMPLE_ROW_HEIGHT = 44;
+const SAMPLE_LIST_OVERSCAN = 8;
 
 const phaseLabels: Record<RunPhase, string> = {
   idle: "空闲",
@@ -121,6 +138,12 @@ const selectedDevice = computed(() => devices.value.find((item) => item.id === c
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
 const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
+const sampleListStartIndex = computed(() => Math.max(0, Math.floor(sampleListScrollTop.value / SAMPLE_ROW_HEIGHT) - SAMPLE_LIST_OVERSCAN));
+const sampleListVisibleCount = computed(() => Math.ceil(sampleListViewportHeight.value / SAMPLE_ROW_HEIGHT) + SAMPLE_LIST_OVERSCAN * 2);
+const sampleListEndIndex = computed(() => Math.min(config.value.audioSamples.length, sampleListStartIndex.value + sampleListVisibleCount.value));
+const visibleSamples = computed(() => config.value.audioSamples.slice(sampleListStartIndex.value, sampleListEndIndex.value));
+const sampleListTopSpacerHeight = computed(() => sampleListStartIndex.value * SAMPLE_ROW_HEIGHT);
+const sampleListBottomSpacerHeight = computed(() => Math.max(0, (config.value.audioSamples.length - sampleListEndIndex.value) * SAMPLE_ROW_HEIGHT));
 const resultSessionGroups = computed(() => sessions.value
   .map((session) => {
     const runs = results.value.filter((item) => item.runSessionId === session.id);
@@ -151,7 +174,7 @@ const pageTitle = computed(() => {
   if (page.value === "history") return "测试历史";
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
-  if (page.value === "faq") return "Q&A";
+  if (page.value === "faq") return "常见问题";
   return "版本说明";
 });
 const pageSubtitle = computed(() => {
@@ -303,6 +326,167 @@ function sampleMeta(language: string, durationMs?: number): string {
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
 }
 
+function formatPreviewTime(seconds?: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds ?? 0));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainSeconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function getSamplePreviewDuration(sampleId: string, fallbackMs?: number): number {
+  const seconds = previewDuration.value[sampleId];
+  if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0) return seconds;
+  return Math.max(0, (fallbackMs ?? 0) / 1000);
+}
+
+async function ensureSamplePreviewSrc(sample: AudioSample): Promise<string | undefined> {
+  const sampleId = sample.id;
+  const cached = previewSrcBySampleId.value[sampleId];
+  if (cached) return cached;
+  try {
+    const src = await window.vtc.getSamplePreviewData({
+      id: sample.id,
+      filePath: sample.filePath,
+      relativePath: sample.relativePath,
+      displayName: sample.displayName,
+      expectedText: sample.expectedText,
+      language: sample.language,
+      durationMs: sample.durationMs,
+      tags: [...sample.tags],
+      enabled: sample.enabled,
+    }) as string;
+    previewSrcBySampleId.value = { ...previewSrcBySampleId.value, [sampleId]: src };
+    return src;
+  } catch {
+    notice.value = "样本预览加载失败，请确认音频文件仍然存在。";
+    return undefined;
+  }
+}
+
+function registerPreviewAudio(sampleId: string, element: HTMLAudioElement | null): void {
+  const existing = previewAudioBySampleId.get(sampleId);
+  if (existing && existing !== element) existing.pause();
+
+  if (!element) {
+    previewAudioBySampleId.delete(sampleId);
+    return;
+  }
+
+  previewAudioBySampleId.set(sampleId, element);
+  previewCurrentTime.value = { ...previewCurrentTime.value, [sampleId]: element.currentTime || 0 };
+  previewDuration.value = {
+    ...previewDuration.value,
+    [sampleId]: Number.isFinite(element.duration) && element.duration > 0
+      ? element.duration
+      : getSamplePreviewDuration(sampleId),
+  };
+}
+
+function syncPreviewAudioState(sampleId: string): void {
+  const audio = previewAudioBySampleId.get(sampleId);
+  if (!audio) return;
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0
+    ? audio.duration
+    : getSamplePreviewDuration(sampleId);
+  const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  previewDuration.value = { ...previewDuration.value, [sampleId]: duration };
+  previewCurrentTime.value = { ...previewCurrentTime.value, [sampleId]: currentTime };
+  previewProgress.value = {
+    ...previewProgress.value,
+    [sampleId]: duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0,
+  };
+}
+
+async function toggleSamplePreview(sample: AudioSample): Promise<void> {
+  const sampleId = sample.id;
+  const audio = previewAudioBySampleId.get(sampleId);
+  if (!audio) return;
+  const src = await ensureSamplePreviewSrc(sample);
+  if (!src) return;
+  if (audio.src !== src) {
+    audio.src = src;
+    audio.load();
+  }
+
+  if (previewPlayingSampleId.value && previewPlayingSampleId.value !== sampleId) {
+    const activeAudio = previewAudioBySampleId.get(previewPlayingSampleId.value);
+    activeAudio?.pause();
+  }
+
+  if (audio.paused) {
+    try {
+      await audio.play();
+      previewPlayingSampleId.value = sampleId;
+      syncPreviewAudioState(sampleId);
+    } catch {
+      notice.value = "样本预览播放失败。";
+    }
+    return;
+  }
+
+  audio.pause();
+  previewPlayingSampleId.value = null;
+  syncPreviewAudioState(sampleId);
+}
+
+function seekSamplePreview(sampleId: string, event: Event): void {
+  const audio = previewAudioBySampleId.get(sampleId);
+  const target = event.target as HTMLInputElement | null;
+  if (!audio || !target) return;
+  const duration = getSamplePreviewDuration(sampleId);
+  const progressValue = Number(target.value);
+  if (!Number.isFinite(progressValue) || duration <= 0) return;
+  audio.currentTime = (progressValue / 100) * duration;
+  syncPreviewAudioState(sampleId);
+}
+
+function releaseSamplePreviewFocus(sampleId: string): void {
+  const container = document.querySelector<HTMLElement>(`[data-sample-preview-id="${sampleId}"]`);
+  const activeElement = document.activeElement as HTMLElement | null;
+  if (container && activeElement && container.contains(activeElement)) {
+    activeElement.blur();
+  }
+}
+
+function onSamplePreviewEnded(sampleId: string): void {
+  if (previewPlayingSampleId.value === sampleId) previewPlayingSampleId.value = null;
+  releaseSamplePreviewFocus(sampleId);
+  syncPreviewAudioState(sampleId);
+}
+
+function onSamplePreviewPause(sampleId: string): void {
+  if (previewPlayingSampleId.value === sampleId) previewPlayingSampleId.value = null;
+  syncPreviewAudioState(sampleId);
+}
+
+function previewSliderStyle(sampleId: string): { background: string } {
+  const progress = Math.max(0, Math.min(100, previewProgress.value[sampleId] ?? 0));
+  return {
+    background: `linear-gradient(90deg, #2563eb 0%, #2563eb ${progress}%, rgba(15, 23, 42, 0.18) ${progress}%, rgba(15, 23, 42, 0.18) 100%)`,
+  };
+}
+
+function shouldRenderSamplePreview(sampleId: string): boolean {
+  return hoveredSampleId.value === sampleId || previewPlayingSampleId.value === sampleId;
+}
+
+function onSampleRowEnter(sampleId: string): void {
+  hoveredSampleId.value = sampleId;
+}
+
+function onSampleRowLeave(sampleId: string): void {
+  if (hoveredSampleId.value === sampleId) hoveredSampleId.value = null;
+}
+
+function measureSampleListViewport(): void {
+  sampleListViewportHeight.value = sampleListViewport.value?.clientHeight || 520;
+}
+
+function onSampleListScroll(event: Event): void {
+  const target = event.target as HTMLElement | null;
+  sampleListScrollTop.value = target?.scrollTop ?? 0;
+}
+
 function clearNoticeTimer(): void {
   if (noticeTimer) {
     window.clearTimeout(noticeTimer);
@@ -392,15 +576,13 @@ function formatLatencyMs(value?: number): string {
 
 function historyResultTooltip(result: TestRunRecord): string {
   const capturedText = result.normalizedText.trim() || result.rawText.trim();
-  const lines = [`样本：${result.samplePath}`];
   if (capturedText) {
-    lines.push(`ASR：${capturedText}`);
-  } else if (result.failureReason?.trim()) {
-    lines.push(`失败：${result.failureReason.trim()}`);
-  } else {
-    lines.push("ASR：未捕获到结果");
+    return capturedText;
   }
-  return lines.join("\n");
+  if (result.failureReason?.trim()) {
+    return result.failureReason.trim();
+  }
+  return "未捕获到结果";
 }
 
 function average(values: number[]): number | undefined {
@@ -1149,6 +1331,8 @@ onMounted(async () => {
   window.addEventListener("mousedown", lockDialogPointerInput, true);
   window.addEventListener("mouseup", lockDialogPointerInput, true);
   window.addEventListener("click", lockDialogPointerInput, true);
+  window.addEventListener("resize", measureSampleListViewport);
+  void nextTick(measureSampleListViewport);
 
   window.vtc.onProgress((payload) => {
     progress.value = payload as RunProgress;
@@ -1227,8 +1411,23 @@ watch(() => progress.value.phase, async (phase, previousPhase) => {
   await refreshResultData();
 });
 
+watch(() => page.value, async (nextPage) => {
+  if (nextPage !== "samples") return;
+  await nextTick();
+  measureSampleListViewport();
+});
+
+watch(() => config.value.audioSamples.length, async () => {
+  if (page.value !== "samples") return;
+  await nextTick();
+  measureSampleListViewport();
+});
+
 onBeforeUnmount(() => {
   clearNoticeTimer();
+  previewAudioBySampleId.forEach((audio) => audio.pause());
+  previewAudioBySampleId.clear();
+  window.removeEventListener("resize", measureSampleListViewport);
   window.removeEventListener("keydown", handleGlobalKeydown, true);
   window.removeEventListener("keyup", handleGlobalKeyup, true);
   window.removeEventListener("mousedown", lockDialogPointerInput, true);
@@ -1303,8 +1502,8 @@ onBeforeUnmount(() => {
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'faq' }" @click="page = 'faq'">
-              <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span class="nav-label">Q&A</span>
+              <HugeiconsIcon :icon="HelpCircleIcon" :size="18" class="nav-icon" />
+              <span class="nav-label">常见问题</span>
             </button>
           </li>
           <li>
@@ -1567,12 +1766,62 @@ onBeforeUnmount(() => {
               />
             </label>
           </section>
-          <div v-if="config.audioSamples.length" class="sample-list-clean">
-            <div v-for="(sample, index) in config.audioSamples" :key="sample.id" class="sample-row-clean">
-              <div class="sample-row-index">{{ index + 1 }}、</div>
+          <div
+            v-if="config.audioSamples.length"
+            ref="sampleListViewport"
+            class="sample-list-viewport"
+            @scroll="onSampleListScroll"
+          >
+            <div class="sample-list-clean">
+            <div v-if="sampleListTopSpacerHeight > 0" class="sample-list-spacer" :style="{ height: `${sampleListTopSpacerHeight}px` }" />
+            <div
+              v-for="(sample, offset) in visibleSamples"
+              :key="sample.id"
+              class="sample-row-clean"
+              @mouseenter="onSampleRowEnter(sample.id)"
+              @mouseleave="onSampleRowLeave(sample.id)"
+            >
+              <div class="sample-row-index">{{ sampleListStartIndex + offset + 1 }}、</div>
               <div class="sample-row-main">
-                <span>{{ sample.relativePath }}</span>
-                <span class="muted sample-row-meta">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</span>
+                <span class="sample-row-path">{{ sample.relativePath }}</span>
+                <div
+                  v-if="shouldRenderSamplePreview(sample.id)"
+                  class="sample-preview"
+                  :class="{ 'sample-preview--active': previewPlayingSampleId === sample.id }"
+                  :data-sample-preview-id="sample.id"
+                >
+                  <button
+                    class="sample-preview__button"
+                    type="button"
+                    :aria-label="previewPlayingSampleId === sample.id ? '暂停预览' : '播放预览'"
+                    :title="previewPlayingSampleId === sample.id ? '暂停' : '播放'"
+                    @click="toggleSamplePreview(sample)"
+                  >
+                    <HugeiconsIcon :icon="previewPlayingSampleId === sample.id ? StopIcon : PlayIcon" :size="14" />
+                  </button>
+                  <input
+                    class="sample-preview__slider"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    :value="previewProgress[sample.id] ?? 0"
+                    :style="previewSliderStyle(sample.id)"
+                    @input="seekSamplePreview(sample.id, $event)"
+                  />
+                  <span class="sample-preview__time">{{ formatPreviewTime(previewCurrentTime[sample.id]) }} / {{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
+                  <span class="sample-preview__duration">{{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
+                  <audio
+                    preload="none"
+                    :ref="(el) => registerPreviewAudio(sample.id, el as HTMLAudioElement | null)"
+                    @loadedmetadata="syncPreviewAudioState(sample.id)"
+                    @timeupdate="syncPreviewAudioState(sample.id)"
+                    @pause="onSamplePreviewPause(sample.id)"
+                    @play="previewPlayingSampleId = sample.id"
+                    @ended="onSamplePreviewEnded(sample.id)"
+                  />
+                </div>
+                <span v-else class="sample-preview__duration">{{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
               </div>
               <div class="sample-row-actions">
                 <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
@@ -1584,6 +1833,8 @@ onBeforeUnmount(() => {
                   />
                 </label>
               </div>
+            </div>
+            <div v-if="sampleListBottomSpacerHeight > 0" class="sample-list-spacer" :style="{ height: `${sampleListBottomSpacerHeight}px` }" />
             </div>
           </div>
           <div v-else class="muted">还没有样本。</div>
@@ -1954,8 +2205,8 @@ onBeforeUnmount(() => {
 
         <article class="panel faq-card">
           <div class="faq-card__copy">
-            <div class="faq-eyebrow">Q&A 01</div>
-            <h3>为什么开始测试后，扬声器突然没声音了？</h3>
+            <div class="faq-eyebrow">常见问题 01</div>
+            <h3>为什么开始测试后，扬声器没声音了？</h3>
             <p>先检查对应 voice-typing App 里是否打开了类似 <strong>“语音输入时静音”</strong> 的选项。</p>
             <p class="muted">例如 Typeless 这类 App 可能会在语音输入时自动静音其他活动音频。这样一来，测试音频虽然已经发出播放指令，但你主观上会觉得“扬声器没声音”。</p>
             <div class="faq-callout">
@@ -1970,21 +2221,7 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section v-else class="about-grid">
-        <article class="panel">
-          <h3>这版能做什么</h3>
-          <div class="field"><span class="muted">测试配置</span><strong>可管理样本、目标 App 和运行参数</strong></div>
-          <div class="field"><span class="muted">批量执行</span><strong>可按当前配置直接发起整轮测试</strong></div>
-          <div class="field"><span class="muted">结果记录</span><strong>测试结果会保存到本地数据库</strong></div>
-          <div class="field"><span class="muted">自检方式</span><strong>可先用内建自测确认流程是否跑通</strong></div>
-        </article>
-        <article class="panel">
-          <h3>当前限制</h3>
-          <pre>1. 真实目标 App 仍需要逐个验证兼容性和触发稳定性。
-2. 部分运行链路目前还有兼容性兜底。
-3. 当前版本优先保证流程可跑通、问题可定位，体验会继续打磨。</pre>
-        </article>
-      </section>
+      <VersionNotesPanel v-else :version-label="appVersion" />
 
       <div v-if="preRunDialogVisible" class="dialog-backdrop dialog-backdrop--countdown">
         <div class="dialog-card dialog-card--countdown" role="dialog" aria-modal="true" aria-labelledby="pre-run-dialog-title">

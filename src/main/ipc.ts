@@ -27,29 +27,33 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   let activeRun: Promise<unknown> | null = null;
   const timelineFirstTsByRunId = new Map<string, number>();
   const builtinSamples = new BuiltinSampleMaterializer();
+  const handle = <Args extends unknown[], Result>(channel: string, listener: (...args: Args) => Result): void => {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, listener);
+  };
 
-  ipcMain.handle("settings:get", async () => ({
+  handle("settings:get", async () => ({
     ...deps.getConfig(),
     devices: deps.getDevices(),
     permissions: deps.getPermissions(),
   }));
 
-  ipcMain.handle("settings:save", async (_event, config: AppConfig) => {
+  handle("settings:save", async (_event, config: AppConfig) => {
     deps.setConfig(config);
     deps.configStore.save(config);
     deps.resultStore.syncConfig(config);
     return { ok: true };
   });
 
-  ipcMain.handle("samples:pickRoot", async () => {
+  handle("samples:pickRoot", async () => {
     const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
     return result.canceled ? undefined : result.filePaths[0];
   });
 
-  ipcMain.handle("samples:rescan", async (_event, root: string) => {
+  handle("samples:rescan", async (_event, root: string) => {
     return await deps.sampleManager.scan(root, deps.getConfig().audioSamples);
   });
-  ipcMain.handle("samples:getPreviewData", async (_event, sample: AudioSample) => {
+  handle("samples:getPreviewData", async (_event, sample: AudioSample) => {
     const resolvedPath = await builtinSamples.resolve(sample);
     const buffer = await readFile(resolvedPath);
     const lowerPath = resolvedPath.toLowerCase();
@@ -63,7 +67,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return `data:${mimeType};base64,${buffer.toString("base64")}`;
   });
 
-  ipcMain.handle("database:pickPath", async () => {
+  handle("database:pickPath", async () => {
     const result = await dialog.showSaveDialog(win, {
       defaultPath: join(dirname(deps.getConfig().databasePath), "voice-typing-contest.sqlite"),
       filters: [{ name: "SQLite", extensions: ["sqlite", "db"] }],
@@ -71,21 +75,21 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return result.canceled ? undefined : result.filePath;
   });
 
-  ipcMain.handle("permissions:refresh", async () => {
+  handle("permissions:refresh", async () => {
     return await deps.permissionManager.snapshot();
   });
 
-  ipcMain.handle("permissions:requestAccessibility", async () => {
+  handle("permissions:requestAccessibility", async () => {
     await deps.permissionManager.requestAccessibilityPermission();
     return await deps.permissionManager.snapshot();
   });
 
-  ipcMain.handle("permissions:openSettings", async (_event, pane: string) => {
+  handle("permissions:openSettings", async (_event, pane: string) => {
     await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
     return { ok: true };
   });
 
-  ipcMain.handle("window:focusBenchmark", async () => {
+  handle("window:focusBenchmark", async () => {
     if (win.isFocused()) {
       win.webContents.focus();
       return { ok: true };
@@ -115,7 +119,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return { ok: true };
   });
 
-  ipcMain.handle("run:start", async (_event, options?: RunStartOptions) => {
+  handle("run:start", async (_event, options?: RunStartOptions) => {
     const phase = deps.runController.getProgress().phase;
     const terminal = phase === "idle" || phase === "completed" || phase === "failed" || phase === "cancelled";
 
@@ -137,7 +141,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
       activeRun = null;
     }
   });
-  ipcMain.handle("run:emitTimelineEvent", async (_event, runId: string, eventType: string, payload: Record<string, unknown>) => {
+  handle("run:emitTimelineEvent", async (_event, runId: string, eventType: string, payload: Record<string, unknown>) => {
     const record = {
       id: nanoid(),
       runId,
@@ -149,26 +153,26 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     win.webContents.send("run:event", record);
     return { ok: true };
   });
-  ipcMain.handle("run:inspect", async () => await deps.runController.inspect(deps.getConfig()));
-  ipcMain.handle("run:stop", async () => deps.runController.stop());
-  ipcMain.handle("results:list", async () => deps.resultStore.listRuns());
-  ipcMain.handle("results:listSessions", async () => deps.resultStore.listSessions());
-  ipcMain.handle("results:getDetail", async (_event, runId: string) => deps.resultStore.getRunDetail(runId));
-  ipcMain.handle("results:exportCsv", async (_event, runSessionId?: string) => {
+  handle("run:inspect", async () => await deps.runController.inspect(deps.getConfig()));
+  handle("run:stop", async () => deps.runController.stop());
+  handle("results:list", async () => deps.resultStore.listRuns());
+  handle("results:listSessions", async () => deps.resultStore.listSessions());
+  handle("results:getDetail", async (_event, runId: string) => deps.resultStore.getRunDetail(runId));
+  handle("results:exportCsv", async (_event, runSessionId?: string) => {
     const suffix = runSessionId ? `-${runSessionId.slice(0, 8)}` : "";
     const result = await dialog.showSaveDialog(win, { defaultPath: `voice-typing-contest-results${suffix}.csv` });
     if (result.canceled || !result.filePath) return undefined;
     await writeFile(result.filePath, deps.resultStore.exportCsv(runSessionId), "utf8");
     return result.filePath;
   });
-  ipcMain.handle("results:pickImportCsv", async () => {
+  handle("results:pickImportCsv", async () => {
     const result = await dialog.showOpenDialog(win, {
       properties: ["openFile"],
       filters: [{ name: "CSV", extensions: ["csv"] }],
     });
     return result.canceled ? undefined : result.filePaths[0];
   });
-  ipcMain.handle("results:importCsv", async (_event, filePath: string) => {
+  handle("results:importCsv", async (_event, filePath: string) => {
     const csvText = await readFile(filePath, "utf8");
     return deps.resultStore.importCsv(
       csvText,
@@ -178,7 +182,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
       deps.getDevices() as any,
     );
   });
-  ipcMain.handle("results:importCsvContent", async (_event, csvText: string, sourceName: string) => {
+  handle("results:importCsvContent", async (_event, csvText: string, sourceName: string) => {
     return deps.resultStore.importCsv(
       csvText,
       sourceName,
@@ -187,5 +191,6 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
       deps.getDevices() as any,
     );
   });
+  ipcMain.removeAllListeners("run:inputEvent");
   ipcMain.on("run:inputEvent", (_event, payload: InputObservationEvent) => deps.runController.onInputEvent(payload));
 }

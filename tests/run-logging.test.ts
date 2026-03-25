@@ -16,7 +16,7 @@ describe("run logging", () => {
 
     expect(line).toContain("[timeline] run=run-1");
     expect(line).toContain("event=app_launch");
-    expect(line).toContain("title=后台启动目标应用");
+    expect(line).toContain("title=后台启动目标App");
     expect(line).toContain("detail=西瓜说 已尝试后台启动");
     expect(line).toContain("sample=zh.wav");
   });

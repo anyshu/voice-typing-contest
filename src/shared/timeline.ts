@@ -24,7 +24,7 @@ export function timelineTitle(item: RunEventRecord): string {
     sample_start: "开始处理样本",
     focus_input: "聚焦检测框",
     selftest_mode: "进入内建自测",
-    app_launch: "后台启动目标应用",
+    app_launch: "后台启动目标App",
     app_launch_wait: "等待应用启动",
     pre_hotkey_wait: "等待热键发送",
     focus_input_wait: "等待检测框稳定",
@@ -35,7 +35,7 @@ export function timelineTitle(item: RunEventRecord): string {
     input_observed: "检测到文本输入",
     between_samples_wait: "等待下一条样本",
     app_close_wait: "等待关闭应用",
-    app_close: "关闭目标应用",
+    app_close: "关闭目标App",
     run_failed: "动作失败",
   };
   return labels[item.eventType] ?? item.eventType;
@@ -51,7 +51,7 @@ export function timelineDetail(item: RunEventRecord): string {
     case "pre_run_begin":
       return "提示对话框已关闭，正式测试开始。";
     case "app_start":
-      return `切到应用：${String(payload.app ?? "目标应用")}。`;
+      return `切到应用：${String(payload.app ?? "目标App")}。`;
     case "sample_start":
       return `样本：${timelineTailName(payload.sample ?? "-")}。`;
     case "focus_input":
@@ -59,13 +59,13 @@ export function timelineDetail(item: RunEventRecord): string {
     case "selftest_mode":
       return `当前使用的是 ${String(payload.app ?? "内建自测")}。`;
     case "app_launch":
-      return `${String(payload.app ?? "目标应用")} 已尝试后台启动，目标是 ${timelineTailName(payload.target)}。`;
+      return `${String(payload.app ?? "目标App")} 已尝试后台启动，目标是 ${timelineTailName(payload.target)}。`;
     case "app_launch_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，让 ${String(payload.app ?? "目标应用")} 启动稳定。`;
+      return `等待 ${String(payload.delayMs ?? 0)} ms，让 ${String(payload.app ?? "目标App")} 启动稳定。`;
     case "focus_input_wait":
       return `等待 ${String(payload.delayMs ?? 0)} ms，再开始发送热键。`;
     case "pre_hotkey_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，确保 ${String(payload.app ?? "目标应用")} 已经准备好接热键。`;
+      return `等待 ${String(payload.delayMs ?? 0)} ms，确保 ${String(payload.app ?? "目标App")} 已经准备好接热键。`;
     case "trigger_start":
       return `触发热键：${String(payload.chord ?? "-")}`;
     case "audio_start":
@@ -79,11 +79,11 @@ export function timelineDetail(item: RunEventRecord): string {
     case "between_samples_wait":
       return `等待 ${String(payload.delayMs ?? 0)} ms，再切到下一条样本。`;
     case "app_close_wait":
-      return `等待 ${String(payload.delayMs ?? 0)} ms，然后关闭 ${String(payload.app ?? "目标应用")}。`;
+      return `等待 ${String(payload.delayMs ?? 0)} ms，然后关闭 ${String(payload.app ?? "目标App")}。`;
     case "app_close":
-      return `${String(payload.app ?? "目标应用")} 已发送关闭指令。`;
+      return `${String(payload.app ?? "目标App")} 已发送关闭指令。`;
     case "run_failed":
-      return `${String(payload.app ?? "目标应用")} / ${timelineTailName(payload.sample)} 未完成，请看结果列表里的失败详情。`;
+      return `${String(payload.app ?? "目标App")} / ${timelineTailName(payload.sample)} 未完成，请看结果列表里的失败详情。`;
     default:
       return item.payloadJson === "{}" ? "无额外信息" : item.payloadJson;
   }

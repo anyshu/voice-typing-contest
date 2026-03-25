@@ -122,19 +122,19 @@ Suggested icon mapping:
 The current app shell has these first-level pages:
 
 - 主控台
-- 运行前检查
 - 样本
 - 测试历史
 - 设置
+- 运行前检查
 - 怎么开始
-- 当前实现
+- 版本说明
 
 Configuration already lives in the dedicated `设置` page rather than a modal.
 
 The result experience is split into:
 
 - `主控台` for the current timeline and latest-session summary
-- `测试历史` for browsing persisted sessions and exporting one batch at a time
+- `测试历史` for browsing persisted sessions and exporting one batch at a time, with hover/focus tooltips on sample paths so long ASR output can still be inspected without widening the table
 
 The current renderer is Chinese-first.
 
@@ -153,12 +153,12 @@ Overall shell:
 |----------------------|---------------------------------------------------------------|
 | Logo / App name      | Current page title                            Quick actions   |
 | 主控台               |---------------------------------------------------------------|
-| 运行前检查           | Page content                                                  |
 | 样本                 |                                                               |
 | 测试历史             |                                                               |
 | 设置                 |                                                               |
+| 运行前检查           |                                                               |
 | 怎么开始             |                                                               |
-| 当前实现             |                                                               |
+| 版本说明             |                                                               |
 +--------------------------------------------------------------------------------------+
 ```
 
@@ -462,10 +462,25 @@ It should feel factual and lightweight.
 
 - `测试历史` owns the persisted session list
 - each session card expands to app groups and sample rows
+- each session header shows `时间 + App 名称 + 汇总` on the same row, with the app name visually heavier than the summary text
 - `导出本轮 CSV` belongs to the session header
+- exported CSV rows should stay anchored to the original history row, so `run_id` remains the root run id while `latest_run_id` points at the newest retry attempt
 - history reads run timelines from persisted per-run timeline snapshots
 
-### 10.3 Feedback style
+### 10.3 Sample page behavior
+
+- the sample list should keep file paths at regular weight instead of bold, so the row reads as a lightweight checklist
+- each sample row should expose a minimal inline preview player with `开始/暂停`, a progress slider, and elapsed / total time
+- sample rows should render as a virtualized list, and the heavier preview controls should mount only for the hovered or actively playing row
+
+### 10.4 App page behavior
+
+- `App管理` lives in the upper navigation group directly below `样本管理`
+- each app card keeps `App 名称 + 类型/状态 pills + 启用/删除操作` on one row when there is enough width
+- compact fields should use one-row label/control alignment instead of stacked labels
+- hover on an app card should only add a restrained lift, border emphasis, and soft shadow
+
+### 10.5 Feedback style
 
 Use restrained motion only:
 
@@ -474,7 +489,7 @@ Use restrained motion only:
 
 No bouncing and no animated charts during idle state.
 
-### 10.4 Empty states
+### 10.5 Empty states
 
 Keep empty states plain:
 

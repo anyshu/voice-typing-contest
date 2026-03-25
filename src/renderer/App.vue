@@ -3,22 +3,32 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { HugeiconsIcon } from "@hugeicons/vue";
 import {
   Analytics01Icon,
+  AppStoreIcon,
   BookOpen01Icon,
   CheckListIcon,
   DashboardSquare01Icon,
+  Delete02Icon,
+  FileExportIcon,
   FolderAudioIcon,
+  HelpCircleIcon,
   InformationCircleIcon,
+  PlayIcon,
   PlayCircleIcon,
+  ReloadIcon,
   Settings01Icon,
   Shield01Icon,
   Speaker01Icon,
+  StopIcon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
+import VersionNotesPanel from "./components/VersionNotesPanel.vue";
 import { defaultConfig } from "../shared/defaults";
 import { safeTimelinePayload, timelineDetail, timelineTitle } from "../shared/timeline";
 import type {
   AppConfig,
   AudioDevice,
+  AudioSample,
+  CsvImportSummary,
   FailureCategory,
   PermissionSnapshot,
   PreflightReport,
@@ -26,12 +36,15 @@ import type {
   RunEventRecord,
   RunPhase,
   RunProgress,
+  RunStartOptions,
   SettingsPayload,
+  TargetAppProfile,
   TestRunRecord,
 } from "../shared/types";
 
 const brandIconUrl = new URL("../../resources/icon-macos.png", import.meta.url).href;
-const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "about" | "settings">("main");
+const muteDuringDictationImageUrl = new URL("./assets/mute-during-dictation.svg", import.meta.url).href;
+const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "faq" | "about" | "settings" | "apps">("main");
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
 const devices = ref<AudioDevice[]>([]);
@@ -46,7 +59,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
-const appVersion = ref("v0.1.0");
+const appVersion = ref("v0.1.3");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -57,9 +70,25 @@ const pendingRunStart = ref(false);
 const preRunDialogVisible = ref(false);
 const preRunTimelineEvents = ref<RunEventRecord[]>([]);
 const showLatestSessionTimeline = ref(true);
+const importCsvDialogVisible = ref(false);
+const importCsvDragActive = ref(false);
+const importCsvBusy = ref(false);
+const previewAudioBySampleId = new Map<string, HTMLAudioElement>();
+const previewSrcBySampleId = ref<Record<string, string>>({});
+const previewProgress = ref<Record<string, number>>({});
+const previewCurrentTime = ref<Record<string, number>>({});
+const previewDuration = ref<Record<string, number>>({});
+const previewPlayingSampleId = ref<string | null>(null);
+const hoveredSampleId = ref<string | null>(null);
+const sampleListViewport = ref<HTMLElement | null>(null);
+const sampleListScrollTop = ref(0);
+const sampleListViewportHeight = ref(520);
 let resolvePreRunConfirm: (() => void) | null = null;
+let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const PRE_RUN_RUN_ID_PREFIX = "prep:";
+const SAMPLE_ROW_HEIGHT = 44;
+const SAMPLE_LIST_OVERSCAN = 8;
 
 const phaseLabels: Record<RunPhase, string> = {
   idle: "空闲",
@@ -81,9 +110,9 @@ const phaseLabels: Record<RunPhase, string> = {
 const failureLabels: Record<FailureCategory, string> = {
   permission_denied_accessibility: "缺少辅助功能权限",
   permission_denied_automation: "缺少自动化权限",
-  target_app_not_installed: "目标应用未安装",
-  target_app_not_ready: "目标应用不可运行",
-  target_app_launch_timeout: "目标应用启动超时",
+  target_app_not_installed: "目标App未安装",
+  target_app_not_ready: "目标App不可运行",
+  target_app_launch_timeout: "目标App启动超时",
   input_focus_failed: "输入框聚焦失败",
   device_not_found: "输出设备不可用",
   audio_play_failed: "音频播放失败",
@@ -94,51 +123,82 @@ const failureLabels: Record<FailureCategory, string> = {
 };
 
 const modeLabels = {
-  hold_release: "按住热键，松开收口",
-  press_start_press_stop: "按一次触发，再按一次收口",
+  hold_release: "按住并保持，松开结束",
+  press_start_press_stop: "按下抬起开始，再按下抬起结束",
 } as const;
 
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
 const enabledApps = computed(() => config.value.targetApps.filter((item) => item.enabled));
+const builtinApps = computed(() => config.value.targetApps.filter((item) => isBuiltinApp(item)));
+const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
+const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
+const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
-const resultSessionGroups = computed(() => sessions.value.map((session) => {
-  const runs = results.value.filter((item) => item.runSessionId === session.id);
-  const appNames = [...new Set(runs.map((item) => item.appName))];
-  return {
-    session,
-    runs,
-    appGroups: appNames.map((appName) => {
-      const appRuns = runs.filter((item) => item.appName === appName);
-      return {
-        appName,
-        runs: appRuns,
-        successCount: appRuns.filter((item) => item.status === "success").length,
-        failedCount: appRuns.filter((item) => item.status === "failed").length,
-        cancelledCount: appRuns.filter((item) => item.status === "cancelled").length,
-      };
-    }),
-  };
-}));
+const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
+const sampleListStartIndex = computed(() => Math.max(0, Math.floor(sampleListScrollTop.value / SAMPLE_ROW_HEIGHT) - SAMPLE_LIST_OVERSCAN));
+const sampleListVisibleCount = computed(() => Math.ceil(sampleListViewportHeight.value / SAMPLE_ROW_HEIGHT) + SAMPLE_LIST_OVERSCAN * 2);
+const sampleListEndIndex = computed(() => Math.min(config.value.audioSamples.length, sampleListStartIndex.value + sampleListVisibleCount.value));
+const visibleSamples = computed(() => config.value.audioSamples.slice(sampleListStartIndex.value, sampleListEndIndex.value));
+const sampleListTopSpacerHeight = computed(() => sampleListStartIndex.value * SAMPLE_ROW_HEIGHT);
+const sampleListBottomSpacerHeight = computed(() => Math.max(0, (config.value.audioSamples.length - sampleListEndIndex.value) * SAMPLE_ROW_HEIGHT));
+const resultSessionGroups = computed(() => sessions.value
+  .map((session) => {
+    const runs = results.value.filter((item) => item.runSessionId === session.id);
+    const appNames = [...new Set(runs.map((item) => item.appName))];
+    const displayTime = runs.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, session.startedAt);
+    return {
+      session,
+      runs,
+      displayTime,
+      appGroups: appNames.map((appName) => {
+        const appRuns = runs.filter((item) => item.appName === appName);
+        return {
+          appName,
+          runs: appRuns,
+          successCount: appRuns.filter((item) => item.status === "success").length,
+          failedCount: appRuns.filter((item) => item.status === "failed").length,
+          cancelledCount: appRuns.filter((item) => item.status === "cancelled").length,
+        };
+      }),
+    };
+  })
+  .sort((left, right) => right.displayTime.localeCompare(left.displayTime)));
 const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
   if (page.value === "samples") return "样本管理";
+  if (page.value === "apps") return "App管理";
   if (page.value === "history") return "测试历史";
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
-  return "当前实现";
+  if (page.value === "faq") return "常见问题";
+  return "版本说明";
 });
 const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
   if (page.value === "checks") return "开跑前检查清单";
   if (page.value === "samples") return "测试集与目录视图";
+  if (page.value === "apps") return "目标 App 配置与热键";
   if (page.value === "history") return "历史结果与分轮导出";
-  if (page.value === "settings") return "运行参数与目标应用";
+  if (page.value === "settings") return "运行参数与环境设置";
   if (page.value === "intro") return "准备路径与使用说明";
-  return "当前实现状态";
+  if (page.value === "faq") return "常见问题与排查";
+  return "当前能力与限制";
+});
+const noticeTone = computed(() => {
+  if (!notice.value) return "info";
+  if (
+    notice.value.includes("失败")
+    || notice.value.includes("缺少")
+    || notice.value.includes("不能")
+    || notice.value.includes("没跑起来")
+    || notice.value.includes("红色提示")
+  ) return "danger";
+  if (notice.value.includes("取消") || notice.value.includes("未")) return "warning";
+  return "success";
 });
 function buildTimelineCards(
   items: RunEventRecord[],
@@ -199,6 +259,20 @@ function buildTimelineCards(
   return cards;
 }
 
+function isBuiltinApp(app: TargetAppProfile): boolean {
+  return Boolean(app.launchCommand?.startsWith("selftest://"));
+}
+
+function appKindLabel(app: TargetAppProfile): string {
+  return isBuiltinApp(app) ? "内建自测" : "真实 App";
+}
+
+function appLaunchSummary(app: TargetAppProfile): string {
+  return isBuiltinApp(app)
+    ? "内建流程"
+    : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
+}
+
 function plainConfig(): AppConfig {
   return JSON.parse(JSON.stringify(config.value)) as AppConfig;
 }
@@ -233,6 +307,8 @@ async function jumpToGuideTarget(target: "apps" | "hotkey" | "samples" | "run"):
     page.value = "main";
   } else if (target === "samples") {
     page.value = "samples";
+  } else if (target === "apps" || target === "hotkey") {
+    page.value = "apps";
   } else {
     page.value = "settings";
   }
@@ -248,6 +324,212 @@ async function jumpToGuideTarget(target: "apps" | "hotkey" | "samples" | "run"):
 function sampleMeta(language: string, durationMs?: number): string {
   if (!durationMs) return language;
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
+}
+
+function formatPreviewTime(seconds?: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds ?? 0));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainSeconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function getSamplePreviewDuration(sampleId: string, fallbackMs?: number): number {
+  const seconds = previewDuration.value[sampleId];
+  if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0) return seconds;
+  return Math.max(0, (fallbackMs ?? 0) / 1000);
+}
+
+async function ensureSamplePreviewSrc(sample: AudioSample): Promise<string | undefined> {
+  const sampleId = sample.id;
+  const cached = previewSrcBySampleId.value[sampleId];
+  if (cached) return cached;
+  try {
+    const src = await window.vtc.getSamplePreviewData({
+      id: sample.id,
+      filePath: sample.filePath,
+      relativePath: sample.relativePath,
+      displayName: sample.displayName,
+      expectedText: sample.expectedText,
+      language: sample.language,
+      durationMs: sample.durationMs,
+      tags: [...sample.tags],
+      enabled: sample.enabled,
+    }) as string;
+    previewSrcBySampleId.value = { ...previewSrcBySampleId.value, [sampleId]: src };
+    return src;
+  } catch {
+    notice.value = "样本预览加载失败，请确认音频文件仍然存在。";
+    return undefined;
+  }
+}
+
+function registerPreviewAudio(sampleId: string, element: HTMLAudioElement | null): void {
+  const existing = previewAudioBySampleId.get(sampleId);
+  if (existing && existing !== element) existing.pause();
+
+  if (!element) {
+    previewAudioBySampleId.delete(sampleId);
+    return;
+  }
+
+  previewAudioBySampleId.set(sampleId, element);
+  previewCurrentTime.value = { ...previewCurrentTime.value, [sampleId]: element.currentTime || 0 };
+  previewDuration.value = {
+    ...previewDuration.value,
+    [sampleId]: Number.isFinite(element.duration) && element.duration > 0
+      ? element.duration
+      : getSamplePreviewDuration(sampleId),
+  };
+}
+
+function syncPreviewAudioState(sampleId: string): void {
+  const audio = previewAudioBySampleId.get(sampleId);
+  if (!audio) return;
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0
+    ? audio.duration
+    : getSamplePreviewDuration(sampleId);
+  const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+  previewDuration.value = { ...previewDuration.value, [sampleId]: duration };
+  previewCurrentTime.value = { ...previewCurrentTime.value, [sampleId]: currentTime };
+  previewProgress.value = {
+    ...previewProgress.value,
+    [sampleId]: duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0,
+  };
+}
+
+async function toggleSamplePreview(sample: AudioSample): Promise<void> {
+  const sampleId = sample.id;
+  const audio = previewAudioBySampleId.get(sampleId);
+  if (!audio) return;
+  const src = await ensureSamplePreviewSrc(sample);
+  if (!src) return;
+  if (audio.src !== src) {
+    audio.src = src;
+    audio.load();
+  }
+
+  if (previewPlayingSampleId.value && previewPlayingSampleId.value !== sampleId) {
+    const activeAudio = previewAudioBySampleId.get(previewPlayingSampleId.value);
+    activeAudio?.pause();
+  }
+
+  if (audio.paused) {
+    try {
+      await audio.play();
+      previewPlayingSampleId.value = sampleId;
+      syncPreviewAudioState(sampleId);
+    } catch {
+      notice.value = "样本预览播放失败。";
+    }
+    return;
+  }
+
+  audio.pause();
+  previewPlayingSampleId.value = null;
+  syncPreviewAudioState(sampleId);
+}
+
+function seekSamplePreview(sampleId: string, event: Event): void {
+  const audio = previewAudioBySampleId.get(sampleId);
+  const target = event.target as HTMLInputElement | null;
+  if (!audio || !target) return;
+  const duration = getSamplePreviewDuration(sampleId);
+  const progressValue = Number(target.value);
+  if (!Number.isFinite(progressValue) || duration <= 0) return;
+  audio.currentTime = (progressValue / 100) * duration;
+  syncPreviewAudioState(sampleId);
+}
+
+function releaseSamplePreviewFocus(sampleId: string): void {
+  const container = document.querySelector<HTMLElement>(`[data-sample-preview-id="${sampleId}"]`);
+  const activeElement = document.activeElement as HTMLElement | null;
+  if (container && activeElement && container.contains(activeElement)) {
+    activeElement.blur();
+  }
+}
+
+function onSamplePreviewEnded(sampleId: string): void {
+  if (previewPlayingSampleId.value === sampleId) previewPlayingSampleId.value = null;
+  releaseSamplePreviewFocus(sampleId);
+  syncPreviewAudioState(sampleId);
+}
+
+function onSamplePreviewPause(sampleId: string): void {
+  if (previewPlayingSampleId.value === sampleId) previewPlayingSampleId.value = null;
+  syncPreviewAudioState(sampleId);
+}
+
+function previewSliderStyle(sampleId: string): { background: string } {
+  const progress = Math.max(0, Math.min(100, previewProgress.value[sampleId] ?? 0));
+  return {
+    background: `linear-gradient(90deg, #2563eb 0%, #2563eb ${progress}%, rgba(15, 23, 42, 0.18) ${progress}%, rgba(15, 23, 42, 0.18) 100%)`,
+  };
+}
+
+function shouldRenderSamplePreview(sampleId: string): boolean {
+  return hoveredSampleId.value === sampleId || previewPlayingSampleId.value === sampleId;
+}
+
+function onSampleRowEnter(sampleId: string): void {
+  hoveredSampleId.value = sampleId;
+}
+
+function onSampleRowLeave(sampleId: string): void {
+  if (hoveredSampleId.value === sampleId) hoveredSampleId.value = null;
+}
+
+function measureSampleListViewport(): void {
+  sampleListViewportHeight.value = sampleListViewport.value?.clientHeight || 520;
+}
+
+function onSampleListScroll(event: Event): void {
+  const target = event.target as HTMLElement | null;
+  sampleListScrollTop.value = target?.scrollTop ?? 0;
+}
+
+function clearNoticeTimer(): void {
+  if (noticeTimer) {
+    window.clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
+}
+
+function showToast(message: string): void {
+  notice.value = message;
+}
+
+function scheduleNoticeDismiss(message: string): void {
+  clearNoticeTimer();
+  noticeTimer = window.setTimeout(() => {
+    if (notice.value === message) {
+      notice.value = "";
+    }
+    noticeTimer = null;
+  }, 2600);
+}
+
+function toggleSampleEnabled(sampleId: string, enabled: boolean): void {
+  const sample = config.value.audioSamples.find((item) => item.id === sampleId);
+  if (!sample) return;
+  sample.enabled = enabled;
+  showToast(`${sample.displayName} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`);
+}
+
+function setAllSamplesEnabled(enabled: boolean): void {
+  if (!config.value.audioSamples.length) return;
+  for (const sample of config.value.audioSamples) {
+    sample.enabled = enabled;
+  }
+  showToast(`已${enabled ? "全局开启" : "全局关闭"}全部样本。`);
+}
+
+function toggleAllSamples(event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setAllSamplesEnabled(Boolean(target?.checked));
+}
+
+function onSampleToggle(sampleId: string, event: Event): void {
+  toggleSampleEnabled(sampleId, (event.target as HTMLInputElement).checked);
 }
 
 function sessionStatusText(status: RunSessionSummary["status"]): string {
@@ -269,6 +551,12 @@ function formatSessionTime(value: string): string {
   });
 }
 
+function sessionAppLabel(appGroups: Array<{ appName: string }>): string {
+  if (appGroups.length === 0) return "";
+  if (appGroups.length === 1) return appGroups[0].appName;
+  return `${appGroups[0].appName} 等 ${appGroups.length} 个 App`;
+}
+
 function formatSessionTimestamp(value: string): string {
   const date = new Date(value);
   const year = date.getFullYear();
@@ -282,8 +570,19 @@ function formatSessionTimestamp(value: string): string {
 
 function formatLatencyMs(value?: number): string {
   if (value === undefined) return "-";
-  if (value < 0) return `提前 ${Math.abs(value)} ms`;
-  return `${value} ms`;
+  if (value < 0) return `提前 ${Math.abs(value)}`;
+  return `${value}`;
+}
+
+function historyResultTooltip(result: TestRunRecord): string {
+  const capturedText = result.normalizedText.trim() || result.rawText.trim();
+  if (capturedText) {
+    return capturedText;
+  }
+  if (result.failureReason?.trim()) {
+    return result.failureReason.trim();
+  }
+  return "未捕获到结果";
 }
 
 function average(values: number[]): number | undefined {
@@ -520,10 +819,10 @@ async function saveSettings(showNotice = true): Promise<void> {
     await window.vtc.saveSettings(plainConfig());
     await refreshEnvironment();
     if (showNotice) {
-      notice.value = "设置已保存。";
+      showToast("设置已保存。");
     }
   } catch (error) {
-    notice.value = `保存设置失败：${error instanceof Error ? error.message : String(error)}`;
+    showToast(`保存设置失败：${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
 }
@@ -551,6 +850,10 @@ async function chooseDatabasePath(): Promise<void> {
 }
 
 async function runBatch(): Promise<void> {
+  await startRunBatch();
+}
+
+async function startRunBatch(options?: RunStartOptions): Promise<void> {
   try {
     pendingRunStart.value = true;
     preflightReport.value = null;
@@ -564,7 +867,7 @@ async function runBatch(): Promise<void> {
     await focusInputProbe();
     await saveSettings(false);
     await runPreStartCountdown();
-    const report = await window.vtc.startRun() as PreflightReport;
+    const report = await window.vtc.startRun(options) as PreflightReport;
     preflightReport.value = report;
     await refreshResultData();
     if (!report.ok) {
@@ -578,6 +881,35 @@ async function runBatch(): Promise<void> {
     notice.value = `开始失败：${error instanceof Error ? error.message : String(error)}`;
     pendingRunStart.value = false;
   }
+}
+
+async function retryHistoryResult(result: TestRunRecord): Promise<void> {
+  if (running.value || pendingRunStart.value || preRunDialogVisible.value) {
+    notice.value = "当前已有测试在跑，先等这一轮结束。";
+    return;
+  }
+  const targetApp = config.value.targetApps.find((item) => item.id === result.appId)
+    ?? config.value.targetApps.find((item) => item.name === result.appName);
+  const targetSample = config.value.audioSamples.find((item) => item.id === result.sampleId)
+    ?? config.value.audioSamples.find((item) => item.relativePath === result.samplePath);
+  if (!targetApp) {
+    notice.value = `重试失败：当前配置里找不到 ${result.appName}，请先去 App 管理确认它还在。`;
+    return;
+  }
+  if (!targetSample) {
+    notice.value = `重试失败：当前配置里找不到样本 ${result.samplePath}，请先确认样本目录已重新扫描。`;
+    return;
+  }
+  if (page.value !== "main") {
+    page.value = "main";
+    await nextTick();
+  }
+  notice.value = `准备重试 ${result.appName} / ${result.samplePath}。`;
+  await startRunBatch({
+    appIds: [targetApp.id],
+    sampleIds: [targetSample.id],
+    retryRootRunId: result.retryRootRunId ?? result.id,
+  });
 }
 
 async function runPreStartCountdown(): Promise<void> {
@@ -689,6 +1021,86 @@ async function exportCsv(runSessionId?: string): Promise<void> {
   }
 }
 
+function openImportCsvDialog(): void {
+  importCsvDialogVisible.value = true;
+  importCsvDragActive.value = false;
+}
+
+function closeImportCsvDialog(): void {
+  if (importCsvBusy.value) return;
+  importCsvDialogVisible.value = false;
+  importCsvDragActive.value = false;
+}
+
+async function importCsvFromPath(filePath?: string): Promise<void> {
+  if (!filePath) {
+    showToast("已取消导入。");
+    return;
+  }
+
+  try {
+    importCsvBusy.value = true;
+    const summary = await window.vtc.importCsv(filePath) as CsvImportSummary;
+    await refreshResultData();
+    ensureSessionExpanded(summary.sessionId);
+    page.value = "history";
+    importCsvDialogVisible.value = false;
+    importCsvDragActive.value = false;
+    showToast(`已导入 CSV：${summary.importedCount} 条记录，来自 ${summary.appCount} 个应用。`);
+  } catch (error) {
+    notice.value = `导入失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    importCsvBusy.value = false;
+  }
+}
+
+async function chooseImportCsvFile(): Promise<void> {
+  const picked = await window.vtc.pickImportCsv() as string | undefined;
+  await importCsvFromPath(picked);
+}
+
+function handleImportCsvDragEnter(event: DragEvent): void {
+  event.preventDefault();
+  importCsvDragActive.value = true;
+}
+
+function handleImportCsvDragOver(event: DragEvent): void {
+  event.preventDefault();
+  importCsvDragActive.value = true;
+}
+
+function handleImportCsvDragLeave(event: DragEvent): void {
+  event.preventDefault();
+  const relatedTarget = event.relatedTarget as Node | null;
+  if (relatedTarget && (event.currentTarget as HTMLElement | null)?.contains(relatedTarget)) return;
+  importCsvDragActive.value = false;
+}
+
+async function handleImportCsvDrop(event: DragEvent): Promise<void> {
+  event.preventDefault();
+  importCsvDragActive.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) {
+    showToast("没有检测到可导入的 CSV 文件。");
+    return;
+  }
+
+  try {
+    importCsvBusy.value = true;
+    const csvText = await file.text();
+    const summary = await window.vtc.importCsvContent(csvText, file.name) as CsvImportSummary;
+    await refreshResultData();
+    ensureSessionExpanded(summary.sessionId);
+    page.value = "history";
+    importCsvDialogVisible.value = false;
+    showToast(`已导入 CSV：${summary.importedCount} 条记录，来自 ${summary.appCount} 个应用。`);
+  } catch (error) {
+    notice.value = `导入失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    importCsvBusy.value = false;
+  }
+}
+
 function addApp(): void {
   config.value.targetApps.push({
     id: `app-${Date.now()}`,
@@ -702,6 +1114,19 @@ function addApp(): void {
     enabled: false,
     notes: "",
   });
+}
+
+function removeApp(appId: string): void {
+  const app = config.value.targetApps.find((item) => item.id === appId);
+  if (!app) return;
+  const confirmed = window.confirm(`确定要删除 ${app.name} 吗？`);
+  if (!confirmed) return;
+  config.value.targetApps = config.value.targetApps.filter((item) => item.id !== appId);
+  if (capturingAppId.value === appId) {
+    capturingAppId.value = null;
+    capturePreview.value = "";
+  }
+  notice.value = `已删除 ${app.name}。记得保存设置。`;
 }
 
 function beginHotkeyCapture(appId: string): void {
@@ -893,12 +1318,21 @@ function lockDialogPointerInput(event: MouseEvent): void {
 }
 
 onMounted(async () => {
-  await loadBootstrap();
+  try {
+    await loadBootstrap();
+  } catch (error) {
+    notice.value = `初始化失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+  void refreshEnvironment().catch((error) => {
+    notice.value = `环境刷新失败：${error instanceof Error ? error.message : String(error)}`;
+  });
   window.addEventListener("keydown", handleGlobalKeydown, true);
   window.addEventListener("keyup", handleGlobalKeyup, true);
   window.addEventListener("mousedown", lockDialogPointerInput, true);
   window.addEventListener("mouseup", lockDialogPointerInput, true);
   window.addEventListener("click", lockDialogPointerInput, true);
+  window.addEventListener("resize", measureSampleListViewport);
+  void nextTick(measureSampleListViewport);
 
   window.vtc.onProgress((payload) => {
     progress.value = payload as RunProgress;
@@ -962,6 +1396,14 @@ watch(() => displayedTimeline.value[displayedTimeline.value.length - 1]?.id, asy
   scrollTimelineToLatest();
 });
 
+watch(() => notice.value, (message) => {
+  if (!message) {
+    clearNoticeTimer();
+    return;
+  }
+  scheduleNoticeDismiss(message);
+});
+
 watch(() => progress.value.phase, async (phase, previousPhase) => {
   if (!isTerminalPhase(phase) || !previousPhase || isTerminalPhase(previousPhase) || previousPhase === "idle") {
     return;
@@ -969,7 +1411,23 @@ watch(() => progress.value.phase, async (phase, previousPhase) => {
   await refreshResultData();
 });
 
+watch(() => page.value, async (nextPage) => {
+  if (nextPage !== "samples") return;
+  await nextTick();
+  measureSampleListViewport();
+});
+
+watch(() => config.value.audioSamples.length, async () => {
+  if (page.value !== "samples") return;
+  await nextTick();
+  measureSampleListViewport();
+});
+
 onBeforeUnmount(() => {
+  clearNoticeTimer();
+  previewAudioBySampleId.forEach((audio) => audio.pause());
+  previewAudioBySampleId.clear();
+  window.removeEventListener("resize", measureSampleListViewport);
   window.removeEventListener("keydown", handleGlobalKeydown, true);
   window.removeEventListener("keyup", handleGlobalKeyup, true);
   window.removeEventListener("mousedown", lockDialogPointerInput, true);
@@ -997,25 +1455,25 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'main' }" @click="page = 'main'">
               <HugeiconsIcon :icon="DashboardSquare01Icon" :size="18" class="nav-icon" />
-              <span>主控台</span>
-            </button>
-          </li>
-          <li>
-            <button class="nav-button" :class="{ active: page === 'checks' }" @click="page = 'checks'">
-              <HugeiconsIcon :icon="CheckListIcon" :size="18" class="nav-icon" />
-              <span>运行前检查</span>
+              <span class="nav-label">主控台</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'samples' }" @click="page = 'samples'">
               <HugeiconsIcon :icon="FolderAudioIcon" :size="18" class="nav-icon" />
-              <span>样本管理</span>
+              <span class="nav-label">样本管理</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-button" :class="{ active: page === 'apps' }" @click="page = 'apps'">
+              <HugeiconsIcon :icon="AppStoreIcon" :size="18" class="nav-icon" />
+              <span class="nav-label">App管理</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'history' }" @click="page = 'history'">
               <HugeiconsIcon :icon="Analytics01Icon" :size="18" class="nav-icon" />
-              <span>测试历史</span>
+              <span class="nav-label">测试历史</span>
             </button>
           </li>
         </ul>
@@ -1027,30 +1485,47 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'settings' }" @click="page = 'settings'">
               <HugeiconsIcon :icon="Settings01Icon" :size="18" class="nav-icon" />
-              <span>设置</span>
+              <span class="nav-label">设置</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-button" :class="{ active: page === 'checks' }" @click="page = 'checks'">
+              <HugeiconsIcon :icon="CheckListIcon" :size="18" class="nav-icon" />
+              <span class="nav-label">运行前检查</span>
             </button>
           </li>
           <li>
             <button class="nav-button nav-button-guide" :class="{ active: page === 'intro' }" @click="page = 'intro'">
               <HugeiconsIcon :icon="BookOpen01Icon" :size="18" class="nav-icon" />
-              <span>怎么开始</span>
+              <span class="nav-label">怎么开始</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-button" :class="{ active: page === 'faq' }" @click="page = 'faq'">
+              <HugeiconsIcon :icon="HelpCircleIcon" :size="18" class="nav-icon" />
+              <span class="nav-label">常见问题</span>
             </button>
           </li>
           <li>
             <button class="nav-button" :class="{ active: page === 'about' }" @click="page = 'about'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span>当前实现</span>
+              <span class="nav-label">版本说明</span>
             </button>
           </li>
         </ul>
-      </div>
-
-      <div class="sidebar-version">
-        <strong>{{ appVersion }}</strong>
+        <div class="sidebar-version">
+          <strong>{{ appVersion }}</strong>
+        </div>
       </div>
     </aside>
 
     <main class="content">
+      <transition name="toast">
+        <div v-if="notice" class="notice-toast" :class="`notice-toast--${noticeTone}`" role="status" aria-live="polite">
+          {{ notice }}
+        </div>
+      </transition>
+
       <header class="topbar">
         <div v-if="page !== 'main'">
           <p class="muted">{{ pageSubtitle }}</p>
@@ -1113,14 +1588,14 @@ onBeforeUnmount(() => {
           <div class="stack">
             <article class="panel panel-main panel-apps">
               <div class="panel-header-row">
-                <h3>目标应用</h3>
-                <button class="secondary-button" @click="page = 'settings'">去设置</button>
+                <h3>目标App</h3>
+                <button class="secondary-button" @click="page = 'apps'">去 App 管理</button>
               </div>
               <ul class="meta-list panel-scroll">
                 <li v-for="app in config.targetApps" :key="app.id" class="app-row">
                   <div>
                     <strong>{{ app.name }}</strong>
-                    <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标应用" : app.appFileName }}</div>
+                    <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
                     <div class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</div>
                   </div>
                   <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
@@ -1134,7 +1609,7 @@ onBeforeUnmount(() => {
               <h3>输入检测区</h3>
               <span class="pill" :class="statusTone(progress.phase)">{{ phaseText(progress.phase) }}</span>
             </div>
-            <p class="muted">这里是统一的输入检测区。真实目标应用和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
+            <p class="muted">这里是统一的输入检测区。真实目标App和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
             <textarea
               ref="inputProbeTextarea"
               class="live-textarea"
@@ -1181,7 +1656,7 @@ onBeforeUnmount(() => {
           <article class="panel">
             <template v-if="mainSessionGroup">
               <div class="detail-headline">
-                <strong>测试统计 {{ formatSessionTimestamp(mainSessionGroup.session.startedAt) }}</strong>
+                <strong>测试统计 {{ formatSessionTimestamp(mainSessionGroup.displayTime) }}</strong>
                 <span class="pill">{{ sessionStatusText(mainSessionGroup.session.status) }}</span>
               </div>
               <div class="app-summary-stack">
@@ -1266,14 +1741,100 @@ onBeforeUnmount(() => {
         </article>
 
         <article class="panel">
-          <div v-if="config.audioSamples.length" class="sample-list-clean">
-            <div v-for="(sample, index) in config.audioSamples" :key="sample.id" class="sample-row-clean">
-              <div class="sample-row-index">{{ index + 1 }}、</div>
+          <section class="summary-strip summary-strip--samples">
+            <div class="summary-item">
+              <HugeiconsIcon :icon="FolderAudioIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">启用</span>
+              <strong>{{ enabledSamples.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="FolderAudioIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">关闭</span>
+              <strong>{{ disabledSamples.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="Analytics01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">总共</span>
+              <strong>{{ config.audioSamples.length }}</strong>
+            </div>
+            <label v-if="config.audioSamples.length" class="switch-row sample-global-toggle">
+              <span class="sample-global-toggle__label">全选</span>
+              <input
+                :checked="allSamplesEnabled"
+                type="checkbox"
+                @change="toggleAllSamples"
+              />
+            </label>
+          </section>
+          <div
+            v-if="config.audioSamples.length"
+            ref="sampleListViewport"
+            class="sample-list-viewport"
+            @scroll="onSampleListScroll"
+          >
+            <div class="sample-list-clean">
+            <div v-if="sampleListTopSpacerHeight > 0" class="sample-list-spacer" :style="{ height: `${sampleListTopSpacerHeight}px` }" />
+            <div
+              v-for="(sample, offset) in visibleSamples"
+              :key="sample.id"
+              class="sample-row-clean"
+              @mouseenter="onSampleRowEnter(sample.id)"
+              @mouseleave="onSampleRowLeave(sample.id)"
+            >
+              <div class="sample-row-index">{{ sampleListStartIndex + offset + 1 }}、</div>
               <div class="sample-row-main">
-                <strong>{{ sample.relativePath }}</strong>
-                <div class="muted">{{ sample.language.toUpperCase() }} · {{ (sample.durationMs / 1000).toFixed(2) }} 秒</div>
+                <span class="sample-row-path">{{ sample.relativePath }}</span>
+                <div
+                  v-if="shouldRenderSamplePreview(sample.id)"
+                  class="sample-preview"
+                  :class="{ 'sample-preview--active': previewPlayingSampleId === sample.id }"
+                  :data-sample-preview-id="sample.id"
+                >
+                  <button
+                    class="sample-preview__button"
+                    type="button"
+                    :aria-label="previewPlayingSampleId === sample.id ? '暂停预览' : '播放预览'"
+                    :title="previewPlayingSampleId === sample.id ? '暂停' : '播放'"
+                    @click="toggleSamplePreview(sample)"
+                  >
+                    <HugeiconsIcon :icon="previewPlayingSampleId === sample.id ? StopIcon : PlayIcon" :size="14" />
+                  </button>
+                  <input
+                    class="sample-preview__slider"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    :value="previewProgress[sample.id] ?? 0"
+                    :style="previewSliderStyle(sample.id)"
+                    @input="seekSamplePreview(sample.id, $event)"
+                  />
+                  <span class="sample-preview__time">{{ formatPreviewTime(previewCurrentTime[sample.id]) }} / {{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
+                  <span class="sample-preview__duration">{{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
+                  <audio
+                    preload="none"
+                    :ref="(el) => registerPreviewAudio(sample.id, el as HTMLAudioElement | null)"
+                    @loadedmetadata="syncPreviewAudioState(sample.id)"
+                    @timeupdate="syncPreviewAudioState(sample.id)"
+                    @pause="onSamplePreviewPause(sample.id)"
+                    @play="previewPlayingSampleId = sample.id"
+                    @ended="onSamplePreviewEnded(sample.id)"
+                  />
+                </div>
+                <span v-else class="sample-preview__duration">{{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
               </div>
-              <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
+              <div class="sample-row-actions">
+                <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
+                <label class="switch-row sample-switch-row">
+                  <input
+                    :checked="sample.enabled"
+                    type="checkbox"
+                    @change="onSampleToggle(sample.id, $event)"
+                  />
+                </label>
+              </div>
+            </div>
+            <div v-if="sampleListBottomSpacerHeight > 0" class="sample-list-spacer" :style="{ height: `${sampleListBottomSpacerHeight}px` }" />
             </div>
           </div>
           <div v-else class="muted">还没有样本。</div>
@@ -1282,47 +1843,74 @@ onBeforeUnmount(() => {
 
       <section v-else-if="page === 'history'" class="result-stack">
         <article class="panel">
+          <div class="panel-header-row history-page-header">
+            <div>
+              <h3>历史列表</h3>
+              <p class="muted">支持导出每轮结果，也支持把外部 CSV 补录成历史测试记录。</p>
+            </div>
+            <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
+          </div>
           <div class="session-stack">
             <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
               <div class="session-header">
                 <button class="session-toggle" @click="toggleSession(group.session.id)">
-                  <div>
-                    <strong>{{ formatSessionTime(group.session.startedAt) }}</strong>
-                    <div class="muted">
-                      {{ sessionStatusText(group.session.status) }}
-                      · 共 {{ group.session.runCount }} 条
-                      · 成功 {{ group.session.successCount }}
-                      · 失败 {{ group.session.failedCount }}
-                      · 取消 {{ group.session.cancelledCount }}
-                    </div>
+                  <strong>{{ formatSessionTime(group.displayTime) }}</strong>
+                  <span v-if="sessionAppLabel(group.appGroups)" class="session-app-name">
+                    {{ sessionAppLabel(group.appGroups) }}
+                  </span>
+                  <div
+                    class="muted session-summary"
+                    :class="{ 'session-summary--danger': group.session.failedCount > 0 }"
+                  >
+                    {{ sessionStatusText(group.session.status) }}
+                    · 共 {{ group.session.runCount }} 条
+                    · 成功 {{ group.session.successCount }}
+                    · 失败 {{ group.session.failedCount }}
+                    · 取消 {{ group.session.cancelledCount }}
                   </div>
                   <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
                 </button>
-                <button class="secondary-button" @click="exportCsv(group.session.id)">导出本轮 CSV</button>
+                <button
+                  class="history-export-button"
+                  aria-label="导出本轮 CSV"
+                  data-tooltip="导出本轮 CSV"
+                  @click="exportCsv(group.session.id)"
+                >
+                  <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
+                </button>
               </div>
 
               <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
                 <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
-                  <div class="app-group-header">
-                    <div>
-                      <strong>{{ appGroup.appName }}</strong>
-                      <div class="muted">
-                        共 {{ appGroup.runs.length }} 条
-                        · 成功 {{ appGroup.successCount }}
-                        · 失败 {{ appGroup.failedCount }}
-                        · 取消 {{ appGroup.cancelledCount }}
-                      </div>
+                  <div v-if="group.appGroups.length > 1" class="app-group-header">
+                    <strong>{{ appGroup.appName }}</strong>
+                    <div class="muted">
+                      共 {{ appGroup.runs.length }} 条
+                      · 成功 {{ appGroup.successCount }}
+                      · 失败 {{ appGroup.failedCount }}
+                      · 取消 {{ appGroup.cancelledCount }}
                     </div>
                   </div>
 
                   <table class="result-table">
+                    <colgroup>
+                      <col style="width: 60%" />
+                      <col style="width: 6%" />
+                      <col style="width: 8%" />
+                      <col style="width: 8%" />
+                      <col style="width: 8%" />
+                      <col style="width: 5%" />
+                      <col style="width: 5%" />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>样本</th>
                         <th>状态</th>
-                        <th>收口到首字</th>
-                        <th>收口到定稿</th>
+                        <th>首字ms</th>
+                        <th>定稿ms</th>
                         <th>长度</th>
+                        <th>重试</th>
+                        <th>操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1330,14 +1918,36 @@ onBeforeUnmount(() => {
                         v-for="result in appGroup.runs"
                         :key="result.id"
                       >
-                        <td>{{ result.samplePath }}</td>
-                        <td><span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span></td>
+                        <td class="history-sample-cell">
+                          <span
+                            class="history-sample-tooltip"
+                            tabindex="0"
+                            :data-tooltip="historyResultTooltip(result)"
+                          ><span class="history-sample-text">{{ result.samplePath }}</span></span>
+                        </td>
+                        <td class="history-status-cell">
+                          <div class="history-status-wrap">
+                            <span class="pill" :class="statusTone(result.status)">{{ resultStatusText(result.status) }}</span>
+                          </div>
+                        </td>
                         <td>{{ formatLatencyMs(result.triggerStopToFirstCharMs) }}</td>
                         <td>{{ formatLatencyMs(result.triggerStopToFinalTextMs) }}</td>
                         <td>{{ result.finalTextLength }}</td>
+                        <td>{{ result.retryCount ?? 0 }}</td>
+                        <td class="history-action-cell">
+                          <button
+                            class="history-retry-button"
+                            :disabled="running || pendingRunStart || preRunDialogVisible"
+                            aria-label="重新测试"
+                            data-tooltip="重新测试"
+                            @click.stop="retryHistoryResult(result)"
+                          >
+                            <HugeiconsIcon :icon="ReloadIcon" :size="14" class="button-icon" />
+                          </button>
+                        </td>
                       </tr>
                       <tr v-if="!appGroup.runs.length">
-                        <td colspan="5">这个应用在本轮还没有结果。</td>
+                        <td colspan="7">这个应用在本轮还没有结果。</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1346,6 +1956,121 @@ onBeforeUnmount(() => {
             </article>
 
             <div v-if="!resultSessionGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
+          </div>
+        </article>
+      </section>
+
+      <section v-else-if="page === 'apps'" class="settings-page apps-page">
+        <article class="panel apps-page__panel">
+          <div class="panel-header-row apps-page__header">
+            <div>
+              <h3>目标App</h3>
+              <p class="muted">把真实目标 App 和内建自测都收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
+            </div>
+            <div class="toolbar">
+              <button class="secondary-button" @click="addApp">新增应用</button>
+              <button class="secondary-button" @click="saveSettings">保存设置</button>
+            </div>
+          </div>
+
+          <section class="summary-strip summary-strip--apps">
+            <div class="summary-item">
+              <HugeiconsIcon :icon="AppStoreIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">目标总数</span>
+              <strong>{{ config.targetApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="PlayCircleIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">已启用</span>
+              <strong>{{ enabledApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="DashboardSquare01Icon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">真实 App</span>
+              <strong>{{ enabledRealApps.length }} / {{ realApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">内建自测</span>
+              <strong>{{ builtinApps.length ? (builtinApps[0]?.enabled ? "已启用" : "未启用") : "未配置" }}</strong>
+            </div>
+          </section>
+
+          <div class="app-editor-list">
+            <div
+              v-for="app in config.targetApps"
+              :key="app.id"
+              class="app-editor-card"
+              :class="{ 'app-editor-card--builtin': isBuiltinApp(app) }"
+              :data-guide-target="app.enabled ? 'apps' : undefined"
+            >
+              <div class="app-editor-card__top">
+                <div class="app-editor-card__headline">
+                  <strong>{{ app.name }}</strong>
+                  <div class="app-editor-card__badges">
+                    <span class="pill" :class="isBuiltinApp(app) ? 'warning' : ''">{{ appKindLabel(app) }}</span>
+                    <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                  </div>
+                </div>
+                <div class="toolbar app-editor-card__actions">
+                  <label class="switch-row">
+                    <span>启用</span>
+                    <input v-model="app.enabled" type="checkbox" />
+                  </label>
+                  <button
+                    class="ghost-button icon-only-button"
+                    :aria-label="`删除 ${app.name}`"
+                    :title="`删除 ${app.name}`"
+                    @click="removeApp(app.id)"
+                  >
+                    <HugeiconsIcon :icon="Delete02Icon" :size="18" class="button-icon" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="app-editor-card__summary">
+                <span class="muted">热键 {{ app.hotkeyChord || "未设置" }}</span>
+                <span class="muted">·</span>
+                <span class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</span>
+                <span class="muted">·</span>
+                <span class="muted">启动目标：{{ appLaunchSummary(app) }}</span>
+              </div>
+
+              <div class="settings-grid app-editor-form">
+                <label class="app-form-row">
+                  <span class="app-form-label">名称 <em class="required-mark">*</em></span>
+                  <input v-model="app.name" />
+                </label>
+                <label class="app-form-row">
+                  <span class="app-form-label">.app 文件名 <em class="required-mark">*</em></span>
+                  <input v-model="app.appFileName" :disabled="isBuiltinApp(app)" />
+                </label>
+                <label class="app-form-row app-form-row--wide" style="grid-column: 1 / -1">
+                  <span class="app-form-label">启动命令</span>
+                  <input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" />
+                </label>
+                <label class="app-form-row app-form-row--wide" :data-guide-target="app.enabled ? 'hotkey' : undefined" style="grid-column: 1 / -1">
+                  <span class="app-form-label">热键 <em class="required-mark">*</em></span>
+                  <div class="inline-field inline-field--triple">
+                    <input :value="app.hotkeyChord" readonly />
+                    <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
+                    <button class="ghost-button" @click="setHotkeyForApp(app.id, 'Fn')">设为 Fn</button>
+                  </div>
+                  <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
+                </label>
+                <label class="app-form-row compact-field">
+                  <span class="app-form-label">触发方式 <em class="required-mark">*</em></span>
+                  <select v-model="app.hotkeyTriggerMode" class="compact-select">
+                    <option value="hold_release">按住并保持，松开结束</option>
+                    <option value="press_start_press_stop">按下抬起开始，再按下抬起结束</option>
+                  </select>
+                </label>
+                <label class="app-form-row app-form-row--wide" style="grid-column: 1 / -1">
+                  <span class="app-form-label">备注</span>
+                  <textarea v-model="app.notes" rows="2" placeholder="例如：先关闭“语音输入时静音”，或者需要登录后再触发。" />
+                </label>
+              </div>
+            </div>
           </div>
         </article>
       </section>
@@ -1411,48 +2136,6 @@ onBeforeUnmount(() => {
           </div>
         </article>
 
-        <article class="panel">
-          <div class="panel-header-row">
-            <h3>目标应用</h3>
-            <button class="secondary-button" @click="addApp">新增应用</button>
-          </div>
-          <p class="muted">如果你现在只想确认工具能不能跑，保留“内建自测”开启就够了。</p>
-          <div v-for="app in config.targetApps" :key="app.id" class="app-editor-card" :data-guide-target="app.enabled ? 'apps' : undefined">
-            <div class="panel-header-row">
-              <div>
-                <strong>{{ app.name }}</strong>
-                <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "这是工具自带的自测目标，不依赖真实应用。" : "真实目标应用配置" }}</div>
-              </div>
-              <label class="switch-row">
-                <span>启用</span>
-                <input v-model="app.enabled" type="checkbox" />
-              </label>
-            </div>
-            <div class="settings-grid">
-              <label><span>名称 <em class="required-mark">*</em></span><input v-model="app.name" /></label>
-              <label><span>.app 文件名 <em class="required-mark">*</em></span><input v-model="app.appFileName" :disabled="Boolean(app.launchCommand?.startsWith('selftest://'))" /></label>
-              <label :data-guide-target="app.enabled ? 'hotkey' : undefined">
-                <span>热键 <em class="required-mark">*</em></span>
-                <div class="inline-field">
-                  <input :value="app.hotkeyChord" readonly />
-                  <button class="ghost-button" @click="beginHotkeyCapture(app.id)">{{ hotkeyButtonText(app.id, app.hotkeyChord) }}</button>
-                  <button class="ghost-button" @click="setHotkeyForApp(app.id, 'Fn')">设为 Fn</button>
-                </div>
-                <div class="muted">macOS 上物理 Fn 常常不会被 Electron 上报。录不到时，直接点右边这个“设为 Fn”。</div>
-              </label>
-              <label class="compact-field">
-                <span>触发方式 <em class="required-mark">*</em></span>
-                <select v-model="app.hotkeyTriggerMode" class="compact-select">
-                  <option value="hold_release">按住热键，松开收口</option>
-                  <option value="press_start_press_stop">按一次触发，再按一次收口</option>
-                </select>
-              </label>
-              <label><span>启动命令</span><input v-model="app.launchCommand" placeholder="留空时按 .app 文件名去找" /></label>
-              <label style="grid-column: 1 / -1"><span>备注</span><textarea v-model="app.notes" rows="2" /></label>
-            </div>
-          </div>
-        </article>
-
         <div class="settings-grid">
           <article class="panel">
             <div class="panel-header-row">
@@ -1494,7 +2177,7 @@ onBeforeUnmount(() => {
         <div class="intro-steps">
           <button class="intro-step" @click="jumpToGuideTarget('apps')">
             <strong>1）添加 app</strong>
-            <span>去设置页添加或启用目标应用。</span>
+            <span>去 App 管理页添加或启用目标App。</span>
           </button>
           <button class="intro-step" @click="jumpToGuideTarget('hotkey')">
             <strong>2）热键</strong>
@@ -1511,21 +2194,34 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-else class="about-grid">
-        <article class="panel">
-          <h3>现在这版有什么</h3>
-          <div class="field"><span class="muted">桌面壳</span><strong>Electron + Vue</strong></div>
-          <div class="field"><span class="muted">结果存储</span><strong>{{ config.databasePath }}</strong></div>
-          <div class="field"><span class="muted">默认可跑路径</span><strong>内建自测</strong></div>
-          <div class="field"><span class="muted">当前 helper</span><strong>当前机器优先走备用 helper</strong></div>
+      <section v-else-if="page === 'faq'" class="stack faq-page">
+        <article class="panel faq-hero">
+          <div>
+            <h3>测试时没听到扬声器声音，先看这里</h3>
+            <p class="muted">有些语音输入 App 会在听写开始时自动把其他活动音频静音。如果测试时听不到扬声器的声音，不一定是输出设备坏了，也可能是目标 App 自己把声音压掉了。</p>
+          </div>
+          <div class="pill warning">常见于语音输入类 App</div>
         </article>
-        <article class="panel">
-          <h3>还没做完的地方</h3>
-          <pre>1. 真实目标应用的全量手工回归还没补齐。
-2. Swift 原生 helper 在这台机器上还没编过。
-3. 现在先以“能跑通流程、能看清错误”为第一目标。</pre>
+
+        <article class="panel faq-card">
+          <div class="faq-card__copy">
+            <div class="faq-eyebrow">常见问题 01</div>
+            <h3>为什么开始测试后，扬声器没声音了？</h3>
+            <p>先检查对应 voice-typing App 里是否打开了类似 <strong>“语音输入时静音”</strong> 的选项。</p>
+            <p class="muted">例如 Typeless 这类 App 可能会在语音输入时自动静音其他活动音频。这样一来，测试音频虽然已经发出播放指令，但你主观上会觉得“扬声器没声音”。</p>
+            <div class="faq-callout">
+              <strong>排查建议</strong>
+              <p>如果这轮测试没有听到喇叭出声，先去目标 App 的设置页找这一类开关，临时关闭后再重新跑一轮。</p>
+            </div>
+          </div>
+          <figure class="faq-shot">
+            <img :src="muteDuringDictationImageUrl" alt="语音输入时静音设置示意图" />
+            <figcaption>示意图：开启后，语音输入时会自动静音其他活动音频。</figcaption>
+          </figure>
         </article>
       </section>
+
+      <VersionNotesPanel v-else :version-label="appVersion" />
 
       <div v-if="preRunDialogVisible" class="dialog-backdrop dialog-backdrop--countdown">
         <div class="dialog-card dialog-card--countdown" role="dialog" aria-modal="true" aria-labelledby="pre-run-dialog-title">
@@ -1576,6 +2272,34 @@ onBeforeUnmount(() => {
           <div class="dialog-actions">
             <button class="ghost-button" @click="page = 'main'; completionDialogVisible = false">回主控台</button>
             <button class="primary-button" @click="completionDialogVisible = false">知道了</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="importCsvDialogVisible" class="dialog-backdrop" @click.self="closeImportCsvDialog()">
+        <div class="dialog-card import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-csv-dialog-title">
+          <div class="dialog-hero">
+            <div class="dialog-hero-copy">
+              <span class="dialog-kicker">CSV Import</span>
+              <h3 id="import-csv-dialog-title">导入外部测试结果</h3>
+              <p>把导出的结果 CSV 拖进来，系统会补录成一轮新的历史测试记录。</p>
+            </div>
+          </div>
+          <button
+            class="import-dropzone"
+            :class="{ 'import-dropzone--active': importCsvDragActive, 'import-dropzone--busy': importCsvBusy }"
+            :disabled="importCsvBusy"
+            @dragenter="handleImportCsvDragEnter"
+            @dragover="handleImportCsvDragOver"
+            @dragleave="handleImportCsvDragLeave"
+            @drop="handleImportCsvDrop"
+            @click="chooseImportCsvFile"
+          >
+            <strong>{{ importCsvBusy ? "正在导入..." : "拖拽 CSV 到这里" }}</strong>
+            <span>{{ importCsvBusy ? "请稍候，不要关闭窗口。" : "或者点击这里选择一个 .csv 文件" }}</span>
+          </button>
+          <div class="dialog-actions">
+            <button class="ghost-button" :disabled="importCsvBusy" @click="closeImportCsvDialog()">取消</button>
           </div>
         </div>
       </div>

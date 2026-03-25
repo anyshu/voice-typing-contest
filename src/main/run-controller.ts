@@ -11,6 +11,7 @@ import type {
   RunEventRecord,
   RunProgress,
   RunSessionRecord,
+  RunStartOptions,
   TestRunRecord,
 } from "../shared/types";
 import { PermissionManager } from "./permission-manager";
@@ -71,6 +72,11 @@ export class RunController extends EventEmitter {
     return this.progress;
   }
 
+  private isUnsupportedHoldHelper(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes("Unknown command") || message.includes("playWavHoldingHotkey");
+  }
+
   onInputEvent(event: InputObservationEvent): void {
     if (!this.current) return;
     const normalizedEvent: InputObservationEvent = {
@@ -84,14 +90,14 @@ export class RunController extends EventEmitter {
     this.emit("progress", { ...this.progress });
   }
 
-  async inspect(config: AppConfig): Promise<PreflightReport> {
-    const prepared = await this.prepareRun(config);
+  async inspect(config: AppConfig, options?: RunStartOptions): Promise<PreflightReport> {
+    const prepared = await this.prepareRun(config, options);
     this.emit("preflight", prepared.preflight);
     return prepared.preflight;
   }
 
-  async run(config: AppConfig): Promise<PreflightReport> {
-    const { samples, runnableApps, resolvedAppMap, preflight } = await this.prepareRun(config);
+  async run(config: AppConfig, options?: RunStartOptions): Promise<PreflightReport> {
+    const { samples, runnableApps, resolvedAppMap, preflight } = await this.prepareRun(config, options);
     this.emit("preflight", preflight);
     if (!preflight.ok) {
       this.progress = {
@@ -255,62 +261,96 @@ export class RunController extends EventEmitter {
           this.progress.phase = "trigger_start";
           this.emit("progress", { ...this.progress });
           pushEvent("trigger_start", { chord: app.hotkeyChord });
-          if (!isSelfTestApp) {
-            try {
-              if (app.hotkeyTriggerMode === "hold_release") {
-                await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "down", signal));
-              } else {
-                await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "press", signal));
-              }
-            } catch (error) {
-              if (error instanceof RunCancelledError) throw error;
-              throw { category: "hotkey_dispatch_failed", message: (error as Error).message || "Failed to send start hotkey" };
-            }
-          }
-
-          this.progress.phase = "wait_before_audio";
-          this.emit("progress", { ...this.progress });
-          await this.waitUnlessStopped(app.hotkeyToAudioDelayMs);
-
-          this.progress.phase = "audio_playing";
-          this.emit("progress", { ...this.progress });
           const playableSamplePath = isSelfTestApp
             ? sample.filePath
             : await this.builtinSamples.resolve(sample);
-          pushEvent("audio_start", { sample: sample.filePath, playableSamplePath });
-          if (isSelfTestApp) {
-            await this.waitUnlessStopped(Math.max(sample.durationMs, 100));
-          } else {
-            try {
-              await this.withAbortableHelper(async (signal) => await this.helper.playWav(playableSamplePath, config.selectedOutputDeviceId, signal));
-            } catch (error) {
-              if (error instanceof RunCancelledError) throw error;
-              throw { category: "audio_play_failed", message: (error as Error).message || "Failed to play audio sample" };
-            }
-          }
-          pushEvent("audio_end", {});
-          await this.waitUnlessStopped(app.audioToTriggerStopDelayMs);
 
-          this.progress.phase = "trigger_stop";
-          this.emit("progress", { ...this.progress });
-          pushEvent("trigger_stop", { chord: app.hotkeyChord, mode: app.hotkeyTriggerMode });
-          if (!isSelfTestApp) {
+          if (!isSelfTestApp && app.hotkeyTriggerMode === "hold_release"
+            && typeof (this.helper as HelperClient & { playWavHoldingHotkey?: unknown }).playWavHoldingHotkey === "function") {
+            this.progress.phase = "wait_before_audio";
+            this.emit("progress", { ...this.progress });
+            this.progress.phase = "audio_playing";
+            this.emit("progress", { ...this.progress });
             try {
-              if (app.hotkeyTriggerMode === "hold_release") {
-                await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "up", signal));
-              } else {
-                await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "press", signal));
-              }
+              pushEvent("audio_start", { sample: sample.filePath, playableSamplePath, holdMode: true });
+              await this.withAbortableHelper(async (signal) => await this.helper.playWavHoldingHotkey(
+                app.hotkeyChord,
+                playableSamplePath,
+                config.selectedOutputDeviceId,
+                app.hotkeyToAudioDelayMs,
+                app.audioToTriggerStopDelayMs,
+                signal,
+              ));
+              pushEvent("audio_end", { holdMode: true });
+              this.progress.phase = "trigger_stop";
+              this.emit("progress", { ...this.progress });
+              pushEvent("trigger_stop", { chord: app.hotkeyChord, mode: app.hotkeyTriggerMode, holdMode: true });
               triggerStopTs = performance.now();
             } catch (error) {
               if (error instanceof RunCancelledError) throw error;
-              throw { category: "hotkey_dispatch_failed", message: (error as Error).message || "Failed to send stop hotkey" };
+              if (!this.isUnsupportedHoldHelper(error)) {
+                throw { category: "hotkey_dispatch_failed", message: (error as Error).message || "Failed to hold hotkey during audio playback" };
+              }
             }
-          } else {
-            triggerStopTs = performance.now();
-            const text = sample.expectedText || sample.displayName.replace(/\.[^.]+$/i, "");
-            const chunks = text.length > 8 ? [text.slice(0, Math.ceil(text.length / 2)), text] : [text];
-            this.emitSelfTestText(chunks);
+          }
+
+          if (isSelfTestApp || app.hotkeyTriggerMode !== "hold_release"
+            || typeof (this.helper as HelperClient & { playWavHoldingHotkey?: unknown }).playWavHoldingHotkey !== "function"
+            || triggerStopTs === undefined) {
+            if (!isSelfTestApp) {
+              try {
+                if (app.hotkeyTriggerMode === "hold_release") {
+                  await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "down", signal));
+                } else {
+                  await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "press", signal));
+                }
+              } catch (error) {
+                if (error instanceof RunCancelledError) throw error;
+                throw { category: "hotkey_dispatch_failed", message: (error as Error).message || "Failed to send start hotkey" };
+              }
+            }
+
+            this.progress.phase = "wait_before_audio";
+            this.emit("progress", { ...this.progress });
+            await this.waitUnlessStopped(app.hotkeyToAudioDelayMs);
+
+            this.progress.phase = "audio_playing";
+            this.emit("progress", { ...this.progress });
+            pushEvent("audio_start", { sample: sample.filePath, playableSamplePath });
+            if (isSelfTestApp) {
+              await this.waitUnlessStopped(Math.max(sample.durationMs, 100));
+            } else {
+              try {
+                await this.withAbortableHelper(async (signal) => await this.helper.playWav(playableSamplePath, config.selectedOutputDeviceId, signal));
+              } catch (error) {
+                if (error instanceof RunCancelledError) throw error;
+                throw { category: "audio_play_failed", message: (error as Error).message || "Failed to play audio sample" };
+              }
+            }
+            pushEvent("audio_end", {});
+            await this.waitUnlessStopped(app.audioToTriggerStopDelayMs);
+
+            this.progress.phase = "trigger_stop";
+            this.emit("progress", { ...this.progress });
+            pushEvent("trigger_stop", { chord: app.hotkeyChord, mode: app.hotkeyTriggerMode });
+            if (!isSelfTestApp) {
+              try {
+                if (app.hotkeyTriggerMode === "hold_release") {
+                  await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "up", signal));
+                } else {
+                  await this.withAbortableHelper(async (signal) => await this.helper.sendHotkey(app.hotkeyChord, "press", signal));
+                }
+                triggerStopTs = performance.now();
+              } catch (error) {
+                if (error instanceof RunCancelledError) throw error;
+                throw { category: "hotkey_dispatch_failed", message: (error as Error).message || "Failed to send stop hotkey" };
+              }
+            } else {
+              triggerStopTs = performance.now();
+              const text = sample.expectedText || sample.displayName.replace(/\.[^.]+$/i, "");
+              const chunks = text.length > 8 ? [text.slice(0, Math.ceil(text.length / 2)), text] : [text];
+              this.emitSelfTestText(chunks);
+            }
           }
 
           this.progress.phase = "observing_text";
@@ -347,6 +387,8 @@ export class RunController extends EventEmitter {
             inputEventCount: observed.events.length,
             finalTextLength: rawText.length,
             createdAt: new Date().toISOString(),
+            retryRootRunId: options?.retryRootRunId,
+            retryAttempt: options?.retryRootRunId ? this.store.getNextRetryAttempt(options.retryRootRunId) : 0,
             timeline: [...(runTimelineMap.get(runId) ?? [])],
           };
           this.store.insertRun(record);
@@ -394,6 +436,8 @@ export class RunController extends EventEmitter {
             inputEventCount: this.current?.values.length ?? 0,
             finalTextLength: this.progress.textValue.length,
             createdAt: new Date().toISOString(),
+            retryRootRunId: options?.retryRootRunId,
+            retryAttempt: options?.retryRootRunId ? this.store.getNextRetryAttempt(options.retryRootRunId) : 0,
             timeline: [...(runTimelineMap.get(runId) ?? [])],
           };
           this.store.insertRun(record);
@@ -473,9 +517,15 @@ export class RunController extends EventEmitter {
     return preflight;
   }
 
-  private async prepareRun(config: AppConfig): Promise<PreparedRunContext> {
-    const enabledApps = config.targetApps.filter((item) => item.enabled);
-    const samples = config.audioSamples.filter((item) => item.enabled);
+  private async prepareRun(config: AppConfig, options?: RunStartOptions): Promise<PreparedRunContext> {
+    const requestedAppIds = options?.appIds?.length ? new Set(options.appIds) : undefined;
+    const requestedSampleIds = options?.sampleIds?.length ? new Set(options.sampleIds) : undefined;
+    const enabledApps = requestedAppIds
+      ? config.targetApps.filter((item) => requestedAppIds.has(item.id))
+      : config.targetApps.filter((item) => item.enabled);
+    const samples = requestedSampleIds
+      ? config.audioSamples.filter((item) => requestedSampleIds.has(item.id))
+      : config.audioSamples.filter((item) => item.enabled);
     const resolvedApps = await Promise.all(
       enabledApps.map(async (app) => {
         const resolved = await this.targets.resolve(app);

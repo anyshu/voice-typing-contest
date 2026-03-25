@@ -44,6 +44,136 @@ afterEach(async () => {
 });
 
 describe("RunController integration", () => {
+  it("can rerun only a selected app and sample from history", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-run-retry-"));
+    const sampleRoot = join(root, "samples");
+    await mkdir(sampleRoot, { recursive: true });
+    const firstWavPath = join(sampleRoot, "first.wav");
+    const secondWavPath = join(sampleRoot, "second.wav");
+    await writeFile(firstWavPath, createWav());
+    await writeFile(secondWavPath, createWav());
+
+    const config = defaultConfig();
+    config.appLaunchDelayMs = 0;
+    config.focusInputDelayMs = 0;
+    config.closeAppDelayMs = 0;
+    config.sampleRoot = sampleRoot;
+    config.databasePath = join(root, "vtc.sqlite");
+    config.betweenSamplesDelayMs = 0;
+    config.targetApps = [
+      {
+        ...config.targetApps.find((app) => app.id === "selftest")!,
+        id: "selftest-a",
+        name: "自测 A",
+        enabled: false,
+      },
+      {
+        ...config.targetApps.find((app) => app.id === "selftest")!,
+        id: "selftest-b",
+        name: "自测 B",
+        enabled: false,
+      },
+    ];
+    config.audioSamples = [
+      {
+        id: "sample-1",
+        filePath: firstWavPath,
+        relativePath: "first.wav",
+        displayName: "first.wav",
+        expectedText: "first transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["selftest"],
+        enabled: false,
+      },
+      {
+        id: "sample-2",
+        filePath: secondWavPath,
+        relativePath: "second.wav",
+        displayName: "second.wav",
+        expectedText: "second transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["selftest"],
+        enabled: false,
+      },
+    ];
+
+    const store = new ResultStore(config.databasePath);
+    store.createSession({
+      id: "session-history",
+      startedAt: "2026-03-24T09:59:00.000Z",
+      selectedAppIds: [],
+      selectedSampleIds: [],
+      permissionSnapshot: [],
+      deviceSnapshot: [],
+      configSnapshot: config,
+      status: "completed",
+    });
+    store.insertRun({
+      id: "history-run-1",
+      runSessionId: "session-history",
+      appId: "selftest-b",
+      appName: "自测 B",
+      sampleId: "sample-2",
+      samplePath: "second.wav",
+      status: "failed",
+      phase: "failed",
+      rawText: "",
+      normalizedText: "",
+      inputEventCount: 0,
+      finalTextLength: 0,
+      createdAt: "2026-03-24T01:00:00.000Z",
+      timeline: [],
+    });
+    const permissions = new PermissionManager({
+      available: true,
+      checkPermissions: async () => ({
+        permissions: [
+          { id: "accessibility", name: "Accessibility", required: true, granted: true },
+          { id: "automation", name: "Automation", required: false, granted: true },
+          { id: "input-monitoring", name: "Input Monitoring", required: false, granted: true },
+        ],
+      }),
+      listAudioDevices: async () => ({
+        devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
+      }),
+      activateApp: async () => undefined,
+      playWav: async () => undefined,
+      sendHotkey: async () => undefined,
+    } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
+    const controller = new RunController(
+      store,
+      permissions,
+      new TargetAppManager(),
+      { activateApp: async () => undefined, closeApp: async () => undefined, playWav: async () => undefined, sendHotkey: async () => undefined } as any,
+      (chunks) => {
+        chunks.forEach((value, index) => {
+          setTimeout(() => {
+            controller.onInputEvent({ type: "input", tsMs: performance.now(), value });
+          }, 40 * (index + 1));
+        });
+      },
+    );
+
+    const preflight = await controller.run(config, {
+      appIds: ["selftest-b"],
+      sampleIds: ["sample-2"],
+      retryRootRunId: "history-run-1",
+    });
+
+    expect(preflight.ok).toBe(true);
+    const runs = store.listRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.appId).toBe("selftest-b");
+    expect(runs[0]?.sampleId).toBe("sample-2");
+    expect(runs[0]?.rawText).toBe("second transcript");
+    expect(runs[0]?.retryRootRunId).toBe("history-run-1");
+    expect(runs[0]?.retryCount).toBe(1);
+    store.close();
+  });
+
   it("runs a self-test sample end to end and persists records", async () => {
     root = await mkdtemp(join(tmpdir(), "vtc-run-"));
     const sampleRoot = join(root, "samples");
@@ -93,7 +223,7 @@ describe("RunController integration", () => {
       playWav: async () => undefined,
       sendHotkey: async () => undefined,
     } as any);
-    (permissions as any).checkAccessibilityPermission = () => false;
+    (permissions as any).checkAccessibilityPermission = () => true;
     const controller = new RunController(
       store,
       permissions,
@@ -123,6 +253,106 @@ describe("RunController integration", () => {
     expect(detail?.record.timeline.some((event) => event.eventType === "app_start")).toBe(true);
     expect(store.exportCsv()).toContain("trigger_stop_to_first_char_ms");
     expect(store.exportCsv()).toContain("self test transcript");
+    store.close();
+  });
+
+  it("uses a single helper hold session for hold_release apps", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-run-hold-"));
+    const sampleRoot = join(root, "samples");
+    const fakeAppPath = join(root, "Typeless.app");
+    await mkdir(sampleRoot, { recursive: true });
+    await mkdir(fakeAppPath, { recursive: true });
+    const wavPath = join(sampleRoot, "hold.wav");
+    await writeFile(wavPath, createWav());
+
+    const config = defaultConfig();
+    config.appLaunchDelayMs = 0;
+    config.focusInputDelayMs = 0;
+    config.closeAppDelayMs = 0;
+    config.sampleRoot = sampleRoot;
+    config.databasePath = join(root, "vtc.sqlite");
+    config.betweenSamplesDelayMs = 0;
+    config.resultTimeoutMs = 1000;
+    config.targetApps = [
+      {
+        ...config.targetApps.find((app) => app.id === "typeless")!,
+        enabled: true,
+        appFileName: fakeAppPath,
+        hotkeyChord: "Fn",
+        hotkeyTriggerMode: "hold_release",
+        hotkeyToAudioDelayMs: 25,
+        audioToTriggerStopDelayMs: 25,
+        resultTimeoutMs: 1000,
+        settleWindowMs: 80,
+      },
+    ];
+    config.audioSamples = [
+      {
+        id: "sample-1",
+        filePath: wavPath,
+        relativePath: "hold.wav",
+        displayName: "hold.wav",
+        expectedText: "hold transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["typeless"],
+        enabled: true,
+      },
+    ];
+
+    const store = new ResultStore(config.databasePath);
+    const helperCalls: string[] = [];
+    let controller: RunController;
+    const helper = {
+      activateApp: async () => {
+        helperCalls.push("activateApp");
+      },
+      closeApp: async () => {
+        helperCalls.push("closeApp");
+      },
+      playWav: async () => {
+        helperCalls.push("playWav");
+      },
+      playWavHoldingHotkey: async () => {
+        helperCalls.push("playWavHoldingHotkey");
+        setTimeout(() => {
+          controller.onInputEvent({ type: "input", tsMs: performance.now(), value: "hold transcript" });
+        }, 10);
+      },
+      sendHotkey: async () => {
+        helperCalls.push("sendHotkey");
+      },
+    };
+    const permissions = new PermissionManager({
+      available: true,
+      checkPermissions: async () => ({
+        permissions: [
+          { id: "accessibility", name: "Accessibility", required: true, granted: true },
+          { id: "automation", name: "Automation", required: false, granted: true },
+          { id: "input-monitoring", name: "Input Monitoring", required: false, granted: true },
+        ],
+      }),
+      listAudioDevices: async () => ({
+        devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
+      }),
+      activateApp: async () => undefined,
+      playWav: async () => undefined,
+      sendHotkey: async () => undefined,
+    } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
+    controller = new RunController(
+      store,
+      permissions,
+      new TargetAppManager(),
+      helper as any,
+      () => undefined,
+    );
+
+    const preflight = await controller.run(config);
+    expect(preflight.ok).toBe(true);
+    expect(helperCalls).toContain("playWavHoldingHotkey");
+    expect(helperCalls).not.toContain("sendHotkey");
+    expect(helperCalls).not.toContain("playWav");
     store.close();
   });
 

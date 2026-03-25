@@ -1,14 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { nanoid } from "nanoid";
-import type { AppConfig, InputObservationEvent } from "../shared/types";
+import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions } from "../shared/types";
 import { SampleManager } from "./sample-manager";
 import { ConfigStore } from "./config-store";
 import { ResultStore } from "./result-store";
 import { PermissionManager } from "./permission-manager";
 import { RunController } from "./run-controller";
 import { formatTimelineLog } from "./run-logging";
+import { BuiltinSampleMaterializer } from "./builtin-sample-materializer";
 
 interface IpcDeps {
   configStore: ConfigStore;
@@ -25,6 +26,7 @@ interface IpcDeps {
 export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   let activeRun: Promise<unknown> | null = null;
   const timelineFirstTsByRunId = new Map<string, number>();
+  const builtinSamples = new BuiltinSampleMaterializer();
 
   ipcMain.handle("settings:get", async () => ({
     ...deps.getConfig(),
@@ -45,7 +47,20 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   });
 
   ipcMain.handle("samples:rescan", async (_event, root: string) => {
-    return await deps.sampleManager.scan(root);
+    return await deps.sampleManager.scan(root, deps.getConfig().audioSamples);
+  });
+  ipcMain.handle("samples:getPreviewData", async (_event, sample: AudioSample) => {
+    const resolvedPath = await builtinSamples.resolve(sample);
+    const buffer = await readFile(resolvedPath);
+    const lowerPath = resolvedPath.toLowerCase();
+    const mimeType = lowerPath.endsWith(".mp3")
+      ? "audio/mpeg"
+      : lowerPath.endsWith(".ogg")
+        ? "audio/ogg"
+        : lowerPath.endsWith(".aiff") || lowerPath.endsWith(".aif")
+          ? "audio/aiff"
+        : "audio/wav";
+    return `data:${mimeType};base64,${buffer.toString("base64")}`;
   });
 
   ipcMain.handle("database:pickPath", async () => {
@@ -100,7 +115,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return { ok: true };
   });
 
-  ipcMain.handle("run:start", async () => {
+  ipcMain.handle("run:start", async (_event, options?: RunStartOptions) => {
     const phase = deps.runController.getProgress().phase;
     const terminal = phase === "idle" || phase === "completed" || phase === "failed" || phase === "cancelled";
 
@@ -115,7 +130,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
       }
     }
 
-    activeRun = deps.runController.run(deps.getConfig());
+    activeRun = deps.runController.run(deps.getConfig(), options);
     try {
       return await activeRun;
     } finally {
@@ -145,6 +160,32 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     if (result.canceled || !result.filePath) return undefined;
     await writeFile(result.filePath, deps.resultStore.exportCsv(runSessionId), "utf8");
     return result.filePath;
+  });
+  ipcMain.handle("results:pickImportCsv", async () => {
+    const result = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    return result.canceled ? undefined : result.filePaths[0];
+  });
+  ipcMain.handle("results:importCsv", async (_event, filePath: string) => {
+    const csvText = await readFile(filePath, "utf8");
+    return deps.resultStore.importCsv(
+      csvText,
+      filePath,
+      deps.getConfig(),
+      deps.getPermissions() as any,
+      deps.getDevices() as any,
+    );
+  });
+  ipcMain.handle("results:importCsvContent", async (_event, csvText: string, sourceName: string) => {
+    return deps.resultStore.importCsv(
+      csvText,
+      sourceName,
+      deps.getConfig(),
+      deps.getPermissions() as any,
+      deps.getDevices() as any,
+    );
   });
   ipcMain.on("run:inputEvent", (_event, payload: InputObservationEvent) => deps.runController.onInputEvent(payload));
 }

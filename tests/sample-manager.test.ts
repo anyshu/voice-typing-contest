@@ -41,4 +41,23 @@ describe("SampleManager", () => {
     ]);
     expect(samples.every((sample) => sample.durationMs > 0)).toBe(true);
   });
+
+  it("preserves sample id and enabled state when rescanning the same files", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-samples-"));
+    await mkdir(join(root, "english"), { recursive: true });
+    await writeFile(join(root, "english", "line-1.wav"), "wav");
+
+    const manager = new SampleManager();
+    const firstScan = await manager.scan(root);
+    const rescanned = await manager.scan(root, [{
+      ...firstScan[0],
+      enabled: false,
+      expectedText: "keep me",
+    }]);
+
+    expect(rescanned).toHaveLength(1);
+    expect(rescanned[0].id).toBe(firstScan[0].id);
+    expect(rescanned[0].enabled).toBe(false);
+    expect(rescanned[0].expectedText).toBe("keep me");
+  });
 });

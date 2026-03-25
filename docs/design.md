@@ -1,5 +1,7 @@
 # Voice Typing Contest Design
 
+Current spec baseline: `v0.1.3`
+
 ## 1. Goal
 
 Build a macOS Electron benchmark tool for horizontal evaluation of voice typing apps, with the renderer implemented in Vue.
@@ -11,7 +13,7 @@ The tool drives multiple target apps with the same audio samples and records:
 - pass/fail status and failure reason
 - comparable latency metrics across apps
 
-The initial targets include apps like Xiguashuo and Wispr Flow.
+The initial targets include apps like Xiguashuo, Wispr Flow, and Typeless.
 
 Assumption for v1:
 
@@ -47,6 +49,7 @@ Hotkey constraint for automated runs in the current implementation:
 - standalone `Fn` is exposed by a dedicated UI action because Electron cannot capture it reliably from raw key events
 - `Fn + other key` is supported in the current helper path
 - system-reserved shortcuts may still be intercepted by macOS first, so the tester should still prefer non-reserved chords when possible
+- the built-in Wispr Flow and Typeless presets default to standalone `Fn` with `hold_release`
 
 ### 3.2 Batch flow
 
@@ -57,13 +60,15 @@ For each target app:
 3. bring the benchmark window back to front
 4. focus the built-in input box
 5. wait global `focusInputDelayMs`
-6. send the configured hotkey trigger start according to the app profile
+6. trigger according to the app profile:
+   - `hold_release`: press and keep holding the configured hotkey
+   - `press_start_press_stop`: send one full press-release cycle as start
 7. wait app-level `hotkeyToAudioDelayMs`
 8. play the WAV sample to the configured output device
 9. when playback ends, wait app-level `audioToTriggerStopDelayMs`
 10. complete the trigger according to mode:
-   - `hold_release`: send key up
-   - `press_start_press_stop`: send the same hotkey again as stop
+   - `hold_release`: release the same held hotkey
+   - `press_start_press_stop`: send the same hotkey again as a second full press-release cycle
 11. observe the input box until text stabilizes or global timeout fires
 12. record result, raw text, timestamps, metrics, and failure reason
 13. wait global `betweenSamplesDelayMs`
@@ -170,7 +175,7 @@ The implemented architecture is:
 - Electron main process for orchestration
 - native macOS helper in Swift for privileged system actions
 - fallback helper with the same command contract for local development environments where Swift helper build or runtime is not available
-- SQLite for local result storage
+- SQLite for local result storage, implemented through `better-sqlite3` in the Electron main process to avoid Node's experimental `node:sqlite` runtime warning; plain Node test runs may still use `node:sqlite` for ABI compatibility
 
 ### 6.2 Why a native helper
 
@@ -191,13 +196,14 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `设置`, `怎么开始`, `当前实现`
+- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `版本说明`, with `App管理` moved into the upper run-focused group directly below `样本管理`
 - configuration UI
+- target app CRUD now lives in dedicated `App管理`, using compact per-app cards with a single-row header for app name, app kind, enable state, toggle, and delete action
 - permission status UI
 - built-in input box for typed output
 - live run timeline
 - latest-session summary on `主控台`
-- dedicated `测试历史` page for browsing persisted sessions and exporting one batch at a time
+- dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, importing compatible result CSV files as synthetic history sessions, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter; CSV export should keep the original `run_id` while exposing the latest attempt as `latest_run_id`, and sample-path hover/focus should reveal the captured ASR text without widening the table
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 
@@ -296,6 +302,8 @@ Hotkey automation rule in the current implementation:
 
 - supported automation chords include combinations composed from `Cmd`, `Ctrl`, `Option`, `Shift`, and a regular key
 - `Fn` is also supported, including standalone `Fn`, but standalone `Fn` is set through a dedicated UI action instead of raw keyboard capture
+- `hold_release` means "press and keep held until the audio finishes, then release", not "send a start trigger and later send a stop trigger"
+- for `hold_release`, helper dispatch should keep the entire hold / audio / release sequence inside one helper session so modifier-only keys such as `Fn` are simulated as a continuous hold instead of split fire-and-forget events
 - `Ctrl + Space` and similar reserved shortcuts are still risky in practice when macOS intercepts them first
 - therefore the tester should still prefer a non-reserved chord when possible
 
@@ -316,6 +324,8 @@ Suggested fields:
 `relativePath` should preserve subfolder structure under the sample root so the UI can display nested test sets clearly.
 
 `expectedText` is optional, but once present it enables basic accuracy scoring.
+
+`enabled` decides whether the sample joins later benchmark batches. The sample-management page should let the tester toggle each sample individually and show enabled / disabled / total counts at a glance.
 
 ## 11. UI Localization
 

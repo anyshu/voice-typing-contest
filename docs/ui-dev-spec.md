@@ -11,12 +11,13 @@ The renderer currently uses a desktop shell with:
 Current first-level pages:
 
 - `主控台`
-- `运行前检查`
 - `样本`
 - `测试历史`
 - `设置`
+- `运行前检查`
 - `怎么开始`
-- `当前实现`
+- `常见问题`
+- `版本说明`
 
 `开始` and `关闭` belong only to `主控台`.
 
@@ -78,12 +79,13 @@ Current first-level pages:
 | Scene | Hugeicon |
 |---|---|
 | 主控台 | `DashboardSquare01Icon` |
-| 运行前检查 | `CheckListIcon` |
 | 样本 | `FolderAudioIcon` |
 | 测试历史 | `Analytics01Icon` |
 | 设置 | `Settings01Icon` |
+| 运行前检查 | `CheckListIcon` |
 | 怎么开始 | `BookOpen01Icon` |
-| 当前实现 | `InformationCircleIcon` |
+| 常见问题 | `HelpCircleIcon` |
+| 版本说明 | `InformationCircleIcon` |
 | 开始 | `PlayCircleIcon` |
 | 关闭 | `StopCircleIcon` |
 | 权限 | `Shield01Icon` |
@@ -99,6 +101,8 @@ Main page layout is:
 - latest-session summary
 
 The persisted session list now belongs to the dedicated `测试历史` page.
+
+The FAQ entry should be labeled `常见问题`, and the first speaker troubleshooting item should read `为什么开始测试后，扬声器没声音了？`.
 
 ### 4.1 Summary strip
 
@@ -176,9 +180,47 @@ The `测试历史` page is grouped as:
 - app
 - sample row
 
-The session header owns the `导出本轮 CSV` action.
+The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 CSV` action.
+
+Each sample row should keep the path text truncated in the table cell, but hovering or keyboard focusing that path must reveal a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip should fall back to the failure reason or an explicit "未捕获到结果" message.
+
+When a sample row has retry history, the exported CSV should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+
+Each session header should render the session start time first and then the app label in a heavier weight, so a single-app session reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`.
+
+If a session contains one or more failed rows, only the session summary line text should switch to the danger color; do not add a red background, border, or full-row highlight.
 
 Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
+
+### 4.6 Sample page
+
+The `样本管理` page should show:
+
+- the selected sample root
+- a compact summary strip with enabled / disabled / total sample counts
+- one row per sample with path, language, duration, current status, and an enable toggle
+
+On desktop widths, the sample path and the `ZH · 8.93 秒` style language-duration metadata should stay on the same line, with the path truncating first if horizontal space runs short.
+
+Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
+
+### 4.7 App page
+
+The `App管理` page should show:
+
+- a compact summary strip with total apps, enabled apps, enabled real apps, and builtin self-test state
+- one compact card per app
+- the nav entry in the upper group, directly below `样本管理`
+
+Each app card should keep the header on one row whenever width allows:
+
+- app name first
+- then app kind and enabled-state pills
+- then the enable toggle and delete action on the right
+
+The editable fields should prefer single-row label-and-control layout when the content is short enough, including `名称`, `.app 文件名`, `启动命令`, and `触发方式`.
+
+`备注` should follow the same aligned form-row structure as the rest of the fields, even though it uses a textarea.
 
 ## 5. Settings Page Structure
 
@@ -226,6 +268,16 @@ Per-app settings currently keep only app-specific trigger behavior:
 - enabled flag
 
 Standalone `Fn` is not captured reliably by Electron keyboard events, so the UI must provide an explicit `设为 Fn` action.
+
+Trigger mode copy should reflect two different behaviors instead of two generic "trigger" variants:
+
+- `hold_release`: press and keep held, then release to finish
+- `press_start_press_stop`: press and release once to start, then press and release again to finish
+
+Built-in presets:
+
+- `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
+- `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
 
 ### 5.3 Permissions and devices
 

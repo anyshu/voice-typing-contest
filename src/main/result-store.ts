@@ -1,14 +1,166 @@
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import type { AppConfig, ResultDetail, RunEventRecord, RunSessionRecord, RunSessionSummary, TestRunRecord } from "../shared/types";
+import { nanoid } from "nanoid";
+import type { AppConfig, AudioDevice, CsvImportSummary, PermissionSnapshot, ResultDetail, ResultStatus, RunEventRecord, RunSessionRecord, RunSessionSummary, TestRunRecord } from "../shared/types";
+
+type DatabaseLike = {
+  exec(sql: string): void;
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown;
+    get(...params: unknown[]): unknown;
+    all(...params: unknown[]): unknown[];
+  };
+  close(): void;
+};
+
+const require = createRequire(import.meta.url);
+
+function openDatabase(dbPath: string): DatabaseLike {
+  if (process.versions.electron) {
+    const BetterSqlite3 = require("better-sqlite3") as typeof import("better-sqlite3");
+    return new BetterSqlite3(dbPath);
+  }
+
+  const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+  return new DatabaseSync(dbPath);
+}
+
+type ImportedCsvRow = {
+  appName: string;
+  samplePath: string;
+  status: ResultStatus;
+  failureCategory?: string;
+  failureReason?: string;
+  triggerStopToFirstCharMs?: number;
+  triggerStopToFinalTextMs?: number;
+  finalTextLength: number;
+  rawText: string;
+  createdAt: string;
+};
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        cell += "\"";
+        index += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === ",") {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") {
+        index += 1;
+      }
+      row.push(cell);
+      if (row.some((value) => value.length > 0)) {
+        rows.push(row);
+      }
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    if (row.some((value) => value.length > 0)) {
+      rows.push(row);
+    }
+  }
+
+  return rows;
+}
+
+function normalizeImportedStatus(value: string): ResultStatus {
+  if (value === "failed" || value === "cancelled" || value === "success") {
+    return value;
+  }
+  return "success";
+}
+
+function phaseFromImportedStatus(status: ResultStatus): TestRunRecord["phase"] {
+  if (status === "success") return "completed";
+  if (status === "cancelled") return "cancelled";
+  return "failed";
+}
+
+function parseOptionalInteger(value?: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeImportedRows(csvText: string): ImportedCsvRow[] {
+  const rows = parseCsv(csvText);
+  const [header, ...body] = rows;
+  if (!header?.length) {
+    throw new Error("CSV 为空，无法导入。");
+  }
+
+  const indexByName = new Map(header.map((name, index) => [name.trim(), index]));
+  const requiredColumns = [
+    "app_name",
+    "sample_path",
+    "status",
+    "final_text_length",
+    "raw_text",
+    "created_at",
+  ];
+
+  for (const column of requiredColumns) {
+    if (!indexByName.has(column)) {
+      throw new Error(`CSV 缺少必需列：${column}`);
+    }
+  }
+
+  return body.map((row, rowIndex) => {
+    const getValue = (name: string): string => row[indexByName.get(name) ?? -1] ?? "";
+    const createdAt = getValue("created_at").trim();
+    if (!createdAt) {
+      throw new Error(`第 ${rowIndex + 2} 行缺少 created_at，无法导入。`);
+    }
+
+    return {
+      appName: getValue("app_name").trim() || "Imported App",
+      samplePath: getValue("sample_path").trim() || `imported-sample-${rowIndex + 1}`,
+      status: normalizeImportedStatus(getValue("status").trim()),
+      failureCategory: getValue("failure_category").trim() || undefined,
+      failureReason: getValue("failure_reason").trim() || undefined,
+      triggerStopToFirstCharMs: parseOptionalInteger(getValue("trigger_stop_to_first_char_ms")),
+      triggerStopToFinalTextMs: parseOptionalInteger(getValue("trigger_stop_to_final_text_ms")),
+      finalTextLength: parseOptionalInteger(getValue("final_text_length")) ?? getValue("raw_text").length,
+      rawText: getValue("raw_text"),
+      createdAt,
+    };
+  });
+}
 
 export class ResultStore {
-  private readonly db: DatabaseSync;
+  private readonly db: DatabaseLike;
 
   constructor(private readonly dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new DatabaseSync(dbPath);
+    this.db = openDatabase(dbPath);
     this.migrate();
   }
 
@@ -57,6 +209,8 @@ export class ResultStore {
         input_event_count INTEGER NOT NULL,
         final_text_length INTEGER NOT NULL,
         created_at TEXT NOT NULL,
+        retry_root_run_id TEXT,
+        retry_attempt INTEGER NOT NULL DEFAULT 0,
         timeline_json TEXT NOT NULL DEFAULT '[]'
       );
       CREATE TABLE IF NOT EXISTS run_events (
@@ -78,6 +232,12 @@ export class ResultStore {
     }
     if (!testRunColumnNames.has("timeline_json")) {
       this.db.exec("ALTER TABLE test_runs ADD COLUMN timeline_json TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!testRunColumnNames.has("retry_root_run_id")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN retry_root_run_id TEXT");
+    }
+    if (!testRunColumnNames.has("retry_attempt")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN retry_attempt INTEGER NOT NULL DEFAULT 0");
     }
   }
 
@@ -117,8 +277,9 @@ export class ResultStore {
         id, run_session_id, app_id, app_name, sample_id, sample_path, status, phase,
         failure_category, failure_reason, raw_text, normalized_text, expected_text,
         hotkey_to_audio_ms, trigger_stop_to_first_char_ms, trigger_stop_to_final_text_ms,
-        total_run_ms, input_event_count, final_text_length, created_at, timeline_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_run_ms, input_event_count, final_text_length, created_at,
+        retry_root_run_id, retry_attempt, timeline_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.runSessionId,
@@ -140,8 +301,19 @@ export class ResultStore {
       record.inputEventCount,
       record.finalTextLength,
       record.createdAt,
+      record.retryRootRunId ?? null,
+      record.retryAttempt ?? 0,
       JSON.stringify(record.timeline),
     );
+  }
+
+  getNextRetryAttempt(rootRunId: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM test_runs
+      WHERE id = ? OR retry_root_run_id = ?
+    `).get(rootRunId, rootRunId) as { count?: number } | undefined;
+    return Math.max(0, row?.count ?? 0);
   }
 
   appendEvent(record: RunEventRecord): void {
@@ -181,15 +353,14 @@ export class ResultStore {
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
         created_at AS createdAt,
+        retry_root_run_id AS retryRootRunId,
+        retry_attempt AS retryAttempt,
         timeline_json AS timelineJson
       FROM test_runs
-      ${sessionId ? "WHERE run_session_id = ?" : ""}
       ORDER BY created_at DESC
     `;
-    const rows = (sessionId
-      ? this.db.prepare(query).all(sessionId)
-      : this.db.prepare(query).all()) as Array<TestRunRecord & { timelineJson?: string }>;
-    return rows.map(({ id, timelineJson, ...row }) => {
+    const rows = this.db.prepare(query).all() as Array<TestRunRecord & { timelineJson?: string }>;
+    const normalizedRows = rows.map(({ id, timelineJson, ...row }) => {
       const timeline = this.parseTimeline(timelineJson);
       return {
         id,
@@ -197,24 +368,55 @@ export class ResultStore {
         timeline: timeline.length ? timeline : this.listEventsForRun(id),
       };
     });
+    const rowById = new Map(normalizedRows.map((row) => [row.id, row]));
+    const grouped = new Map<string, TestRunRecord[]>();
+    for (const row of normalizedRows) {
+      const rootId = row.retryRootRunId ?? row.id;
+      grouped.set(rootId, [...(grouped.get(rootId) ?? []), row]);
+    }
+
+    const collapsedRows = [...grouped.entries()].map(([rootId, chain]) => {
+      const root = rowById.get(rootId) ?? chain[chain.length - 1]!;
+      const latest = [...chain].sort((left, right) => {
+        if (left.createdAt === right.createdAt) {
+          return (right.retryAttempt ?? 0) - (left.retryAttempt ?? 0);
+        }
+        return right.createdAt.localeCompare(left.createdAt);
+      })[0]!;
+      return {
+        ...latest,
+        runSessionId: root.runSessionId,
+        retryRootRunId: rootId === latest.id ? latest.retryRootRunId : rootId,
+        retryCount: Math.max(...chain.map((item) => item.retryAttempt ?? 0)),
+      } satisfies TestRunRecord;
+    }).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    return sessionId ? collapsedRows.filter((row) => row.runSessionId === sessionId) : collapsedRows;
   }
 
   listSessions(): RunSessionSummary[] {
-    return this.db.prepare(`
+    const sessions = this.db.prepare(`
       SELECT
-        run_sessions.id AS id,
-        run_sessions.started_at AS startedAt,
-        run_sessions.finished_at AS finishedAt,
-        run_sessions.status AS status,
-        COUNT(test_runs.id) AS runCount,
-        COALESCE(SUM(CASE WHEN test_runs.status = 'success' THEN 1 ELSE 0 END), 0) AS successCount,
-        COALESCE(SUM(CASE WHEN test_runs.status = 'failed' THEN 1 ELSE 0 END), 0) AS failedCount,
-        COALESCE(SUM(CASE WHEN test_runs.status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelledCount
+        id,
+        started_at AS startedAt,
+        finished_at AS finishedAt,
+        status
       FROM run_sessions
-      LEFT JOIN test_runs ON test_runs.run_session_id = run_sessions.id
-      GROUP BY run_sessions.id
-      ORDER BY run_sessions.started_at DESC
-    `).all() as unknown as RunSessionSummary[];
+      ORDER BY started_at DESC
+    `).all() as Array<Pick<RunSessionSummary, "id" | "startedAt" | "finishedAt" | "status">>;
+    const collapsedRuns = this.listRuns();
+    return sessions
+      .map((session) => {
+        const sessionRuns = collapsedRuns.filter((item) => item.runSessionId === session.id);
+        return {
+          ...session,
+          runCount: sessionRuns.length,
+          successCount: sessionRuns.filter((item) => item.status === "success").length,
+          failedCount: sessionRuns.filter((item) => item.status === "failed").length,
+          cancelledCount: sessionRuns.filter((item) => item.status === "cancelled").length,
+        };
+      })
+      .filter((session) => session.runCount > 0);
   }
 
   getRunDetail(runId: string): ResultDetail | undefined {
@@ -240,6 +442,8 @@ export class ResultStore {
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
         created_at AS createdAt,
+        retry_root_run_id AS retryRootRunId,
+        retry_attempt AS retryAttempt,
         timeline_json AS timelineJson
       FROM test_runs
       WHERE id = ?
@@ -282,6 +486,10 @@ export class ResultStore {
   exportCsv(sessionId?: string): string {
     const rows = this.listRuns(sessionId);
     const headers = [
+      "run_id",
+      "latest_run_id",
+      "retry_root_run_id",
+      "retry_attempt",
       "app_name",
       "sample_path",
       "status",
@@ -289,13 +497,19 @@ export class ResultStore {
       "failure_reason",
       "trigger_stop_to_first_char_ms",
       "trigger_stop_to_final_text_ms",
+      "retry_count",
       "final_text_length",
       "raw_text",
       "created_at",
     ];
     const csvRows = [headers.join(",")];
     for (const row of rows) {
+      const rootRunId = row.retryRootRunId ?? row.id;
       const line = [
+        rootRunId,
+        row.id,
+        rootRunId,
+        row.retryAttempt ?? 0,
         row.appName,
         row.samplePath,
         row.status,
@@ -303,6 +517,7 @@ export class ResultStore {
         row.failureReason ?? "",
         row.triggerStopToFirstCharMs ?? "",
         row.triggerStopToFinalTextMs ?? "",
+        row.retryCount ?? row.retryAttempt ?? 0,
         row.finalTextLength,
         row.rawText,
         row.createdAt,
@@ -310,6 +525,87 @@ export class ResultStore {
       csvRows.push(line);
     }
     return csvRows.join("\n");
+  }
+
+  importCsv(
+    csvText: string,
+    sourcePath: string,
+    configSnapshot: AppConfig,
+    permissionSnapshot: PermissionSnapshot[],
+    deviceSnapshot: AudioDevice[],
+  ): CsvImportSummary {
+    const importedRows = normalizeImportedRows(csvText).sort((left, right) => (
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+    ));
+    if (!importedRows.length) {
+      throw new Error("CSV 里没有可导入的结果。");
+    }
+
+    const sessionId = `import-${nanoid(8)}`;
+    const sampleIds = new Map<string, string>();
+    const appIds = new Map<string, string>();
+    const importStartedAtMs = Date.now();
+    const importedCreatedAts = importedRows.map((_, index) => new Date(importStartedAtMs + index * 1000).toISOString());
+    const startedAt = importedCreatedAts[0]!;
+    const finishedAt = importedCreatedAts[importedCreatedAts.length - 1]!;
+
+    for (const row of importedRows) {
+      if (!appIds.has(row.appName)) {
+        appIds.set(row.appName, `imported-app-${nanoid(8)}`);
+      }
+      if (!sampleIds.has(row.samplePath)) {
+        sampleIds.set(row.samplePath, `imported-sample-${nanoid(8)}`);
+      }
+    }
+
+    this.createSession({
+      id: sessionId,
+      startedAt,
+      finishedAt,
+      selectedAppIds: [...appIds.values()],
+      selectedSampleIds: [...sampleIds.values()],
+      permissionSnapshot,
+      deviceSnapshot,
+      configSnapshot,
+      status: importedRows.some((row) => row.status === "failed")
+        ? "failed"
+        : importedRows.some((row) => row.status === "cancelled")
+          ? "cancelled"
+          : "completed",
+    });
+
+    for (const [index, row] of importedRows.entries()) {
+      const samplePath = row.samplePath;
+      this.insertRun({
+        id: `imported-run-${nanoid(10)}`,
+        runSessionId: sessionId,
+        appId: appIds.get(row.appName)!,
+        appName: row.appName,
+        sampleId: sampleIds.get(samplePath)!,
+        samplePath,
+        status: row.status,
+        phase: phaseFromImportedStatus(row.status),
+        failureCategory: row.failureCategory as TestRunRecord["failureCategory"],
+        failureReason: row.failureReason ?? (row.status === "failed" ? "Imported from CSV" : undefined),
+        rawText: row.rawText,
+        normalizedText: row.rawText,
+        triggerStopToFirstCharMs: row.triggerStopToFirstCharMs,
+        triggerStopToFinalTextMs: row.triggerStopToFinalTextMs,
+        inputEventCount: 0,
+        finalTextLength: row.finalTextLength,
+        createdAt: importedCreatedAts[index]!,
+        timeline: [],
+      });
+    }
+
+    return {
+      sessionId,
+      importedCount: importedRows.length,
+      appCount: appIds.size,
+      startedAt,
+      finishedAt,
+      sourcePath,
+    };
   }
 
   close(): void {

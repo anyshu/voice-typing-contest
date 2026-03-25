@@ -61,11 +61,18 @@ async function runHelper<T>(helperPath: string, payload: Record<string, unknown>
     child.on("error", (error) => finishReject(error));
     child.on("close", (code) => {
       if (settled) return;
+      const parsedResponse = (() => {
+        try {
+          return JSON.parse(stdout) as HelperResponse<T>;
+        } catch {
+          return undefined;
+        }
+      })();
       if (code !== 0) {
-        finishReject(new Error(stderr || `Helper exited with code ${code}`));
+        finishReject(new Error(parsedResponse?.error || stderr || `Helper exited with code ${code}`));
         return;
       }
-      const response = JSON.parse(stdout) as HelperResponse<T>;
+      const response = parsedResponse ?? JSON.parse(stdout) as HelperResponse<T>;
       if (!response.ok) {
         finishReject(new Error(response.error || "Helper error"));
         return;
@@ -129,6 +136,25 @@ export class HelperClient {
   async playWav(filePath: string, outputDeviceId: string, signal?: AbortSignal): Promise<void> {
     if (!this.available) return;
     await runHelper(this.helperPath, { command: "playWav", filePath, outputDeviceId }, signal);
+  }
+
+  async playWavHoldingHotkey(
+    chord: string,
+    filePath: string,
+    outputDeviceId: string,
+    hotkeyToAudioDelayMs: number,
+    audioToTriggerStopDelayMs: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.available) return;
+    await runHelper(this.helperPath, {
+      command: "playWavHoldingHotkey",
+      chord,
+      filePath,
+      outputDeviceId,
+      hotkeyToAudioDelayMs,
+      audioToTriggerStopDelayMs,
+    }, signal);
   }
 
   async sendHotkey(chord: string, phase: "down" | "up" | "press", signal?: AbortSignal): Promise<void> {

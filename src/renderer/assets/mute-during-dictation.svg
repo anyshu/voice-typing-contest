@@ -1,0 +1,12 @@
+<svg width="1417" height="148" viewBox="0 0 1417 148" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1417" height="148" rx="18" fill="#F5F6F9"/>
+  <rect x="1" y="1" width="1415" height="146" rx="17" fill="white" stroke="#E5E7EB"/>
+  <text x="33" y="54" fill="#101828" font-family="'PingFang SC', 'Noto Sans SC', sans-serif" font-size="22" font-weight="600">
+    语音输入时静音
+  </text>
+  <text x="33" y="99" fill="#8A8F98" font-family="'PingFang SC', 'Noto Sans SC', sans-serif" font-size="18" font-weight="400">
+    在语音输入时自动静音其他活动音频。
+  </text>
+  <rect x="1275" y="27" width="60" height="36" rx="18" fill="#2F64F1"/>
+  <circle cx="1318" cy="45" r="15" fill="white"/>
+</svg>

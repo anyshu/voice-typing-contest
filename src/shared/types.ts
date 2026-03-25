@@ -64,6 +64,15 @@ export interface TargetAppProfile {
   notes: string;
 }
 
+export interface InstalledTargetAppInfo {
+  profileId: string;
+  installed: boolean;
+  isBuiltin: boolean;
+  appPath?: string;
+  version?: string;
+  buildVersion?: string;
+}
+
 export interface AudioSample {
   id: string;
   filePath: string;
@@ -144,6 +153,7 @@ export interface TestRunRecord {
   runSessionId: string;
   appId: string;
   appName: string;
+  appVersion?: string;
   sampleId: string;
   samplePath: string;
   status: ResultStatus;

@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import type {
   AppConfig,
   FailureCategory,
+  InstalledTargetAppInfo,
   InputObservationEvent,
   PreflightReport,
   ResultStatus,
@@ -35,6 +36,7 @@ interface PreparedRunContext {
   runnableApps: Array<{
     app: AppConfig["targetApps"][number];
     resolved: string | undefined;
+    installedInfo?: InstalledTargetAppInfo;
     isSelftest: boolean;
     ok: boolean;
     runnable: boolean;
@@ -130,7 +132,7 @@ export class RunController extends EventEmitter {
     const totalRuns = runnableApps.length * samples.length;
     const runTimelineMap = new Map<string, RunEventRecord[]>();
 
-    for (const { app } of runnableApps) {
+    for (const { app, installedInfo } of runnableApps) {
       const appStartRecord: RunEventRecord = {
         id: nanoid(),
         runId: sessionId,
@@ -373,6 +375,7 @@ export class RunController extends EventEmitter {
             runSessionId: sessionId,
             appId: app.id,
             appName: app.name,
+            appVersion: installedInfo?.version ?? installedInfo?.buildVersion,
             sampleId: sample.id,
             samplePath: sample.relativePath,
             status: "success",
@@ -424,6 +427,7 @@ export class RunController extends EventEmitter {
             runSessionId: sessionId,
             appId: app.id,
             appName: app.name,
+            appVersion: installedInfo?.version ?? installedInfo?.buildVersion,
             sampleId: sample.id,
             samplePath: sample.relativePath,
             status,
@@ -528,11 +532,13 @@ export class RunController extends EventEmitter {
       : config.audioSamples.filter((item) => item.enabled);
     const resolvedApps = await Promise.all(
       enabledApps.map(async (app) => {
-        const resolved = await this.targets.resolve(app);
-        const isSelftest = Boolean(resolved?.startsWith("selftest://"));
+        const installedInfo = await this.inspectTargetApp(app);
+        const resolved = installedInfo.appPath ?? (installedInfo.isBuiltin ? app.launchCommand : undefined);
+        const isSelftest = Boolean(installedInfo.isBuiltin || resolved?.startsWith("selftest://"));
         return {
           app,
           resolved,
+          installedInfo,
           isSelftest,
           ok: Boolean(resolved),
         };
@@ -671,5 +677,18 @@ export class RunController extends EventEmitter {
     };
     this.store.updateSessionStatus(sessionId, "cancelled", new Date().toISOString());
     this.emit("progress", { ...this.progress });
+  }
+
+  private async inspectTargetApp(app: AppConfig["targetApps"][number]): Promise<InstalledTargetAppInfo> {
+    if (typeof (this.targets as TargetAppManager & { inspect?: unknown }).inspect === "function") {
+      return await this.targets.inspect(app);
+    }
+    const resolved = await this.targets.resolve(app);
+    return {
+      profileId: app.id,
+      installed: Boolean(resolved),
+      isBuiltin: Boolean(resolved?.startsWith("selftest://")),
+      appPath: resolved && !resolved.startsWith("selftest://") ? resolved : undefined,
+    };
   }
 }

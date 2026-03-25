@@ -28,6 +28,7 @@ function openDatabase(dbPath: string): DatabaseLike {
 
 type ImportedCsvRow = {
   appName: string;
+  appVersion?: string;
   samplePath: string;
   status: ResultStatus;
   failureCategory?: string;
@@ -142,6 +143,7 @@ function normalizeImportedRows(csvText: string): ImportedCsvRow[] {
 
     return {
       appName: getValue("app_name").trim() || "Imported App",
+      appVersion: getValue("app_version").trim() || undefined,
       samplePath: getValue("sample_path").trim() || `imported-sample-${rowIndex + 1}`,
       status: normalizeImportedStatus(getValue("status").trim()),
       failureCategory: getValue("failure_category").trim() || undefined,
@@ -190,6 +192,7 @@ export class ResultStore {
         run_session_id TEXT NOT NULL,
         app_id TEXT NOT NULL,
         app_name TEXT NOT NULL,
+        app_version TEXT,
         sample_id TEXT NOT NULL,
         sample_path TEXT NOT NULL,
         status TEXT NOT NULL,
@@ -239,6 +242,9 @@ export class ResultStore {
     if (!testRunColumnNames.has("retry_attempt")) {
       this.db.exec("ALTER TABLE test_runs ADD COLUMN retry_attempt INTEGER NOT NULL DEFAULT 0");
     }
+    if (!testRunColumnNames.has("app_version")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN app_version TEXT");
+    }
   }
 
   syncConfig(config: AppConfig): void {
@@ -274,17 +280,18 @@ export class ResultStore {
   insertRun(record: TestRunRecord): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO test_runs (
-        id, run_session_id, app_id, app_name, sample_id, sample_path, status, phase,
+        id, run_session_id, app_id, app_name, app_version, sample_id, sample_path, status, phase,
         failure_category, failure_reason, raw_text, normalized_text, expected_text,
         hotkey_to_audio_ms, trigger_stop_to_first_char_ms, trigger_stop_to_final_text_ms,
         total_run_ms, input_event_count, final_text_length, created_at,
         retry_root_run_id, retry_attempt, timeline_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.runSessionId,
       record.appId,
       record.appName,
+      record.appVersion ?? null,
       record.sampleId,
       record.samplePath,
       record.status,
@@ -337,6 +344,7 @@ export class ResultStore {
         run_session_id AS runSessionId,
         app_id AS appId,
         app_name AS appName,
+        app_version AS appVersion,
         sample_id AS sampleId,
         sample_path AS samplePath,
         status,
@@ -426,6 +434,7 @@ export class ResultStore {
         run_session_id AS runSessionId,
         app_id AS appId,
         app_name AS appName,
+        app_version AS appVersion,
         sample_id AS sampleId,
         sample_path AS samplePath,
         status,
@@ -491,6 +500,7 @@ export class ResultStore {
       "retry_root_run_id",
       "retry_attempt",
       "app_name",
+      "app_version",
       "sample_path",
       "status",
       "failure_category",
@@ -511,6 +521,7 @@ export class ResultStore {
         rootRunId,
         row.retryAttempt ?? 0,
         row.appName,
+        row.appVersion ?? "",
         row.samplePath,
         row.status,
         row.failureCategory ?? "",
@@ -581,6 +592,7 @@ export class ResultStore {
         runSessionId: sessionId,
         appId: appIds.get(row.appName)!,
         appName: row.appName,
+        appVersion: row.appVersion,
         sampleId: sampleIds.get(samplePath)!,
         samplePath,
         status: row.status,

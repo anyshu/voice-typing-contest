@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { nanoid } from "nanoid";
-import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions } from "../shared/types";
+import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions, TargetAppProfile } from "../shared/types";
 import { SampleManager } from "./sample-manager";
 import { ConfigStore } from "./config-store";
 import { ResultStore } from "./result-store";
@@ -10,6 +10,7 @@ import { PermissionManager } from "./permission-manager";
 import { RunController } from "./run-controller";
 import { formatTimelineLog } from "./run-logging";
 import { BuiltinSampleMaterializer } from "./builtin-sample-materializer";
+import { TargetAppManager } from "./target-app-manager";
 
 interface IpcDeps {
   configStore: ConfigStore;
@@ -27,6 +28,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   let activeRun: Promise<unknown> | null = null;
   const timelineFirstTsByRunId = new Map<string, number>();
   const builtinSamples = new BuiltinSampleMaterializer();
+  const targetAppManager = new TargetAppManager();
   const handle = <Args extends unknown[], Result>(channel: string, listener: (...args: Args) => Result): void => {
     ipcMain.removeHandler(channel);
     ipcMain.handle(channel, listener);
@@ -87,6 +89,10 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   handle("permissions:openSettings", async (_event, pane: string) => {
     await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
     return { ok: true };
+  });
+
+  handle("apps:getInstalledInfo", async (_event, profiles: TargetAppProfile[]) => {
+    return await Promise.all(profiles.map(async (profile) => await targetAppManager.inspect(profile)));
   });
 
   handle("window:focusBenchmark", async () => {

@@ -1153,6 +1153,13 @@ select {
   line-height: 1.25;
 }
 
+.app-editor-card__version {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
 .app-editor-card__badges {
   display: flex;
   gap: 6px;

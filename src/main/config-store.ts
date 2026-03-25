@@ -34,6 +34,7 @@ export class ConfigStore {
     const legacyFocusInputDelayMs = config.targetApps.find((app) => typeof app.preHotkeyDelayMs === "number")?.preHotkeyDelayMs;
     const legacyCloseAppDelayMs = config.targetApps.find((app) => typeof app.postRunCooldownMs === "number")?.postRunCooldownMs;
     const appMap = new Map(config.targetApps.map((app) => [app.id, app]));
+    const defaultAppIds = new Set(defaults.targetApps.map((app) => app.id));
     const wisprFlow = appMap.get("wispr-flow");
     const wisprDefault = defaults.targetApps.find((app) => app.id === "wispr-flow");
     if (
@@ -48,7 +49,13 @@ export class ConfigStore {
         hotkeyTriggerMode: wisprDefault.hotkeyTriggerMode,
       });
     }
-    const targetApps = Array.from(appMap.values());
+    const targetApps = [
+      ...defaults.targetApps.map((app) => ({
+        ...app,
+        ...appMap.get(app.id),
+      })),
+      ...config.targetApps.filter((app) => !defaultAppIds.has(app.id)),
+    ];
     const audioSamples = config.audioSamples.length ? config.audioSamples : defaults.audioSamples;
     if (!targetApps.some((app) => app.enabled)) {
       const selftest = targetApps.find((app) => app.id === "selftest");

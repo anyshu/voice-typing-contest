@@ -13,7 +13,7 @@ The tool drives multiple target apps with the same audio samples and records:
 - pass/fail status and failure reason
 - comparable latency metrics across apps
 
-The initial targets include apps like Xiguashuo, Wispr Flow, and Typeless.
+The initial targets include apps like Xiguashuo, Shandianshuo, Wispr Flow, and Typeless.
 
 Assumption for v1:
 
@@ -38,7 +38,7 @@ Target apps are expected to be pre-installed and pre-configured by the tester.
 Before running tests, the tester prepares:
 
 1. a set of WAV audio samples
-2. a virtual audio device such as BlackHole
+2. optionally, a virtual audio device such as BlackHole when the tester wants to reduce interference from external sound; this is currently more strongly recommended for apps such as Xiguashuo / Shandianshuo
 3. each target voice typing app
 4. each target app's hotkey
 5. each target app's input device set to the virtual microphone path
@@ -453,11 +453,20 @@ Stores one app + one sample execution result, including:
 
 - `run_session_id`
 - app id
+- app name snapshot
+- app version snapshot captured at run time
 - sample id
 - status
 - raw text
 - normalized text
 - expected text
+
+Version handling rule:
+
+- the app version stored on a test run is a historical snapshot of the installed target app at the moment that run started
+- retrying a sample creates a new run row with a fresh version snapshot for that retry attempt
+- CSV export must include the captured app version for every exported row
+- old rows must not be backfilled from the machine's current installed app state
 - latency metrics
 - failure reason
 - timeline snapshot

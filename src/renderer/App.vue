@@ -30,6 +30,7 @@ import type {
   AudioSample,
   CsvImportSummary,
   FailureCategory,
+  InstalledTargetAppInfo,
   PermissionSnapshot,
   PreflightReport,
   RunSessionSummary,
@@ -48,6 +49,7 @@ const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "faq" | "
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
 const devices = ref<AudioDevice[]>([]);
+const installedAppInfoById = ref<Record<string, InstalledTargetAppInfo>>({});
 const sessions = ref<RunSessionSummary[]>([]);
 const results = ref<TestRunRecord[]>([]);
 const expandedSessionIds = ref<string[]>([]);
@@ -132,6 +134,7 @@ const enabledApps = computed(() => config.value.targetApps.filter((item) => item
 const builtinApps = computed(() => config.value.targetApps.filter((item) => isBuiltinApp(item)));
 const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
 const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
+const installedRealApps = computed(() => realApps.value.filter((item) => installedAppInfoById.value[item.id]?.installed));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
 const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
@@ -265,6 +268,18 @@ function isBuiltinApp(app: TargetAppProfile): boolean {
 
 function appKindLabel(app: TargetAppProfile): string {
   return isBuiltinApp(app) ? "内建自测" : "真实 App";
+}
+
+function appStatusLabel(app: TargetAppProfile): string {
+  return app.enabled ? "已启用" : "未启用";
+}
+
+function appVersionLabel(app: TargetAppProfile): string {
+  const info = installedAppInfoById.value[app.id];
+  if (isBuiltinApp(app) || !info?.installed) return "";
+  if (info.version) return `v${info.version}`;
+  if (info.buildVersion) return `build ${info.buildVersion}`;
+  return "";
 }
 
 function appLaunchSummary(app: TargetAppProfile): string {
@@ -765,6 +780,7 @@ async function loadBootstrap(): Promise<void> {
   config.value = settings;
   permissions.value = settings.permissions;
   devices.value = settings.devices;
+  await refreshInstalledAppInfo();
   await refreshResultData();
 }
 
@@ -772,6 +788,11 @@ async function refreshEnvironment(): Promise<void> {
   const snapshot = await window.vtc.refreshPermissions() as { permissions: PermissionSnapshot[]; devices: AudioDevice[] };
   permissions.value = snapshot.permissions;
   devices.value = snapshot.devices;
+}
+
+async function refreshInstalledAppInfo(): Promise<void> {
+  const entries = await window.vtc.getInstalledAppInfo(plainConfig().targetApps) as InstalledTargetAppInfo[];
+  installedAppInfoById.value = Object.fromEntries(entries.map((item) => [item.profileId, item]));
 }
 
 async function inspectRunReadiness(): Promise<void> {
@@ -818,6 +839,7 @@ async function saveSettings(showNotice = true): Promise<void> {
   try {
     await window.vtc.saveSettings(plainConfig());
     await refreshEnvironment();
+    await refreshInstalledAppInfo();
     if (showNotice) {
       showToast("设置已保存。");
     }
@@ -1968,6 +1990,7 @@ onBeforeUnmount(() => {
               <p class="muted">把真实目标 App 和内建自测都收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
             </div>
             <div class="toolbar">
+              <button class="ghost-button" @click="refreshInstalledAppInfo">刷新安装信息</button>
               <button class="secondary-button" @click="addApp">新增应用</button>
               <button class="secondary-button" @click="saveSettings">保存设置</button>
             </div>
@@ -1991,6 +2014,11 @@ onBeforeUnmount(() => {
             </div>
             <div class="summary-item">
               <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">已安装真实 App</span>
+              <strong>{{ installedRealApps.length }} / {{ realApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
               <span class="summary-label">内建自测</span>
               <strong>{{ builtinApps.length ? (builtinApps[0]?.enabled ? "已启用" : "未启用") : "未配置" }}</strong>
             </div>
@@ -2007,9 +2035,10 @@ onBeforeUnmount(() => {
               <div class="app-editor-card__top">
                 <div class="app-editor-card__headline">
                   <strong>{{ app.name }}</strong>
+                  <span v-if="appVersionLabel(app)" class="app-editor-card__version">{{ appVersionLabel(app) }}</span>
                   <div class="app-editor-card__badges">
                     <span class="pill" :class="isBuiltinApp(app) ? 'warning' : ''">{{ appKindLabel(app) }}</span>
-                    <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                    <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ appStatusLabel(app) }}</span>
                   </div>
                 </div>
                 <div class="toolbar app-editor-card__actions">

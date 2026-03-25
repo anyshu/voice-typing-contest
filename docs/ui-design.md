@@ -389,7 +389,7 @@ It is a concise onboarding page for a tester who just opened the tool.
 |                                                                                  |
 | +-------------------------+  +-------------------------+  +---------------------+ |
 | | 1. Prepare              |  | 2. Configure           |  | 3. Run              | |
-| | Install BlackHole       |  | Add apps and samples   |  | Start benchmark     | |
+| | Optional virtual audio |  | Add apps and samples   |  | Start benchmark     | |
 | | Capture app hotkey      |  | Check permissions      |  | Review result table  | |
 | +-------------------------+  +-------------------------+  +---------------------+ |
 |                                                                                  |

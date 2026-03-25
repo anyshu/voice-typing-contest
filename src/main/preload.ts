@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions } from "../shared/types";
+import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions, TargetAppProfile } from "../shared/types";
 
 const api = {
   getVersion: async () => await ipcRenderer.invoke("app:getVersion"),
@@ -12,6 +12,7 @@ const api = {
   refreshPermissions: async () => await ipcRenderer.invoke("permissions:refresh"),
   requestAccessibilityPermission: async () => await ipcRenderer.invoke("permissions:requestAccessibility"),
   openPermissionSettings: async (pane: string) => await ipcRenderer.invoke("permissions:openSettings", pane),
+  getInstalledAppInfo: async (profiles: TargetAppProfile[]) => await ipcRenderer.invoke("apps:getInstalledInfo", profiles),
   focusBenchmarkWindow: async () => await ipcRenderer.invoke("window:focusBenchmark"),
   startRun: async (options?: RunStartOptions) => await ipcRenderer.invoke("run:start", options),
   emitRunTimelineEvent: async (runId: string, eventType: string, payload: Record<string, unknown>) =>

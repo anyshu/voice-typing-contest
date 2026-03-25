@@ -276,6 +276,7 @@ Trigger mode copy should reflect two different behaviors instead of two generic 
 
 Built-in presets:
 
+- `闪电说`: default hotkey `Cmd+Shift+2`, trigger mode `hold_release`
 - `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
 - `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
 

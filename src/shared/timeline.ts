@@ -69,7 +69,7 @@ export function timelineDetail(item: RunEventRecord): string {
     case "trigger_start":
       return `触发热键：${String(payload.chord ?? "-")}`;
     case "audio_start":
-      return `播放样本：${timelineTailName(payload.playableSamplePath ?? payload.sample)}`;
+      return `播放样本：${timelineTailName(payload.sample ?? payload.playableSamplePath)}`;
     case "audio_end":
       return "音频已经播完，准备收尾。";
     case "trigger_stop":

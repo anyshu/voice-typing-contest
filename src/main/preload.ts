@@ -12,6 +12,7 @@ const api = {
   refreshPermissions: async () => await ipcRenderer.invoke("permissions:refresh"),
   requestAccessibilityPermission: async () => await ipcRenderer.invoke("permissions:requestAccessibility"),
   openPermissionSettings: async (pane: string) => await ipcRenderer.invoke("permissions:openSettings", pane),
+  openExternalUrl: async (url: string) => await ipcRenderer.invoke("app:openExternalUrl", url),
   getInstalledAppInfo: async (profiles: TargetAppProfile[]) => await ipcRenderer.invoke("apps:getInstalledInfo", profiles),
   focusBenchmarkWindow: async () => await ipcRenderer.invoke("window:focusBenchmark"),
   startRun: async (options?: RunStartOptions) => await ipcRenderer.invoke("run:start", options),

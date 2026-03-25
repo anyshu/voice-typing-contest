@@ -18,6 +18,13 @@ struct AudioDeviceRow: Codable {
     let isDefault: Bool?
 }
 
+struct PlaybackRouteRow: Codable {
+    let requestedOutputDeviceId: String
+    let effectiveOutputDeviceId: String
+    let previousDefaultOutputDeviceId: String?
+    let strategy: String
+}
+
 struct HelperResponse<T: Encodable>: Encodable {
     let ok: Bool
     let result: T?
@@ -250,13 +257,91 @@ func sendHotkey(_ chord: String, phase: String) throws -> [String: String] {
             }
         }
     default:
-        try sendHotkey(chord, phase: "down")
-        try sendHotkey(chord, phase: "up")
+        _ = try sendHotkey(chord, phase: "down")
+        _ = try sendHotkey(chord, phase: "up")
     }
     return ["status": "ok"]
 }
 
-func playWav(_ filePath: String) throws -> [String: String] {
+func resolveSelectedOutputDeviceId(_ outputDeviceId: String?) throws -> String? {
+    guard let outputDeviceId, !outputDeviceId.isEmpty, outputDeviceId != "system-default" else {
+        return nil
+    }
+    guard let deviceId = UInt32(outputDeviceId), deviceHasOutput(deviceId) else {
+        throw HelperError.invalidInput("Unknown output device: \(outputDeviceId)")
+    }
+    return outputDeviceId
+}
+
+func bundledAudioToolURL() -> URL? {
+    let helperURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+    let sibling = helperURL.deletingLastPathComponent().appendingPathComponent("vtc-audioctl")
+    return FileManager.default.fileExists(atPath: sibling.path) ? sibling : nil
+}
+
+func runProcess(_ executableURL: URL, arguments: [String]) throws -> String {
+    let process = Process()
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    process.executableURL = executableURL
+    process.arguments = arguments
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
+    try process.run()
+    process.waitUntilExit()
+    let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    if process.terminationStatus != 0 {
+        throw HelperError.invalidInput(stderr.isEmpty ? "Process failed: \(executableURL.lastPathComponent)" : stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    return stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func currentDefaultOutputDeviceId() throws -> String? {
+    guard let audioToolURL = bundledAudioToolURL() else {
+        return nil
+    }
+    let current = try runProcess(audioToolURL, arguments: ["get-default"])
+    return current.isEmpty ? nil : current
+}
+
+func setDefaultOutputDevice(_ deviceId: String) throws {
+    guard let audioToolURL = bundledAudioToolURL() else {
+        throw HelperError.invalidInput("Bundled audio tool not found")
+    }
+    _ = try runProcess(audioToolURL, arguments: ["set-default", deviceId])
+}
+
+func playAudioFile(_ filePath: String) throws {
+    let afplayURL = URL(fileURLWithPath: "/usr/bin/afplay")
+    _ = try runProcess(afplayURL, arguments: [filePath])
+}
+
+func playWav(_ filePath: String, outputDeviceId: String?) throws -> PlaybackRouteRow {
+    let requestedOutputDeviceId = outputDeviceId ?? "system-default"
+    if let selectedOutputDeviceId = try resolveSelectedOutputDeviceId(outputDeviceId),
+       let originalOutputDeviceId = try currentDefaultOutputDeviceId() {
+        if selectedOutputDeviceId != originalOutputDeviceId {
+            try setDefaultOutputDevice(selectedOutputDeviceId)
+            do {
+                defer {
+                    try? setDefaultOutputDevice(originalOutputDeviceId)
+                }
+                try playAudioFile(filePath)
+            } catch {
+                throw error
+            }
+        } else {
+            try playAudioFile(filePath)
+        }
+        return PlaybackRouteRow(
+            requestedOutputDeviceId: requestedOutputDeviceId,
+            effectiveOutputDeviceId: selectedOutputDeviceId,
+            previousDefaultOutputDeviceId: originalOutputDeviceId,
+            strategy: "temporary-default-switch"
+        )
+    }
+
     let url = URL(fileURLWithPath: filePath)
     let player = try AVAudioPlayer(contentsOf: url)
     player.prepareToPlay()
@@ -264,7 +349,12 @@ func playWav(_ filePath: String) throws -> [String: String] {
     while player.isPlaying {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     }
-    return ["status": "ok"]
+    return PlaybackRouteRow(
+        requestedOutputDeviceId: requestedOutputDeviceId,
+        effectiveOutputDeviceId: requestedOutputDeviceId,
+        previousDefaultOutputDeviceId: nil,
+        strategy: "system-default"
+    )
 }
 
 func sleepMs(_ value: Int) {
@@ -272,13 +362,13 @@ func sleepMs(_ value: Int) {
     Thread.sleep(forTimeInterval: Double(value) / 1000)
 }
 
-func playWavHoldingHotkey(_ chord: String, filePath: String, hotkeyToAudioDelayMs: Int, audioToTriggerStopDelayMs: Int) throws -> [String: String] {
-    try sendHotkey(chord, phase: "down")
+func playWavHoldingHotkey(_ chord: String, filePath: String, outputDeviceId: String?, hotkeyToAudioDelayMs: Int, audioToTriggerStopDelayMs: Int) throws -> PlaybackRouteRow {
+    _ = try sendHotkey(chord, phase: "down")
     sleepMs(hotkeyToAudioDelayMs)
-    try playWav(filePath)
+    let playbackRoute = try playWav(filePath, outputDeviceId: outputDeviceId)
     sleepMs(audioToTriggerStopDelayMs)
-    try sendHotkey(chord, phase: "up")
-    return ["status": "ok"]
+    _ = try sendHotkey(chord, phase: "up")
+    return playbackRoute
 }
 
 func activateApp(_ appTarget: String) throws -> [String: String] {
@@ -361,7 +451,7 @@ do {
         try writeResponse(listAudioDevices())
     case "playWav":
         guard let filePath = request.filePath else { throw HelperError.invalidInput("Missing filePath") }
-        try writeResponse(playWav(filePath))
+        try writeResponse(playWav(filePath, outputDeviceId: request.outputDeviceId))
     case "sendHotkey":
         guard let chord = request.chord, let phase = request.phase else { throw HelperError.invalidInput("Missing hotkey arguments") }
         try writeResponse(sendHotkey(chord, phase: phase))
@@ -370,6 +460,7 @@ do {
         try writeResponse(playWavHoldingHotkey(
             chord,
             filePath: filePath,
+            outputDeviceId: request.outputDeviceId,
             hotkeyToAudioDelayMs: request.hotkeyToAudioDelayMs ?? 0,
             audioToTriggerStopDelayMs: request.audioToTriggerStopDelayMs ?? 0
         ))

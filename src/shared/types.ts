@@ -49,6 +49,7 @@ export interface TargetAppProfile {
   id: string;
   name: string;
   appFileName: string;
+  websiteUrl?: string;
   launchCommand?: string;
   hotkeyChord: string;
   hotkeyTriggerMode: HotkeyTriggerMode;

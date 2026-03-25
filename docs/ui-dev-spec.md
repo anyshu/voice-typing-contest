@@ -11,10 +11,11 @@ The renderer currently uses a desktop shell with:
 Current first-level pages:
 
 - `主控台`
+- `运行前检查`
 - `样本`
+- `App管理`
 - `测试历史`
 - `设置`
-- `运行前检查`
 - `怎么开始`
 - `常见问题`
 - `关于`
@@ -79,10 +80,11 @@ Current first-level pages:
 | Scene | Hugeicon |
 |---|---|
 | 主控台 | `DashboardSquare01Icon` |
+| 运行前检查 | `CheckListIcon` |
 | 样本 | `FolderAudioIcon` |
+| App管理 | `AppStoreIcon` |
 | 测试历史 | `Analytics01Icon` |
 | 设置 | `Settings01Icon` |
-| 运行前检查 | `CheckListIcon` |
 | 怎么开始 | `BookOpen01Icon` |
 | 常见问题 | `HelpCircleIcon` |
 | 关于 | `InformationCircleIcon` |
@@ -147,6 +149,7 @@ Timeline rules:
   - ordinary actions
   - failures
 - only the currently live item pulses
+- include an `audio_route` timeline item before `audio_start` whenever helper playback reports routing details, so operators can verify requested vs effective output device ids during debugging
 - `audio_start` should display the original sample filename that the operator picked, not the helper-safe temporary playback copy path
 
 ### 4.4 Latest-session summary
@@ -200,9 +203,9 @@ The `样本管理` page should show:
 
 - the selected sample root
 - a compact summary strip with enabled / disabled / total sample counts
-- one row per sample with path, language, duration, current status, and an enable toggle
+- one row per sample with path, preview player, duration, current status, and an enable toggle
 
-On desktop widths, the sample path and the `ZH · 8.93 秒` style language-duration metadata should stay on the same line, with the path truncating first if horizontal space runs short.
+The list is virtualized. Heavier preview controls should mount only for the hovered or currently playing row.
 
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
 
@@ -210,7 +213,7 @@ Disabling a sample removes it from later benchmark batches without deleting it f
 
 The `App管理` page should show:
 
-- a compact summary strip with total apps, enabled apps, enabled real apps, and builtin self-test state
+- a compact summary strip with total apps, enabled apps, real-app enablement, installed real-app count, and builtin self-test state
 - one compact card per app
 - the nav entry in the upper group, directly below `样本管理`
 
@@ -226,16 +229,16 @@ The editable fields should prefer single-row label-and-control layout when the c
 
 ## 5. Settings Page Structure
 
-The settings page has three functional blocks:
+The settings page has two functional blocks:
 
 - base settings
-- target apps
 - permissions and devices
 
 ### 5.1 Base settings
 
 Current editable global settings:
 
+- workspace label
 - output device
 - database path
 - external sample root
@@ -254,15 +257,15 @@ Default timing values:
 - next sample play delay: `3000`
 - close app delay: `3000`
 
-### 5.2 Target apps
+Target-app editing no longer lives here; it belongs to the dedicated `App管理` page.
 
-Per-app settings currently keep only app-specific trigger behavior:
+### 5.2 App management
 
 - name
 - `.app` file name
+- launch command
 - hotkey
 - hotkey trigger mode
-- launch command
 - key-to-audio delay
 - audio-to-stop delay
 - settle window
@@ -301,6 +304,7 @@ Devices:
 
 - The benchmark window must reclaim frontmost state before text observation.
 - The live textarea is the only text sink.
+- Starting a run first opens a blocking pre-start confirmation dialog.
 - Real-app launch happens once per app batch, not once per sample.
 - After the last sample for one app, the app is closed after `关闭 app 延时`.
 
@@ -318,6 +322,7 @@ Devices:
 - `AppGroupTable`
 - `ChecksPage`
 - `SamplesPage`
+- `AppsPage`
 - `SettingsPage`
 - `PermissionList`
 - `DeviceList`

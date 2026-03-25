@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { defaultConfig } from "../shared/defaults";
+import { defaultTargetApps } from "../shared/target-app-presets";
 import type { AppConfig } from "../shared/types";
 import { resolveHomePath } from "../shared/paths";
 
@@ -29,14 +30,15 @@ export class ConfigStore {
 
   private normalize(config: AppConfig): AppConfig {
     const defaults = defaultConfig();
+    const defaultApps = defaultTargetApps();
     const legacyResultTimeoutMs = config.targetApps.find((app) => typeof app.resultTimeoutMs === "number")?.resultTimeoutMs;
     const legacyAppLaunchDelayMs = config.targetApps.find((app) => typeof app.launchTimeoutMs === "number")?.launchTimeoutMs;
     const legacyFocusInputDelayMs = config.targetApps.find((app) => typeof app.preHotkeyDelayMs === "number")?.preHotkeyDelayMs;
     const legacyCloseAppDelayMs = config.targetApps.find((app) => typeof app.postRunCooldownMs === "number")?.postRunCooldownMs;
     const appMap = new Map(config.targetApps.map((app) => [app.id, app]));
-    const defaultAppIds = new Set(defaults.targetApps.map((app) => app.id));
+    const defaultAppIds = new Set(defaultApps.map((app) => app.id));
     const wisprFlow = appMap.get("wispr-flow");
-    const wisprDefault = defaults.targetApps.find((app) => app.id === "wispr-flow");
+    const wisprDefault = defaultApps.find((app) => app.id === "wispr-flow");
     if (
       wisprFlow
       && wisprDefault
@@ -50,7 +52,7 @@ export class ConfigStore {
       });
     }
     const targetApps = [
-      ...defaults.targetApps.map((app) => ({
+      ...defaultApps.map((app) => ({
         ...app,
         ...appMap.get(app.id),
       })),

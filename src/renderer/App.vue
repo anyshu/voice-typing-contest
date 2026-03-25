@@ -61,7 +61,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
-const appVersion = ref("v0.1.4");
+const appVersion = ref("v0.1.5");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -288,6 +288,19 @@ function appLaunchSummary(app: TargetAppProfile): string {
   return isBuiltinApp(app)
     ? "内建流程"
     : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
+}
+
+async function openAppWebsite(app: TargetAppProfile): Promise<void> {
+  const url = app.websiteUrl?.trim();
+  if (!url) {
+    showToast(`${app.name} 还没配置官网链接。`);
+    return;
+  }
+  try {
+    await window.vtc.openExternalUrl(url);
+  } catch (error) {
+    showToast(`打开官网失败：${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function plainConfig(): AppConfig {
@@ -1113,6 +1126,7 @@ function addApp(): void {
     id: `app-${Date.now()}`,
     name: "新应用",
     appFileName: "New App.app",
+    websiteUrl: "",
     hotkeyChord: "Cmd + Shift + 1",
     hotkeyTriggerMode: "hold_release",
     hotkeyToAudioDelayMs: 120,
@@ -2028,7 +2042,18 @@ onBeforeUnmount(() => {
             >
               <div class="app-editor-card__top">
                 <div class="app-editor-card__headline">
-                  <strong>{{ app.name }}</strong>
+                  <div class="app-editor-card__title-row">
+                    <strong>{{ app.name }}</strong>
+                    <button
+                      v-if="app.websiteUrl"
+                      type="button"
+                      class="app-title-link"
+                      :title="`打开 ${app.name} 官网`"
+                      @click="openAppWebsite(app)"
+                    >
+                      官网
+                    </button>
+                  </div>
                   <span v-if="appVersionLabel(app)" class="app-editor-card__version">{{ appVersionLabel(app) }}</span>
                   <div class="app-editor-card__badges">
                     <span class="pill" :class="isBuiltinApp(app) ? 'warning' : ''">{{ appKindLabel(app) }}</span>
@@ -2067,6 +2092,10 @@ onBeforeUnmount(() => {
                 <label class="app-form-row">
                   <span class="app-form-label">.app 文件名 <em class="required-mark">*</em></span>
                   <input v-model="app.appFileName" :disabled="isBuiltinApp(app)" />
+                </label>
+                <label class="app-form-row">
+                  <span class="app-form-label">官网链接</span>
+                  <input v-model="app.websiteUrl" placeholder="https://example.com" />
                 </label>
                 <label class="app-form-row app-form-row--wide" style="grid-column: 1 / -1">
                   <span class="app-form-label">启动命令</span>

@@ -122,19 +122,22 @@ Suggested icon mapping:
 The current app shell has these first-level pages:
 
 - 主控台
+- 运行前检查
 - 样本
+- App管理
 - 测试历史
 - 设置
-- 运行前检查
 - 怎么开始
+- 常见问题
 - 关于
 
-Configuration already lives in the dedicated `设置` page rather than a modal.
+Global configuration lives in the dedicated `设置` page, while per-app editing lives in the dedicated `App管理` page rather than a modal.
 
 The result experience is split into:
 
 - `主控台` for the current timeline and latest-session summary
 - `测试历史` for browsing persisted sessions and exporting one batch at a time, with hover/focus tooltips on sample paths so long ASR output can still be inspected without widening the table
+- `常见问题` for the most common audio-routing troubleshooting case with an inline illustration
 
 The current renderer is Chinese-first.
 
@@ -153,11 +156,13 @@ Overall shell:
 |----------------------|---------------------------------------------------------------|
 | Logo / App name      | Current page title                            Quick actions   |
 | 主控台               |---------------------------------------------------------------|
+| 运行前检查           |                                                               |
 | 样本                 |                                                               |
+| App管理              |                                                               |
 | 测试历史             |                                                               |
 | 设置                 |                                                               |
-| 运行前检查           |                                                               |
 | 怎么开始             |                                                               |
+| 常见问题             |                                                               |
 | 关于                 |                                                               |
 +--------------------------------------------------------------------------------------+
 ```
@@ -303,20 +308,20 @@ Rules:
 
 ### 6.1 Rule
 
-All editable settings live on the dedicated `设置` page.
+Only global editable settings live on the dedicated `设置` page.
 
 ### 6.2 Structure
 
-The current page has three main blocks:
+The current page has two main blocks:
 
 - base settings
-- target apps
 - permissions and devices
 
 ### 6.3 Base settings
 
 Fields:
 
+- workspace label
 - output device
 - database path
 - external sample root
@@ -326,31 +331,6 @@ Fields:
 - next sample play delay
 - close app delay
 - run notes
-
-#### Target Apps
-
-This is the most important editor block.
-
-```text
-+----------------------------------------------------------------------------------+
-| Target Apps                                                                      |
-|----------------------------------------------------------------------------------|
-| App list                          | Editor                                       |
-|-----------------------------------|----------------------------------------------|
-| > Xiguashuo                       | Name: [Xiguashuo____________]                |
-|   Wispr Flow                      | Enabled: [on ]                              |
-|   + Add App                       | App file name: [Xiguashuo.app___________]   |
-|                                   | Launch command: [optional________________]  |
-|                                   | Hotkey capture: [ press any combination ]  |
-|                                   | Trigger mode: (o) hold->release            |
-|                                   |               ( ) press start->press stop  |
-|                                   | Key -> audio delay:  [180 ] ms             |
-|                                   | Audio -> stop trigger: [60 ] ms            |
-|                                   | Settle window:       [600 ] ms             |
-|                                   | Notes:               [...................] |
-|                                   |                    [Disable] [Save] [Delete] |
-+----------------------------------------------------------------------------------+
-```
 
 #### Permissions and Devices
 
@@ -370,85 +350,109 @@ The lower settings region is operational and explicit.
 +----------------------------------------------------------------------------------+
 ```
 
-## 7. Intro Page
+## 7. App Page
 
 ### 7.1 Goal
 
-This page is not marketing.
+This page is the per-app editor.
 
-It is a concise onboarding page for a tester who just opened the tool.
+It should make it easy to answer:
+
+- which apps are enabled
+- which real apps are installed right now
+- what hotkey and trigger mode each app uses
+- whether the builtin self-test is still available as a fallback
 
 ### 7.2 Layout
 
 ```text
 +----------------------------------------------------------------------------------+
-| Intro                                                                            |
+| App管理                                                           [刷新] [新增] |
 |----------------------------------------------------------------------------------|
-| Voice Typing Contest                                                             |
-| A local benchmark tool for comparing voice typing apps on macOS.                |
-|                                                                                  |
-| +-------------------------+  +-------------------------+  +---------------------+ |
-| | 1. Prepare              |  | 2. Configure           |  | 3. Run              | |
-| | Optional virtual audio |  | Add apps and samples   |  | Start benchmark     | |
-| | Capture app hotkey      |  | Check permissions      |  | Review result table  | |
-| +-------------------------+  +-------------------------+  +---------------------+ |
-|                                                                                  |
-| Environment checklist                                                            |
-| [ ] Accessibility granted                                                        |
-| [ ] Virtual device installed                                                     |
-| [ ] Target apps configured                                                       |
-| [ ] Sample folder ready                                                          |
-|                                                                                  |
-|                                                                    [Go Main]    |
+| [总数] [已启用] [真实 App] [已安装真实 App] [内建自测]                            |
+|----------------------------------------------------------------------------------|
+| +------------------------------------------------------------------------------+ |
+| | Typeless                                                [启用] [删除]        | |
+| | [真实 App] [已启用]  热键 Fn · 按住并保持，松开结束 · 启动目标 Typeless.app   | |
+| | 名称           [Typeless_____________________________]                       | |
+| | .app 文件名    [Typeless.app_________________________]                       | |
+| | 启动命令       [_____________________________________]                       | |
+| | 热键           [Fn__________________] [点击录制] [设为 Fn]                  | |
+| | 触发方式       [按住并保持，松开结束 v]                                      | |
+| | 备注           [例如先关闭语音输入时静音______________________________]      | |
+| +------------------------------------------------------------------------------+ |
 +----------------------------------------------------------------------------------+
 ```
 
 ### 7.3 Style
 
-Use large plain cards with:
+- use compact cards instead of split list-and-editor panes
+- keep the app header on one row whenever width allows
+- use restrained hover lift only
+- keep summary chips dense and operational
 
-- one Hugeicon
-- one short heading
-- two lines of explanation
-
-No illustration, no hero gradient, no dashboard clutter.
-
-## 8. About Page
+## 8. Intro Page
 
 ### 8.1 Goal
 
-This page explains how the benchmark works, what results are currently produced, and where local data goes.
+This page is not marketing.
 
-It should feel factual, lightweight, and closer to an about / methodology page than a release-notes page.
+It is a concise onboarding page for a tester who just opened the tool.
 
 ### 8.2 Layout
 
 ```text
 +----------------------------------------------------------------------------------+
-| About                                                                            |
+| Intro                                                                            |
 |----------------------------------------------------------------------------------|
-| Voice Typing Contest                                                             |
-| Version 0.1.0                                                                    |
+| 先按这个顺序走。                                                                 |
 |                                                                                  |
-| This app benchmarks multiple macOS voice typing apps with the same audio set.   |
-| It records typed output, key timestamps, and failure reasons into local storage. |
+| [1) 添加 app] [2) 热键] [3) 样本添加] [4) 开始]                                   |
 |                                                                                  |
-| Info                                                                             |
-| - Platform: macOS desktop                                                        |
-| - Runtime: Electron + Vue renderer + native helper                              |
-| - Storage: local SQLite                                                          |
-| - UI language: Chinese-first                                                     |
-| - Permissions: Accessibility required                                            |
-|                                                                                  |
-| Paths                                                                            |
-| - Database: /.../voice-typing-contest.sqlite                                     |
-| - Logs: /.../logs                                                                |
-|                                                                                  |
-|                                                   [Open Logs] [Open DB Folder]   |
+| 每个按钮都是一个导航入口：                                                        |
+| - 添加 app -> 跳到 App管理                                                      |
+| - 热键 -> 跳到当前启用 app 的热键编辑区                                          |
+| - 样本添加 -> 跳到样本管理                                                       |
+| - 开始 -> 回到主控台                                                             |
 +----------------------------------------------------------------------------------+
 ```
 
-## 9. Interaction Notes
+### 8.3 Style
+
+Use plain shortcut blocks:
+
+- short imperative copy
+- obvious click target
+- no decorative checklist pretending to be live state
+
+## 9. About Page
+
+### 9.1 Goal
+
+This page explains how the benchmark works, what results are currently produced, and where local data goes.
+
+It should feel factual, lightweight, and closer to an about / methodology page than a release-notes page.
+
+### 9.2 Layout
+
+```text
++----------------------------------------------------------------------------------+
+| About                                                                            |
+|----------------------------------------------------------------------------------|
+| 方法说明 / 当前结果 / 接下来                                                     |
+| Version v0.1.5                                                                   |
+|                                                                                  |
+| 这不是 release notes 墙，而是一页 methodology 说明。                             |
+|                                                                                  |
+| [同样本] [同流程] [结果落库] [历史回看]                                           |
+|                                                                                  |
+| 左侧：评测方式卡片                                                                |
+| 右侧：当前结果列表                                                                |
+| 底部：接下来                                                                     |
++----------------------------------------------------------------------------------+
+```
+
+## 10. Interaction Notes
 
 ### 10.1 Main page behavior
 
@@ -480,7 +484,13 @@ It should feel factual, lightweight, and closer to an about / methodology page t
 - compact fields should use one-row label/control alignment instead of stacked labels
 - hover on an app card should only add a restrained lift, border emphasis, and soft shadow
 
-### 10.5 Feedback style
+### 10.5 FAQ page behavior
+
+- show one focused troubleshooting story first instead of a generic accordion dump
+- keep the screenshot / illustration visible next to the explanation
+- use warning styling sparingly so the page still feels like product documentation, not an error screen
+
+### 10.6 Feedback style
 
 Use restrained motion only:
 
@@ -489,7 +499,7 @@ Use restrained motion only:
 
 No bouncing and no animated charts during idle state.
 
-### 10.5 Empty states
+### 10.7 Empty states
 
 Keep empty states plain:
 
@@ -501,7 +511,7 @@ Example:
 
 `No audio samples yet. Add a sample folder in 设置.`
 
-## 10. Component Rules
+## 11. Component Rules
 
 ### 11.1 Buttons
 

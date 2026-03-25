@@ -419,6 +419,13 @@ select {
   max-height: min(62vh, 680px);
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sample-list-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .sample-list-clean {
@@ -1038,6 +1045,36 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.app-editor-card__title-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.app-title-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.app-title-link:hover,
+.app-title-link:focus-visible {
+  color: #115e59;
+}
+
+.app-title-link:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.18);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .primary-button {

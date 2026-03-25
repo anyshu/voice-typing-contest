@@ -127,7 +127,7 @@ The current app shell has these first-level pages:
 - 设置
 - 运行前检查
 - 怎么开始
-- 版本说明
+- 关于
 
 Configuration already lives in the dedicated `设置` page rather than a modal.
 
@@ -158,7 +158,7 @@ Overall shell:
 | 设置                 |                                                               |
 | 运行前检查           |                                                               |
 | 怎么开始             |                                                               |
-| 版本说明             |                                                               |
+| 关于                 |                                                               |
 +--------------------------------------------------------------------------------------+
 ```
 
@@ -417,9 +417,9 @@ No illustration, no hero gradient, no dashboard clutter.
 
 ### 8.1 Goal
 
-This page explains what the tool does and where local data goes.
+This page explains how the benchmark works, what results are currently produced, and where local data goes.
 
-It should feel factual and lightweight.
+It should feel factual, lightweight, and closer to an about / methodology page than a release-notes page.
 
 ### 8.2 Layout
 

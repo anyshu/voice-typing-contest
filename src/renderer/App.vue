@@ -175,7 +175,7 @@ const pageTitle = computed(() => {
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
   if (page.value === "faq") return "常见问题";
-  return "版本说明";
+  return "关于";
 });
 const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
@@ -186,7 +186,7 @@ const pageSubtitle = computed(() => {
   if (page.value === "settings") return "运行参数与环境设置";
   if (page.value === "intro") return "准备路径与使用说明";
   if (page.value === "faq") return "常见问题与排查";
-  return "当前能力与限制";
+  return "评测方式与当前结果";
 });
 const noticeTone = computed(() => {
   if (!notice.value) return "info";
@@ -1509,7 +1509,7 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'about' }" @click="page = 'about'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span class="nav-label">版本说明</span>
+              <span class="nav-label">关于</span>
             </button>
           </li>
         </ul>

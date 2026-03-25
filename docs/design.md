@@ -196,7 +196,7 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `版本说明`, with `App管理` moved into the upper run-focused group directly below `样本管理`
+- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `关于`, with `App管理` moved into the upper run-focused group directly below `样本管理`
 - configuration UI
 - target app CRUD now lives in dedicated `App管理`, using compact per-app cards with a single-row header for app name, app kind, enable state, toggle, and delete action
 - permission status UI

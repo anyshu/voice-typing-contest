@@ -303,11 +303,14 @@ Benefits:
 
 Each target app should be represented by a profile instead of hardcoded logic.
 
+Preset app profiles should live in a JSON resource file rather than TypeScript code so the shipped app list can be updated without touching runtime logic. User edits and ad-hoc additions still live in `config.json`, and startup should merge preset profiles with user config by `id`.
+
 App profile fields currently stored:
 
 - `id`
 - `name`
 - `appFileName`
+- `websiteUrl` (optional)
 - `launchCommand` (optional fallback)
 - `hotkeyChord`
 - `hotkeyTriggerMode` (`hold_release` or `press_start_press_stop`)
@@ -323,6 +326,15 @@ App profile fields currently stored:
 - `notes`
 
 `appFileName` is the primary way to identify an installed target app in the current version. The tool locates apps by installed `.app` file name, absolute path, optional launch command, or display name candidates, not by bundle id.
+
+`websiteUrl`, when present, should point to the app's official homepage or download page so the tester can jump there directly from the app-management UI.
+
+Config source rules in the current implementation:
+
+- preset app profiles come from a versioned JSON resource bundled with the app
+- user-added apps and user overrides are persisted in the per-user `config.json`
+- startup merges preset profiles first, then applies matching user overrides, then appends user-only apps
+- if no app remains enabled after merge, the builtin self-test profile should be re-enabled automatically
 
 `hotkeyChord` stores the exact shortcut the tester enters from a dedicated hotkey capture control. The UI should not split it into a main key field plus modifier chips.
 

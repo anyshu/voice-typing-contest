@@ -91,6 +91,21 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return { ok: true };
   });
 
+  handle("app:openExternalUrl", async (_event, rawUrl: string) => {
+    const normalized = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    let url: URL;
+    try {
+      url = new URL(normalized);
+    } catch {
+      throw new Error("无效链接。");
+    }
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("只支持打开 http 或 https 链接。");
+    }
+    await shell.openExternal(url.toString());
+    return { ok: true };
+  });
+
   handle("apps:getInstalledInfo", async (_event, profiles: TargetAppProfile[]) => {
     return await Promise.all(profiles.map(async (profile) => await targetAppManager.inspect(profile)));
   });

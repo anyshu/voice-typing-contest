@@ -55,6 +55,7 @@ function setupDesktopApi(options?: {
     refreshPermissions: vi.fn(async () => ({ permissions: settings.permissions, devices: settings.devices })),
     requestAccessibilityPermission: vi.fn(async () => ({ permissions: settings.permissions, devices: settings.devices })),
     openPermissionSettings: vi.fn(async () => ({ ok: true })),
+    openExternalUrl: vi.fn(async () => ({ ok: true })),
     getInstalledAppInfo: vi.fn(async () => installedInfo),
     focusBenchmarkWindow: vi.fn(async () => ({ ok: true })),
     startRun: vi.fn(async () => options?.startRunResult ?? {
@@ -412,6 +413,23 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("启动命令");
     expect(wrapper.text()).toContain("热键");
     expect(wrapper.text()).toContain("备注");
+  });
+
+  it("opens the configured app website from App management", async () => {
+    const { api } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+    const appsButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "App管理");
+    expect(appsButton).toBeTruthy();
+    await appsButton!.trigger("click");
+    await flushPromises();
+
+    const websiteButton = wrapper.findAll("button").find((item) => item.text().includes("打开官网"));
+    expect(websiteButton).toBeTruthy();
+    await websiteButton!.trigger("click");
+
+    expect(api.openExternalUrl).toHaveBeenCalledWith("https://www.xiguasay.com/");
+    expect(wrapper.text()).toContain("已打开 Xiguashuo 官网");
   });
 
   it("renders timeline entries as readable cards instead of raw event names", async () => {

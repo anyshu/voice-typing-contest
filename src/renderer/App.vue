@@ -290,6 +290,32 @@ function appLaunchSummary(app: TargetAppProfile): string {
     : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
 }
 
+function appWebsiteLabel(app: TargetAppProfile): string {
+  const raw = app.websiteUrl?.trim();
+  if (!raw) return "";
+  try {
+    const normalized = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(raw) ? raw : `https://${raw}`;
+    const url = new URL(normalized);
+    return url.hostname.replace(/^www\./, "");
+  } catch {
+    return raw;
+  }
+}
+
+async function openAppWebsite(app: TargetAppProfile): Promise<void> {
+  const url = app.websiteUrl?.trim();
+  if (!url) {
+    showToast(`${app.name} 还没配置官网链接。`);
+    return;
+  }
+  try {
+    await window.vtc.openExternalUrl(url);
+    showToast(`已打开 ${app.name} 官网：${appWebsiteLabel(app) || url}`);
+  } catch (error) {
+    showToast(`打开官网失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function plainConfig(): AppConfig {
   return JSON.parse(JSON.stringify(config.value)) as AppConfig;
 }
@@ -1113,6 +1139,7 @@ function addApp(): void {
     id: `app-${Date.now()}`,
     name: "新应用",
     appFileName: "New App.app",
+    websiteUrl: "",
     hotkeyChord: "Cmd + Shift + 1",
     hotkeyTriggerMode: "hold_release",
     hotkeyToAudioDelayMs: 120,
@@ -2036,6 +2063,16 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div class="toolbar app-editor-card__actions">
+                  <button
+                    v-if="app.websiteUrl"
+                    type="button"
+                    class="secondary-button action-button app-website-button"
+                    :title="`打开 ${app.name} 官网`"
+                    @click="openAppWebsite(app)"
+                  >
+                    <HugeiconsIcon :icon="BookOpen01Icon" :size="16" class="button-icon" />
+                    打开官网
+                  </button>
                   <label class="switch-row">
                     <span>启用</span>
                     <input v-model="app.enabled" type="checkbox" />
@@ -2057,6 +2094,10 @@ onBeforeUnmount(() => {
                 <span class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</span>
                 <span class="muted">·</span>
                 <span class="muted">启动目标：{{ appLaunchSummary(app) }}</span>
+                <template v-if="app.websiteUrl">
+                  <span class="muted">·</span>
+                  <span class="app-website-chip" :title="app.websiteUrl">官网 {{ appWebsiteLabel(app) }}</span>
+                </template>
               </div>
 
               <div class="settings-grid app-editor-form">
@@ -2067,6 +2108,10 @@ onBeforeUnmount(() => {
                 <label class="app-form-row">
                   <span class="app-form-label">.app 文件名 <em class="required-mark">*</em></span>
                   <input v-model="app.appFileName" :disabled="isBuiltinApp(app)" />
+                </label>
+                <label class="app-form-row">
+                  <span class="app-form-label">官网链接</span>
+                  <input v-model="app.websiteUrl" placeholder="https://example.com" />
                 </label>
                 <label class="app-form-row app-form-row--wide" style="grid-column: 1 / -1">
                   <span class="app-form-label">启动命令</span>

@@ -216,6 +216,7 @@ Responsibilities:
 - call the native helper
 - collect Vue renderer input events
 - persist all run data
+- keep IPC registration idempotent across window recreation during local development and macOS app re-activation; re-registering a channel should replace the previous handler instead of throwing on duplicate `ipcMain.handle(...)` calls
 
 Main modules:
 

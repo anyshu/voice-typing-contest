@@ -12,6 +12,9 @@ The tool drives multiple target apps with the same audio samples and records:
 - key timestamps in the interaction timeline
 - pass/fail status and failure reason
 - comparable latency metrics across apps
+- per-run timeline snapshots that can be replayed from both the main console and history views
+
+The current implementation also includes a builtin self-test app profile so the tester can verify the harness before involving any real target app.
 
 The initial targets include apps like Xiguashuo, Shandianshuo, Wispr Flow, and Typeless.
 
@@ -37,7 +40,7 @@ Target apps are expected to be pre-installed and pre-configured by the tester.
 
 Before running tests, the tester prepares:
 
-1. a set of WAV audio samples
+1. a set of audio samples (`.wav`, `.mp3`, `.ogg`)
 2. optionally, a virtual audio device such as BlackHole when the tester wants to reduce interference from external sound; this is currently more strongly recommended for apps such as Xiguashuo / Shandianshuo
 3. each target voice typing app
 4. each target app's hotkey
@@ -49,7 +52,13 @@ Hotkey constraint for automated runs in the current implementation:
 - standalone `Fn` is exposed by a dedicated UI action because Electron cannot capture it reliably from raw key events
 - `Fn + other key` is supported in the current helper path
 - system-reserved shortcuts may still be intercepted by macOS first, so the tester should still prefer non-reserved chords when possible
-- the built-in Wispr Flow and Typeless presets default to standalone `Fn` with `hold_release`
+- the built-in Shandianshuo, Wispr Flow, and Typeless presets default to standalone `Fn` with `hold_release`
+
+Run-start interaction in the current implementation:
+
+- before a real batch starts, the UI shows a modal confirmation reminding the tester not to touch mouse or keyboard
+- cancelling that confirmation does not mutate the latest persisted session view
+- once confirmed, the actual batch session is created and pre-run prompt events stay in memory only for the current console timeline
 
 ### 3.2 Batch flow
 
@@ -60,21 +69,28 @@ For each target app:
 3. bring the benchmark window back to front
 4. focus the built-in input box
 5. wait global `focusInputDelayMs`
-6. trigger according to the app profile:
+6. optionally wait app-level `preHotkeyDelayMs`
+7. trigger according to the app profile:
    - `hold_release`: press and keep holding the configured hotkey
    - `press_start_press_stop`: send one full press-release cycle as start
-7. wait app-level `hotkeyToAudioDelayMs`
-8. play the WAV sample to the configured output device
-9. when playback ends, wait app-level `audioToTriggerStopDelayMs`
-10. complete the trigger according to mode:
+8. wait app-level `hotkeyToAudioDelayMs`
+9. play the resolved sample to the configured output device
+10. when playback ends, wait app-level `audioToTriggerStopDelayMs`
+11. complete the trigger according to mode:
    - `hold_release`: release the same held hotkey
    - `press_start_press_stop`: send the same hotkey again as a second full press-release cycle
-11. observe the input box until text stabilizes or global timeout fires
-12. record result, raw text, timestamps, metrics, and failure reason
-13. wait global `betweenSamplesDelayMs`
-14. continue with the next audio sample
-15. after the last sample for the app, wait global `closeAppDelayMs`
-16. close the app
+12. observe the input box until text stabilizes or global timeout fires
+13. record result, raw text, timestamps, metrics, retry metadata, and failure reason
+14. wait global `betweenSamplesDelayMs`
+15. continue with the next audio sample
+16. after the last sample for the app, wait global `closeAppDelayMs`
+17. close the app
+
+Optimization in the current implementation:
+
+- for `hold_release` apps, the preferred helper path keeps hotkey hold, playback, and release inside a single helper session
+- if the native helper does not support that command yet, the app falls back to the older split hotkey / play / release path
+- builtin self-test bypasses real app launch and audio playback, then emits expected text directly into the input sink
 
 When all samples finish for one app, switch to the next app and repeat the same app-batch cycle.
 
@@ -196,7 +212,7 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `关于`, with `App管理` moved into the upper run-focused group directly below `样本管理`
+- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `常见问题`, `关于`, with `App管理` moved into the upper run-focused group directly below `样本管理`
 - configuration UI
 - target app CRUD now lives in dedicated `App管理`, using compact per-app cards with a single-row header for app name, app kind, enable state, toggle, and delete action
 - permission status UI
@@ -204,6 +220,7 @@ Responsibilities:
 - live run timeline
 - latest-session summary on `主控台`
 - dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, importing compatible result CSV files as synthetic history sessions, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter; CSV export should keep the original `run_id` while exposing the latest attempt as `latest_run_id`, and sample-path hover/focus should reveal the captured ASR text without widening the table
+- focused `常见问题` page for the current primary troubleshooting story around voice-typing apps muting other active audio during dictation
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 
@@ -225,7 +242,9 @@ Main modules:
 - `TargetAppManager`
 - `SampleManager`
 - `ResultStore`
-- `EventBus`
+- `HelperClient`
+- `ConfigStore`
+- `BuiltinSampleMaterializer`
 
 ### 7.3 Native helper
 
@@ -236,10 +255,12 @@ Responsibilities:
 - help recover app and window state when needed
 - enumerate and verify audio devices
 - play WAV audio to a specific device
+- run the combined "hold hotkey while playing audio" path when available
 
 Packaging note:
 
 - release builds must bundle both `vtc-helper` and `vtc-audioctl` from the release helper output path so `dist:mac` works from a clean checkout without depending on debug helper artifacts
+- if the native helper is absent during local development, the app can still fall back to a script-based helper path for partial development flows, but real benchmark runs should prefer the native helper
 
 Native modules:
 
@@ -265,6 +286,7 @@ Suggested states:
 - `wait_before_trigger_stop`
 - `trigger_stop`
 - `observing_text`
+- `between_samples_wait`
 - `completed`
 - `failed`
 - `cancelled`
@@ -289,13 +311,17 @@ App profile fields currently stored:
 - `hotkeyChord`
 - `hotkeyTriggerMode` (`hold_release` or `press_start_press_stop`)
 - `audioInputDeviceName`
+- `launchTimeoutMs`
+- `preHotkeyDelayMs`
 - `hotkeyToAudioDelayMs`
 - `audioToTriggerStopDelayMs`
+- `resultTimeoutMs`
 - `settleWindowMs`
+- `postRunCooldownMs`
 - `enabled`
 - `notes`
 
-`appFileName` is the primary way to identify an installed target app in the current version. The tool locates apps by installed `.app` file name, not by bundle id.
+`appFileName` is the primary way to identify an installed target app in the current version. The tool locates apps by installed `.app` file name, absolute path, optional launch command, or display name candidates, not by bundle id.
 
 `hotkeyChord` stores the exact shortcut the tester enters from a dedicated hotkey capture control. The UI should not split it into a main key field plus modifier chips.
 
@@ -324,7 +350,7 @@ Suggested fields:
 
 `relativePath` should preserve subfolder structure under the sample root so the UI can display nested test sets clearly.
 
-`expectedText` is optional, but once present it enables basic accuracy scoring.
+`expectedText` is optional, but once present it enables basic accuracy scoring and powers builtin self-test output injection.
 
 `enabled` decides whether the sample joins later benchmark batches. The sample-management page should let the tester toggle each sample individually and show enabled / disabled / total counts at a glance.
 
@@ -391,6 +417,12 @@ Calculate in the current implementation:
 - `total_run_ms`
 - `input_event_count`
 - `final_text_length`
+
+Persistence notes:
+
+- the history table and CSV export read the latest attempt for one logical sample row
+- retries are stored as new rows linked by `retry_root_run_id`
+- `retry_attempt` increments on each rerun, while the history view collapses the chain back into one visible latest row with `retry_count`
 
 Important interpretation rule:
 
@@ -474,6 +506,11 @@ Version handling rule:
 
 `run_session_id` links each test run back to the batch context so one benchmark pass can be queried, compared, and exported as a group.
 
+Retry metadata stored per run:
+
+- `retry_root_run_id`
+- `retry_attempt`
+
 Each test run record should persist the full timeline for that run so later queries, history views, and the main console can all reuse the same source data instead of rebuilding a separate display-only timeline model.
 
 ### 14.3 `run_events`
@@ -498,11 +535,17 @@ Before a run starts, the tool must verify:
 - virtual audio device availability
 - sample file existence
 - database writability
-- input box focus readiness
+- that at least one enabled app is runnable, unless the operator is only using builtin self-test
 
 Optional checks:
 
 - Automation permission for app launch or relaunch helpers
+
+Preflight behavior in the current implementation:
+
+- missing or permission-blocked apps can be skipped if at least one other enabled app is still runnable
+- if no runnable app remains, the whole run is blocked
+- input-box focus is part of the runtime sequence, not a static preflight item
 
 If any required check fails, the run does not start.
 

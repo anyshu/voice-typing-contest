@@ -158,8 +158,10 @@ const resultSessionGroups = computed(() => sessions.value
       displayTime,
       appGroups: appNames.map((appName) => {
         const appRuns = runs.filter((item) => item.appName === appName);
+        const appVersions = [...new Set(appRuns.map((item) => item.appVersion).filter((value): value is string => Boolean(value?.trim())))];
         return {
           appName,
+          appVersions,
           runs: appRuns,
           successCount: appRuns.filter((item) => item.status === "success").length,
           failedCount: appRuns.filter((item) => item.status === "failed").length,
@@ -566,10 +568,22 @@ function formatSessionTime(value: string): string {
   });
 }
 
-function sessionAppLabel(appGroups: Array<{ appName: string }>): string {
+function sessionAppLabel(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
   if (appGroups.length === 0) return "";
   if (appGroups.length === 1) return appGroups[0].appName;
   return `${appGroups[0].appName} 等 ${appGroups.length} 个 App`;
+}
+
+function sessionAppVersionText(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
+  if (appGroups.length !== 1) return "";
+  return appGroups[0].appVersions?.[0] ?? "";
+}
+
+function appGroupVersionText(appGroup: { appVersions?: string[] }): string {
+  const versions = appGroup.appVersions ?? [];
+  if (versions.length === 0) return "";
+  if (versions.length === 1) return versions[0];
+  return `${versions[0]} 等 ${versions.length} 个版本`;
 }
 
 function formatSessionTimestamp(value: string): string {
@@ -1880,6 +1894,9 @@ onBeforeUnmount(() => {
                   <span v-if="sessionAppLabel(group.appGroups)" class="session-app-name">
                     {{ sessionAppLabel(group.appGroups) }}
                   </span>
+                  <span v-if="sessionAppVersionText(group.appGroups)" class="session-app-version">
+                    {{ sessionAppVersionText(group.appGroups) }}
+                  </span>
                   <div
                     class="muted session-summary"
                     :class="{ 'session-summary--danger': group.session.failedCount > 0 }"
@@ -1905,7 +1922,10 @@ onBeforeUnmount(() => {
               <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
                 <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
                   <div v-if="group.appGroups.length > 1" class="app-group-header">
-                    <strong>{{ appGroup.appName }}</strong>
+                    <div class="app-group-title">
+                      <strong>{{ appGroup.appName }}</strong>
+                      <span v-if="appGroupVersionText(appGroup)" class="history-app-version">{{ appGroupVersionText(appGroup) }}</span>
+                    </div>
                     <div class="muted">
                       共 {{ appGroup.runs.length }} 条
                       · 成功 {{ appGroup.successCount }}
@@ -1941,11 +1961,14 @@ onBeforeUnmount(() => {
                         :key="result.id"
                       >
                         <td class="history-sample-cell">
-                          <span
-                            class="history-sample-tooltip"
-                            tabindex="0"
-                            :data-tooltip="historyResultTooltip(result)"
-                          ><span class="history-sample-text">{{ result.samplePath }}</span></span>
+                          <div class="history-sample-main">
+                            <span
+                              class="history-sample-tooltip"
+                              tabindex="0"
+                              :data-tooltip="historyResultTooltip(result)"
+                            ><span class="history-sample-text">{{ result.samplePath }}</span></span>
+                            <div v-if="result.appVersion" class="history-app-version">v{{ result.appVersion.replace(/^v/i, '') }}</div>
+                          </div>
                         </td>
                         <td class="history-status-cell">
                           <div class="history-status-wrap">

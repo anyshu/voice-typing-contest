@@ -542,6 +542,12 @@ The current renderer uses three timeline sources with clear roles:
 
 `主控台` should focus on "what is happening now / what just finished", while `测试历史` owns session browsing, expansion, and batch export actions.
 
+In the current history UI, app version snapshots should be visible in a low-emphasis style:
+
+- show the app version next to the session-level app name when a session contains only one app
+- show the app version inside expanded app groups
+- show each run row's captured app version as muted secondary text, not as the primary label
+
 ## 18. Delivery Phases
 
 ### Phase 1

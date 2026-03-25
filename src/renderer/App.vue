@@ -30,6 +30,7 @@ import type {
   AudioSample,
   CsvImportSummary,
   FailureCategory,
+  InstalledTargetAppInfo,
   PermissionSnapshot,
   PreflightReport,
   RunSessionSummary,
@@ -48,6 +49,7 @@ const page = ref<"main" | "checks" | "samples" | "history" | "intro" | "faq" | "
 const config = ref<AppConfig>(defaultConfig());
 const permissions = ref<PermissionSnapshot[]>([]);
 const devices = ref<AudioDevice[]>([]);
+const installedAppInfoById = ref<Record<string, InstalledTargetAppInfo>>({});
 const sessions = ref<RunSessionSummary[]>([]);
 const results = ref<TestRunRecord[]>([]);
 const expandedSessionIds = ref<string[]>([]);
@@ -59,7 +61,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
-const appVersion = ref("v0.1.3");
+const appVersion = ref("v0.1.4");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -132,6 +134,7 @@ const enabledApps = computed(() => config.value.targetApps.filter((item) => item
 const builtinApps = computed(() => config.value.targetApps.filter((item) => isBuiltinApp(item)));
 const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
 const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
+const installedRealApps = computed(() => realApps.value.filter((item) => installedAppInfoById.value[item.id]?.installed));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
 const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
@@ -155,8 +158,10 @@ const resultSessionGroups = computed(() => sessions.value
       displayTime,
       appGroups: appNames.map((appName) => {
         const appRuns = runs.filter((item) => item.appName === appName);
+        const appVersions = [...new Set(appRuns.map((item) => item.appVersion).filter((value): value is string => Boolean(value?.trim())))];
         return {
           appName,
+          appVersions,
           runs: appRuns,
           successCount: appRuns.filter((item) => item.status === "success").length,
           failedCount: appRuns.filter((item) => item.status === "failed").length,
@@ -175,7 +180,7 @@ const pageTitle = computed(() => {
   if (page.value === "settings") return "设置";
   if (page.value === "intro") return "怎么开始";
   if (page.value === "faq") return "常见问题";
-  return "版本说明";
+  return "关于";
 });
 const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
@@ -186,7 +191,7 @@ const pageSubtitle = computed(() => {
   if (page.value === "settings") return "运行参数与环境设置";
   if (page.value === "intro") return "准备路径与使用说明";
   if (page.value === "faq") return "常见问题与排查";
-  return "当前能力与限制";
+  return "评测方式与当前结果";
 });
 const noticeTone = computed(() => {
   if (!notice.value) return "info";
@@ -265,6 +270,18 @@ function isBuiltinApp(app: TargetAppProfile): boolean {
 
 function appKindLabel(app: TargetAppProfile): string {
   return isBuiltinApp(app) ? "内建自测" : "真实 App";
+}
+
+function appStatusLabel(app: TargetAppProfile): string {
+  return app.enabled ? "已启用" : "未启用";
+}
+
+function appVersionLabel(app: TargetAppProfile): string {
+  const info = installedAppInfoById.value[app.id];
+  if (isBuiltinApp(app) || !info?.installed) return "";
+  if (info.version) return `v${info.version}`;
+  if (info.buildVersion) return `build ${info.buildVersion}`;
+  return "";
 }
 
 function appLaunchSummary(app: TargetAppProfile): string {
@@ -551,10 +568,22 @@ function formatSessionTime(value: string): string {
   });
 }
 
-function sessionAppLabel(appGroups: Array<{ appName: string }>): string {
+function sessionAppLabel(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
   if (appGroups.length === 0) return "";
   if (appGroups.length === 1) return appGroups[0].appName;
   return `${appGroups[0].appName} 等 ${appGroups.length} 个 App`;
+}
+
+function sessionAppVersionText(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
+  if (appGroups.length !== 1) return "";
+  return appGroups[0].appVersions?.[0] ?? "";
+}
+
+function appGroupVersionText(appGroup: { appVersions?: string[] }): string {
+  const versions = appGroup.appVersions ?? [];
+  if (versions.length === 0) return "";
+  if (versions.length === 1) return versions[0];
+  return `${versions[0]} 等 ${versions.length} 个版本`;
 }
 
 function formatSessionTimestamp(value: string): string {
@@ -765,6 +794,7 @@ async function loadBootstrap(): Promise<void> {
   config.value = settings;
   permissions.value = settings.permissions;
   devices.value = settings.devices;
+  await refreshInstalledAppInfo();
   await refreshResultData();
 }
 
@@ -772,6 +802,11 @@ async function refreshEnvironment(): Promise<void> {
   const snapshot = await window.vtc.refreshPermissions() as { permissions: PermissionSnapshot[]; devices: AudioDevice[] };
   permissions.value = snapshot.permissions;
   devices.value = snapshot.devices;
+}
+
+async function refreshInstalledAppInfo(): Promise<void> {
+  const entries = await window.vtc.getInstalledAppInfo(plainConfig().targetApps) as InstalledTargetAppInfo[];
+  installedAppInfoById.value = Object.fromEntries(entries.map((item) => [item.profileId, item]));
 }
 
 async function inspectRunReadiness(): Promise<void> {
@@ -818,6 +853,7 @@ async function saveSettings(showNotice = true): Promise<void> {
   try {
     await window.vtc.saveSettings(plainConfig());
     await refreshEnvironment();
+    await refreshInstalledAppInfo();
     if (showNotice) {
       showToast("设置已保存。");
     }
@@ -1509,7 +1545,7 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'about' }" @click="page = 'about'">
               <HugeiconsIcon :icon="InformationCircleIcon" :size="18" class="nav-icon" />
-              <span class="nav-label">版本说明</span>
+              <span class="nav-label">关于</span>
             </button>
           </li>
         </ul>
@@ -1858,6 +1894,9 @@ onBeforeUnmount(() => {
                   <span v-if="sessionAppLabel(group.appGroups)" class="session-app-name">
                     {{ sessionAppLabel(group.appGroups) }}
                   </span>
+                  <span v-if="sessionAppVersionText(group.appGroups)" class="session-app-version">
+                    {{ sessionAppVersionText(group.appGroups) }}
+                  </span>
                   <div
                     class="muted session-summary"
                     :class="{ 'session-summary--danger': group.session.failedCount > 0 }"
@@ -1883,7 +1922,10 @@ onBeforeUnmount(() => {
               <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
                 <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
                   <div v-if="group.appGroups.length > 1" class="app-group-header">
-                    <strong>{{ appGroup.appName }}</strong>
+                    <div class="app-group-title">
+                      <strong>{{ appGroup.appName }}</strong>
+                      <span v-if="appGroupVersionText(appGroup)" class="history-app-version">{{ appGroupVersionText(appGroup) }}</span>
+                    </div>
                     <div class="muted">
                       共 {{ appGroup.runs.length }} 条
                       · 成功 {{ appGroup.successCount }}
@@ -1919,11 +1961,14 @@ onBeforeUnmount(() => {
                         :key="result.id"
                       >
                         <td class="history-sample-cell">
-                          <span
-                            class="history-sample-tooltip"
-                            tabindex="0"
-                            :data-tooltip="historyResultTooltip(result)"
-                          ><span class="history-sample-text">{{ result.samplePath }}</span></span>
+                          <div class="history-sample-main">
+                            <span
+                              class="history-sample-tooltip"
+                              tabindex="0"
+                              :data-tooltip="historyResultTooltip(result)"
+                            ><span class="history-sample-text">{{ result.samplePath }}</span></span>
+                            <div v-if="result.appVersion" class="history-app-version">v{{ result.appVersion.replace(/^v/i, '') }}</div>
+                          </div>
                         </td>
                         <td class="history-status-cell">
                           <div class="history-status-wrap">
@@ -1968,6 +2013,7 @@ onBeforeUnmount(() => {
               <p class="muted">把真实目标 App 和内建自测都收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
             </div>
             <div class="toolbar">
+              <button class="ghost-button" @click="refreshInstalledAppInfo">刷新安装信息</button>
               <button class="secondary-button" @click="addApp">新增应用</button>
               <button class="secondary-button" @click="saveSettings">保存设置</button>
             </div>
@@ -1991,6 +2037,11 @@ onBeforeUnmount(() => {
             </div>
             <div class="summary-item">
               <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">已安装真实 App</span>
+              <strong>{{ installedRealApps.length }} / {{ realApps.length }}</strong>
+            </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
               <span class="summary-label">内建自测</span>
               <strong>{{ builtinApps.length ? (builtinApps[0]?.enabled ? "已启用" : "未启用") : "未配置" }}</strong>
             </div>
@@ -2007,9 +2058,10 @@ onBeforeUnmount(() => {
               <div class="app-editor-card__top">
                 <div class="app-editor-card__headline">
                   <strong>{{ app.name }}</strong>
+                  <span v-if="appVersionLabel(app)" class="app-editor-card__version">{{ appVersionLabel(app) }}</span>
                   <div class="app-editor-card__badges">
                     <span class="pill" :class="isBuiltinApp(app) ? 'warning' : ''">{{ appKindLabel(app) }}</span>
-                    <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                    <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ appStatusLabel(app) }}</span>
                   </div>
                 </div>
                 <div class="toolbar app-editor-card__actions">

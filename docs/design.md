@@ -1,6 +1,6 @@
 # Voice Typing Contest Design
 
-Current spec baseline: `v0.1.3`
+Current spec baseline: `v0.1.4`
 
 ## 1. Goal
 
@@ -13,7 +13,7 @@ The tool drives multiple target apps with the same audio samples and records:
 - pass/fail status and failure reason
 - comparable latency metrics across apps
 
-The initial targets include apps like Xiguashuo, Wispr Flow, and Typeless.
+The initial targets include apps like Xiguashuo, Shandianshuo, Wispr Flow, and Typeless.
 
 Assumption for v1:
 
@@ -38,7 +38,7 @@ Target apps are expected to be pre-installed and pre-configured by the tester.
 Before running tests, the tester prepares:
 
 1. a set of WAV audio samples
-2. a virtual audio device such as BlackHole
+2. optionally, a virtual audio device such as BlackHole when the tester wants to reduce interference from external sound; this is currently more strongly recommended for apps such as Xiguashuo / Shandianshuo
 3. each target voice typing app
 4. each target app's hotkey
 5. each target app's input device set to the virtual microphone path
@@ -196,7 +196,7 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `版本说明`, with `App管理` moved into the upper run-focused group directly below `样本管理`
+- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `关于`, with `App管理` moved into the upper run-focused group directly below `样本管理`
 - configuration UI
 - target app CRUD now lives in dedicated `App管理`, using compact per-app cards with a single-row header for app name, app kind, enable state, toggle, and delete action
 - permission status UI
@@ -453,11 +453,20 @@ Stores one app + one sample execution result, including:
 
 - `run_session_id`
 - app id
+- app name snapshot
+- app version snapshot captured at run time
 - sample id
 - status
 - raw text
 - normalized text
 - expected text
+
+Version handling rule:
+
+- the app version stored on a test run is a historical snapshot of the installed target app at the moment that run started
+- retrying a sample creates a new run row with a fresh version snapshot for that retry attempt
+- CSV export must include the captured app version for every exported row
+- old rows must not be backfilled from the machine's current installed app state
 - latency metrics
 - failure reason
 - timeline snapshot
@@ -532,6 +541,12 @@ The current renderer uses three timeline sources with clear roles:
 - persisted `test_runs.timeline_json` is the source of truth for history views and for restoring the main console after a session finishes
 
 `主控台` should focus on "what is happening now / what just finished", while `测试历史` owns session browsing, expansion, and batch export actions.
+
+In the current history UI, app version snapshots should be visible in a low-emphasis style:
+
+- show the app version next to the session-level app name when a session contains only one app
+- show the app version inside expanded app groups
+- show each run row's captured app version as muted secondary text, not as the primary label
 
 ## 18. Delivery Phases
 

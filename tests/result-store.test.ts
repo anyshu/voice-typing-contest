@@ -32,6 +32,7 @@ describe("ResultStore", () => {
       runSessionId: "session-1",
       appId: "app-1",
       appName: "App",
+      appVersion: "1.2.3",
       sampleId: "sample-1",
       samplePath: "a.wav",
       status: "success",
@@ -49,10 +50,12 @@ describe("ResultStore", () => {
     expect(csv).toContain("retry_root_run_id");
     expect(csv).toContain("retry_attempt");
     expect(csv).toContain("app_name");
+    expect(csv).toContain("app_version");
     expect(csv).toContain("trigger_stop_to_first_char_ms");
     expect(csv).toContain("trigger_stop_to_final_text_ms");
     expect(csv).toContain("hello");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
+    expect(store.getRunDetail("run-1")?.record.appVersion).toBe("1.2.3");
     expect(store.listRuns()[0]?.timeline).toEqual([]);
     store.close();
   });
@@ -87,6 +90,7 @@ describe("ResultStore", () => {
       runSessionId: "session-1",
       appId: "app-1",
       appName: "Typeless",
+      appVersion: "1.0.0",
       sampleId: "sample-1",
       samplePath: "a.wav",
       status: "failed",
@@ -103,6 +107,7 @@ describe("ResultStore", () => {
       runSessionId: "session-2",
       appId: "app-1",
       appName: "Typeless",
+      appVersion: "1.0.1",
       sampleId: "sample-1",
       samplePath: "a.wav",
       status: "success",
@@ -134,6 +139,7 @@ describe("ResultStore", () => {
     expect(csv).toContain("latest_run_id");
     expect(csv).toContain("retry_root_run_id");
     expect(csv).toContain("\"run-1\",\"run-2\",\"run-1\",\"1\"");
+    expect(csv).toContain("1.0.1");
     expect(csv).toContain("fixed");
     expect(csv).not.toContain("\"run-2\",\"run-2\"");
     expect(csv).not.toContain("session-2");
@@ -149,8 +155,8 @@ describe("ResultStore", () => {
       Date.now = () => new Date("2026-03-24T12:34:56.000Z").getTime();
 
       const summary = store.importCsv([
-        "app_name,sample_path,status,failure_category,failure_reason,trigger_stop_to_first_char_ms,trigger_stop_to_final_text_ms,final_text_length,raw_text,created_at",
-        "\"AutoGLM\",\"6.3/en/sample.mp3\",\"success\",\"\",\"\",\"1356\",\"1356\",\"11\",\"hello world\",\"2026-03-24T03:50:22.741Z\"",
+        "app_name,app_version,sample_path,status,failure_category,failure_reason,trigger_stop_to_first_char_ms,trigger_stop_to_final_text_ms,final_text_length,raw_text,created_at",
+        "\"AutoGLM\",\"2.8.0\",\"6.3/en/sample.mp3\",\"success\",\"\",\"\",\"1356\",\"1356\",\"11\",\"hello world\",\"2026-03-24T03:50:22.741Z\"",
       ].join("\n"), "/tmp/sample.csv", config, defaultPermissions(), defaultDevices());
 
       const sessions = store.listSessions();
@@ -160,6 +166,7 @@ describe("ResultStore", () => {
       expect(sessions[0]?.id).toBe(summary.sessionId);
       expect(summary.startedAt).toBe("2026-03-24T12:34:56.000Z");
       expect(runs[0]?.appName).toBe("AutoGLM");
+      expect(runs[0]?.appVersion).toBe("2.8.0");
       expect(runs[0]?.samplePath).toBe("6.3/en/sample.mp3");
       expect(runs[0]?.triggerStopToFirstCharMs).toBe(1356);
       expect(runs[0]?.createdAt).toBe("2026-03-24T12:34:56.000Z");

@@ -4,7 +4,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/renderer/App.vue";
 import { defaultConfig, defaultDevices, defaultPermissions } from "../src/shared/defaults";
-import type { PreflightReport, RunSessionSummary, SettingsPayload, TestRunRecord } from "../src/shared/types";
+import type { InstalledTargetAppInfo, PreflightReport, RunSessionSummary, SettingsPayload, TestRunRecord } from "../src/shared/types";
 
 type Handler = (payload: unknown) => void;
 
@@ -40,8 +40,13 @@ function setupDesktopApi(options?: {
   const settings = makeSettings();
   const sessions = makeSessions();
   const handlers: Record<string, Handler | undefined> = {};
+  const installedInfo: InstalledTargetAppInfo[] = settings.targetApps.map((app) => ({
+    profileId: app.id,
+    installed: false,
+    isBuiltin: Boolean(app.launchCommand?.startsWith("selftest://")),
+  }));
   const api = {
-    getVersion: vi.fn(async () => "0.1.3"),
+    getVersion: vi.fn(async () => "0.1.4"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),
@@ -50,6 +55,7 @@ function setupDesktopApi(options?: {
     refreshPermissions: vi.fn(async () => ({ permissions: settings.permissions, devices: settings.devices })),
     requestAccessibilityPermission: vi.fn(async () => ({ permissions: settings.permissions, devices: settings.devices })),
     openPermissionSettings: vi.fn(async () => ({ ok: true })),
+    getInstalledAppInfo: vi.fn(async () => installedInfo),
     focusBenchmarkWindow: vi.fn(async () => ({ ok: true })),
     startRun: vi.fn(async () => options?.startRunResult ?? {
       ok: true,

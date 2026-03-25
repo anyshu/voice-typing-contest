@@ -1153,6 +1153,13 @@ select {
   line-height: 1.25;
 }
 
+.app-editor-card__version {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
 .app-editor-card__badges {
   display: flex;
   gap: 6px;
@@ -1464,12 +1471,25 @@ select {
   cursor: help;
 }
 
+.history-sample-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .history-sample-text {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.history-app-version {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .history-sample-tooltip::after {
@@ -1723,6 +1743,12 @@ select {
   color: var(--text-primary);
 }
 
+.session-app-version {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .session-summary--danger {
   color: var(--danger);
   font-weight: 600;
@@ -1751,6 +1777,13 @@ select {
 
 .app-group-header strong {
   font-size: 13px;
+}
+
+.app-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .result-stack {

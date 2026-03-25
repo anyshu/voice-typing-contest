@@ -17,7 +17,7 @@ Current first-level pages:
 - `运行前检查`
 - `怎么开始`
 - `常见问题`
-- `版本说明`
+- `关于`
 
 `开始` and `关闭` belong only to `主控台`.
 
@@ -85,7 +85,7 @@ Current first-level pages:
 | 运行前检查 | `CheckListIcon` |
 | 怎么开始 | `BookOpen01Icon` |
 | 常见问题 | `HelpCircleIcon` |
-| 版本说明 | `InformationCircleIcon` |
+| 关于 | `InformationCircleIcon` |
 | 开始 | `PlayCircleIcon` |
 | 关闭 | `StopCircleIcon` |
 | 权限 | `Shield01Icon` |
@@ -276,6 +276,7 @@ Trigger mode copy should reflect two different behaviors instead of two generic 
 
 Built-in presets:
 
+- `闪电说`: default hotkey `Fn`, trigger mode `hold_release`
 - `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
 - `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
 

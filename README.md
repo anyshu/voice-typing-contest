@@ -165,6 +165,19 @@ git push origin v0.1.12
 - 为了让 CI 上的打包路径稳定，helper 构建脚本现在会把 Swift 编译出的 `vtc-helper` 复制到固定的 `native/helper/.build/release/vtc-helper`
 - 同时也会把 `vtc-audioctl` 放到同一个稳定 release 路径，避免 electron-builder 在干净 CI 环境里漏资源
 
+推荐给最终用户的安装步骤：
+
+1. 从 GitHub Release 下载最新的 `arm64-mac.zip`
+2. 解压后把 `Voice Typing Contest.app` 拖到 `/Applications`
+3. 如果首次打开被 macOS 拦住，先执行：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Voice Typing Contest.app"
+open "/Applications/Voice Typing Contest.app"
+```
+
+4. 如果系统仍提示未验证开发者，再到“系统设置 > 隐私与安全性”里点“仍要打开”
+
 ## 目录结构
 
 - `src/renderer`：界面与交互

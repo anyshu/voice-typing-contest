@@ -192,6 +192,7 @@ Current repository release rule:
 - release builds should explicitly disable Developer ID signing in electron-builder so distribution does not depend on paid Apple certificates
 - release packaging should replace Electron's broken default ad-hoc signature state with one consistent deep ad-hoc signature after pack, so Gatekeeper no longer treats the bundle as damaged
 - unsigned GitHub release builds are expected to rely on the operator manually allowing the app under macOS Privacy & Security on first launch
+- user-facing install guidance should prefer the release `arm64-mac.zip`, copy the app into `/Applications`, then fall back to `xattr -dr com.apple.quarantine` plus the Privacy & Security allow flow when Gatekeeper blocks the first launch
 
 ## 6. Architecture
 

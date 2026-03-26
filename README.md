@@ -6,9 +6,7 @@
 
 ## 参考展示
 
-[![Voice Typing Contest Demo](./docs/assets/readme-demo-cover.png)](./docs/assets/readme-demo-1080p.mp4)
-
-点击封面图可打开仓库内置的 1080p 演示视频文件。
+https://github.com/user-attachments/assets/dde909e5-a18f-4d18-b6a8-4868375619b6
 
 ## 这项目主要解决什么
 

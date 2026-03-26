@@ -28,9 +28,9 @@ The GitHub repository README should keep a `参考展示` block near the top of 
 
 Current README showcase rule:
 
-- use a clickable cover image rather than a raw external URL
-- the cover image links to a repository-hosted compressed 1080p demo video asset
-- keep the repository showcase asset under `docs/assets/` so README and release materials can reuse the same file set
+- use a GitHub attachment video URL so the repository README can render the demo with GitHub's native player
+- prefer the uploaded compressed 1080p showcase asset rather than linking to X / Twitter or a repository-tracked video file
+- treat README showcase media as separately hosted presentation assets, not versioned product binaries under `docs/assets/`
 
 ## 2. Design Tokens
 

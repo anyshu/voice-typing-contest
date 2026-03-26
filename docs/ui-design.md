@@ -315,6 +315,7 @@ Only global editable settings live on the dedicated `设置` page.
 The current page has two main blocks:
 
 - base settings
+- advanced parameters
 - permissions and devices
 
 ### 6.3 Base settings
@@ -327,10 +328,22 @@ Fields:
 - external sample root
 - app launch delay
 - focus input delay
-- result timeout
 - next sample play delay
+
+Top actions are plain and direct:
+
+- refresh
+- save settings
+
+### 6.4 Advanced parameters
+
+Advanced parameters are hidden behind an explicit expand action by default.
+
+Fields:
+
+- result timeout
+- resource sample interval
 - close app delay
-- run notes
 
 #### Permissions and Devices
 
@@ -338,15 +351,15 @@ The lower settings region is operational and explicit.
 
 ```text
 +----------------------------------------------------------------------------------+
-| Permissions                                                                      |
+| 系统权限                                                                         |
 |----------------------------------------------------------------------------------|
 | Accessibility      Required     Granted / Missing       [Check again]            |
 | Automation         Optional     Granted / Missing       [Open settings]          |
 | Input Monitoring   Optional     Granted / Missing       [Open settings]          |
 |----------------------------------------------------------------------------------|
-| Notes                                                                             |
-| - Core benchmark requires Accessibility.                                         |
-| - Automation is only needed for optional app management flows.                   |
+| 音频设备                                                                         |
+| - current selected output device                                                 |
+| - all discovered output devices                                                  |
 +----------------------------------------------------------------------------------+
 ```
 

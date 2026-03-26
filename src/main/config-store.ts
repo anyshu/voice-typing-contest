@@ -70,6 +70,7 @@ export class ConfigStore {
       appLaunchDelayMs: config.appLaunchDelayMs ?? legacyAppLaunchDelayMs ?? defaults.appLaunchDelayMs,
       focusInputDelayMs: config.focusInputDelayMs ?? legacyFocusInputDelayMs ?? defaults.focusInputDelayMs,
       resultTimeoutMs: config.resultTimeoutMs ?? legacyResultTimeoutMs ?? defaults.resultTimeoutMs,
+      resourceSampleIntervalMs: config.resourceSampleIntervalMs ?? defaults.resourceSampleIntervalMs,
       betweenSamplesDelayMs: config.betweenSamplesDelayMs ?? defaults.betweenSamplesDelayMs,
       closeAppDelayMs: config.closeAppDelayMs ?? legacyCloseAppDelayMs ?? defaults.closeAppDelayMs,
       targetApps,

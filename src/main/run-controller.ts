@@ -22,8 +22,26 @@ import { HelperClient } from "./helper-client";
 import type { PlaybackRouteInfo } from "./helper-client";
 import { resolveHomePath } from "../shared/paths";
 import { BuiltinSampleMaterializer } from "./builtin-sample-materializer";
+import { ResourceSampler } from "./resource-sampler";
 
 const wait = async (ms: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, ms));
+
+function summarizeResourceSamples(samples: Array<{ totalCpuPercent: number; totalMemoryMb: number }>): {
+  averageCpuPercent?: number;
+  peakCpuPercent?: number;
+  averageMemoryMb?: number;
+  peakMemoryMb?: number;
+} {
+  if (!samples.length) return {};
+  const totalCpu = samples.reduce((sum, item) => sum + item.totalCpuPercent, 0);
+  const totalMemory = samples.reduce((sum, item) => sum + item.totalMemoryMb, 0);
+  return {
+    averageCpuPercent: Math.round((totalCpu / samples.length) * 100) / 100,
+    peakCpuPercent: Math.round(Math.max(...samples.map((item) => item.totalCpuPercent)) * 100) / 100,
+    averageMemoryMb: Math.round((totalMemory / samples.length) * 100) / 100,
+    peakMemoryMb: Math.round(Math.max(...samples.map((item) => item.totalMemoryMb)) * 100) / 100,
+  };
+}
 
 interface CurrentObservation {
   runId: string;
@@ -224,6 +242,10 @@ export class RunController extends EventEmitter {
         let status: ResultStatus = "success";
         let shouldExitAfterCurrentRun = false;
         let triggerStopTs: number | undefined;
+        const resourceSampling = !isSelfTestApp && resolvedApp
+          ? new ResourceSampler(this.helper).start(runId, resolvedApp, config.resourceSampleIntervalMs)
+          : undefined;
+        let resourceSummary: ReturnType<typeof summarizeResourceSamples> = {};
         try {
           this.throwIfStopped();
           pushEvent("focus_input", {});
@@ -394,6 +416,8 @@ export class RunController extends EventEmitter {
           const lastInputTs = observed.events[observed.events.length - 1].tsMs;
           const end = performance.now();
           const resolvedTriggerStopTs = triggerStopTs ?? end;
+          const resourceSamples = resourceSampling ? await resourceSampling.stop() : [];
+          resourceSummary = summarizeResourceSamples(resourceSamples);
           const record: TestRunRecord = {
             id: runId,
             runSessionId: sessionId,
@@ -411,6 +435,10 @@ export class RunController extends EventEmitter {
             triggerStopToFirstCharMs: Math.round(firstInputTs - resolvedTriggerStopTs),
             triggerStopToFinalTextMs: Math.round(lastInputTs - resolvedTriggerStopTs),
             totalRunMs: Math.round(end - started),
+            averageCpuPercent: resourceSummary.averageCpuPercent,
+            peakCpuPercent: resourceSummary.peakCpuPercent,
+            averageMemoryMb: resourceSummary.averageMemoryMb,
+            peakMemoryMb: resourceSummary.peakMemoryMb,
             inputEventCount: observed.events.length,
             finalTextLength: rawText.length,
             createdAt: new Date().toISOString(),
@@ -419,6 +447,7 @@ export class RunController extends EventEmitter {
             timeline: [...(runTimelineMap.get(runId) ?? [])],
           };
           this.store.insertRun(record);
+          this.store.insertResourceSamples(resourceSamples);
           completed += 1;
           const batchFinished = completed >= totalRuns;
           this.progress = {
@@ -435,6 +464,8 @@ export class RunController extends EventEmitter {
           this.emit("result", record);
           this.emit("progress", { ...this.progress });
         } catch (error) {
+          const resourceSamples = resourceSampling ? await resourceSampling.stop() : [];
+          resourceSummary = summarizeResourceSamples(resourceSamples);
           status = this.stopRequested || error instanceof RunCancelledError ? "cancelled" : "failed";
           failureCategory = status === "cancelled" ? undefined : ((error as { category?: FailureCategory }).category ?? "timeout_waiting_result");
           failureReason = (error as { message?: string }).message ?? (status === "cancelled" ? "Run cancelled" : "Run failed");
@@ -461,6 +492,10 @@ export class RunController extends EventEmitter {
             rawText: this.progress.textValue,
             normalizedText: this.progress.textValue.trim(),
             expectedText: sample.expectedText,
+            averageCpuPercent: resourceSummary.averageCpuPercent,
+            peakCpuPercent: resourceSummary.peakCpuPercent,
+            averageMemoryMb: resourceSummary.averageMemoryMb,
+            peakMemoryMb: resourceSummary.peakMemoryMb,
             inputEventCount: this.current?.values.length ?? 0,
             finalTextLength: this.progress.textValue.length,
             createdAt: new Date().toISOString(),
@@ -469,6 +504,7 @@ export class RunController extends EventEmitter {
             timeline: [...(runTimelineMap.get(runId) ?? [])],
           };
           this.store.insertRun(record);
+          this.store.insertResourceSamples(resourceSamples);
           if (status !== "cancelled") {
             completed += 1;
           } else {

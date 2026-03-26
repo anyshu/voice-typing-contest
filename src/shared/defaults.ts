@@ -24,6 +24,7 @@ export const defaultConfig = (): AppConfig => {
     appLaunchDelayMs: 5000,
     focusInputDelayMs: 2000,
     resultTimeoutMs: 5000,
+    resourceSampleIntervalMs: 1000,
     betweenSamplesDelayMs: 3000,
     closeAppDelayMs: 3000,
     runNotes: "默认先用内建自测确认流程正常，再去接真实目标App。",

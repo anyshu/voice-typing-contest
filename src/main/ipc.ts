@@ -1,6 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { nanoid } from "nanoid";
 import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions, TargetAppProfile } from "../shared/types";
 import { SampleManager } from "./sample-manager";
@@ -25,6 +28,7 @@ interface IpcDeps {
 }
 
 export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
+  const execFileAsync = promisify(execFile);
   let activeRun: Promise<unknown> | null = null;
   const timelineFirstTsByRunId = new Map<string, number>();
   const builtinSamples = new BuiltinSampleMaterializer();
@@ -179,11 +183,21 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   handle("results:list", async () => deps.resultStore.listRuns());
   handle("results:listSessions", async () => deps.resultStore.listSessions());
   handle("results:getDetail", async (_event, runId: string) => deps.resultStore.getRunDetail(runId));
-  handle("results:exportCsv", async (_event, runSessionId?: string) => {
+  handle("results:exportBundle", async (_event, runSessionId?: string) => {
     const suffix = runSessionId ? `-${runSessionId.slice(0, 8)}` : "";
-    const result = await dialog.showSaveDialog(win, { defaultPath: `voice-typing-contest-results${suffix}.csv` });
+    const result = await dialog.showSaveDialog(win, { defaultPath: `voice-typing-contest-results${suffix}.zip` });
     if (result.canceled || !result.filePath) return undefined;
-    await writeFile(result.filePath, deps.resultStore.exportCsv(runSessionId), "utf8");
+    const tempRoot = await mkdtemp(join(tmpdir(), "vtc-export-"));
+    const bundleDir = join(tempRoot, `voice-typing-contest-results${suffix}`);
+    try {
+      await mkdir(bundleDir, { recursive: true });
+      await writeFile(join(bundleDir, "results.csv"), deps.resultStore.exportCsv(runSessionId), "utf8");
+      await writeFile(join(bundleDir, "system-info.csv"), deps.resultStore.exportResourceCsv(runSessionId), "utf8");
+      await writeFile(join(bundleDir, "system-summary.csv"), deps.resultStore.exportResourceSummaryCsv(runSessionId), "utf8");
+      await execFileAsync("/usr/bin/ditto", ["-c", "-k", "--keepParent", bundleDir, result.filePath]);
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
     return result.filePath;
   });
   handle("results:pickImportCsv", async () => {

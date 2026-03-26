@@ -25,6 +25,14 @@ struct PlaybackRouteRow: Codable {
     let strategy: String
 }
 
+struct RunningAppInfoRow: Codable {
+    let pid: Int32
+    let bundleIdentifier: String?
+    let appPath: String?
+    let executablePath: String?
+    let localizedName: String?
+}
+
 struct HelperResponse<T: Encodable>: Encodable {
     let ok: Bool
     let result: T?
@@ -442,6 +450,46 @@ func revealSystemSettings(_ pane: String) throws -> [String: String] {
     return ["status": "ok"]
 }
 
+func getRunningAppInfo(_ appTarget: String) -> RunningAppInfoRow? {
+    if appTarget.hasPrefix("selftest://") {
+        return nil
+    }
+
+    let resolvedTargetPath: String?
+    if appTarget.hasPrefix("/") {
+        resolvedTargetPath = URL(fileURLWithPath: appTarget).standardizedFileURL.path
+    } else {
+        resolvedTargetPath = nil
+    }
+    let normalizedAppName = URL(fileURLWithPath: appTarget).deletingPathExtension().lastPathComponent
+
+    let matchedApp = NSWorkspace.shared.runningApplications.first { app in
+        if let resolvedTargetPath,
+           app.bundleURL?.standardizedFileURL.path == resolvedTargetPath {
+            return true
+        }
+        if app.localizedName == normalizedAppName {
+            return true
+        }
+        if app.bundleURL?.lastPathComponent == "\(normalizedAppName).app" {
+            return true
+        }
+        return false
+    }
+
+    guard let matchedApp else {
+        return nil
+    }
+
+    return RunningAppInfoRow(
+        pid: matchedApp.processIdentifier,
+        bundleIdentifier: matchedApp.bundleIdentifier,
+        appPath: matchedApp.bundleURL?.path,
+        executablePath: matchedApp.executableURL?.path,
+        localizedName: matchedApp.localizedName
+    )
+}
+
 do {
     let request = try readRequest()
     switch request.command {
@@ -473,6 +521,9 @@ do {
     case "revealSystemSettings":
         guard let pane = request.pane else { throw HelperError.invalidInput("Missing pane") }
         try writeResponse(revealSystemSettings(pane))
+    case "getRunningAppInfo":
+        guard let appFileName = request.appFileName else { throw HelperError.invalidInput("Missing appFileName") }
+        try writeResponse(getRunningAppInfo(appFileName))
     default:
         throw HelperError.invalidInput("Unknown command")
     }

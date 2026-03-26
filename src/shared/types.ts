@@ -98,6 +98,7 @@ export interface AppConfig {
   appLaunchDelayMs: number;
   focusInputDelayMs: number;
   resultTimeoutMs: number;
+  resourceSampleIntervalMs: number;
   betweenSamplesDelayMs: number;
   closeAppDelayMs: number;
   runNotes: string;
@@ -168,6 +169,10 @@ export interface TestRunRecord {
   triggerStopToFirstCharMs?: number;
   triggerStopToFinalTextMs?: number;
   totalRunMs?: number;
+  averageCpuPercent?: number;
+  peakCpuPercent?: number;
+  averageMemoryMb?: number;
+  peakMemoryMb?: number;
   inputEventCount: number;
   finalTextLength: number;
   createdAt: string;
@@ -175,6 +180,20 @@ export interface TestRunRecord {
   retryAttempt?: number;
   retryCount?: number;
   timeline: RunEventRecord[];
+}
+
+export interface ResourceSampleRecord {
+  id: string;
+  runId: string;
+  sampleIndex: number;
+  sampledAt: string;
+  mainPid: number;
+  processCount: number;
+  mainCpuPercent: number;
+  totalCpuPercent: number;
+  mainMemoryMb: number;
+  totalMemoryMb: number;
+  intervalMs: number;
 }
 
 export interface RunEventRecord {

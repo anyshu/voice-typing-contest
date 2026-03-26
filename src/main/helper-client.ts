@@ -11,6 +11,14 @@ export interface PlaybackRouteInfo {
   strategy: "system-default" | "temporary-default-switch";
 }
 
+export interface RunningAppInfo {
+  pid: number;
+  bundleIdentifier?: string;
+  appPath?: string;
+  executablePath?: string;
+  localizedName?: string;
+}
+
 async function runHelper<T>(helperPath: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
     const useProcessGroup = process.platform !== "win32";
@@ -182,5 +190,10 @@ export class HelperClient {
   async revealSystemSettings(pane: string, signal?: AbortSignal): Promise<void> {
     if (!this.available) return;
     await runHelper(this.helperPath, { command: "revealSystemSettings", pane }, signal);
+  }
+
+  async getRunningAppInfo(appFileName: string, signal?: AbortSignal): Promise<RunningAppInfo | undefined> {
+    if (!this.available) return undefined;
+    return await runHelper<RunningAppInfo | undefined>(this.helperPath, { command: "getRunningAppInfo", appFileName }, signal);
   }
 }

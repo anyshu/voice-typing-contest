@@ -69,7 +69,7 @@ function setupDesktopApi(options?: {
     listResults: vi.fn(async (): Promise<TestRunRecord[]> => []),
     listResultSessions: vi.fn(async (): Promise<RunSessionSummary[]> => sessions),
     getResultDetail: vi.fn(async () => undefined),
-    exportCsv: vi.fn(async () => undefined),
+    exportBundle: vi.fn(async () => undefined),
     pickImportCsv: vi.fn(async () => undefined),
     importCsv: vi.fn(async () => ({
       sessionId: "import-session-1",
@@ -562,7 +562,7 @@ describe("App renderer", () => {
 
     expect(wrapper.text()).toContain("历史列表");
     expect(wrapper.text()).toContain("导入CSV");
-    expect(wrapper.find('button[aria-label="导出本轮 CSV"]').exists()).toBe(true);
+    expect(wrapper.find('button[aria-label="导出本轮 ZIP"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain("输入检测区");
   });
 
@@ -880,12 +880,12 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("03/23");
     expect(wrapper.text()).toContain("Wispr Flow");
 
-    const exportButton = wrapper.find('button[aria-label="导出本轮 CSV"]');
+    const exportButton = wrapper.find('button[aria-label="导出本轮 ZIP"]');
     expect(exportButton.exists()).toBe(true);
     await exportButton.trigger("click");
     await flushPromises();
 
-    expect(api.exportCsv).toHaveBeenCalledWith("session-1");
+    expect(api.exportBundle).toHaveBeenCalledWith("session-1");
   });
 
   it("highlights failed history session summary text in red", async () => {

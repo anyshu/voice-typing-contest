@@ -176,6 +176,10 @@ Current stats per app:
 - max first-char latency
 - median first-char latency
 - total run time
+- average CPU
+- peak CPU
+- average memory
+- peak memory
 
 ### 4.5 History page
 
@@ -185,11 +189,13 @@ The `测试历史` page is grouped as:
 - app
 - sample row
 
-The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 CSV` action.
+The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 ZIP` action.
 
 Each sample row should keep the path text truncated in the table cell, but hovering or keyboard focusing that path must reveal a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip should fall back to the failure reason or an explicit "未捕获到结果" message.
 
-When a sample row has retry history, the exported CSV should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+When a sample row has retry history, the exported result bundle should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+
+Each exported ZIP should contain `results.csv`, `system-info.csv`, and `system-summary.csv`. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app, while `system-summary.csv` provides one plotting-friendly summary row per run.
 
 Each session header should render the session start time first and then the app label in a heavier weight, so a single-app session reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`.
 
@@ -232,6 +238,7 @@ The editable fields should prefer single-row label-and-control layout when the c
 The settings page has two functional blocks:
 
 - base settings
+- advanced parameters
 - permissions and devices
 
 ### 5.1 Base settings
@@ -244,10 +251,12 @@ Current editable global settings:
 - external sample root
 - `启动 app 延时`
 - `聚焦检测框延时`
-- `结果超时`
 - `下一条样本播放延时`
-- `关闭 app 延时`
-- run notes
+
+The top of the page only keeps plain actions:
+
+- `刷新`
+- `保存设置`
 
 Default timing values:
 
@@ -259,7 +268,17 @@ Default timing values:
 
 Target-app editing no longer lives here; it belongs to the dedicated `App管理` page.
 
-### 5.2 App management
+### 5.2 Advanced parameters
+
+Advanced parameters are collapsed by default so the settings page stays clean for day-to-day use.
+
+Expandable fields:
+
+- `结果超时`
+- `系统数据采样间隔`
+- `关闭 app 延时`
+
+### 5.3 App management
 
 - name
 - `.app` file name
@@ -285,7 +304,7 @@ Built-in presets:
 - `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
 - `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
 
-### 5.3 Permissions and devices
+### 5.4 Permissions and devices
 
 These are diagnostic lists, not decorative cards.
 
@@ -299,6 +318,11 @@ Devices:
 
 - current selected output device
 - all discovered output devices
+
+Section titles in the UI:
+
+- `系统权限`
+- `音频设备`
 
 ## 6. Runtime Interaction Rules
 

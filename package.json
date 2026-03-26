@@ -1,6 +1,6 @@
 {
   "name": "voice-typing-contest",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "description": "macOS Electron benchmark app for voice typing tools",
   "main": "out/main/index.js",
@@ -40,7 +40,7 @@
   "build": {
     "appId": "com.hc.voicetypingcontest",
     "productName": "Voice Typing Contest",
-    "afterPack": "scripts/strip-macos-signatures.mjs",
+    "afterPack": "scripts/fix-macos-signatures.mjs",
     "directories": {
       "output": "release"
     },

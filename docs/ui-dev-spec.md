@@ -22,6 +22,16 @@ Current first-level pages:
 
 `开始` and `关闭` belong only to `主控台`.
 
+## 1.1 Repository Showcase
+
+The GitHub repository README should keep a `参考展示` block near the top of the page.
+
+Current README showcase rule:
+
+- use a clickable cover image rather than a raw X / Twitter URL
+- the cover image links out to the external demo recording
+- do not rely on inline video embedding in README because the repository homepage does not reliably render external video players
+
 ## 2. Design Tokens
 
 ### 2.1 Color tokens

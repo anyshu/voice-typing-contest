@@ -4,6 +4,12 @@
 
 它不是单纯“放音频 + 看结果”的 demo，而是尽量把每个目标 App 放进同一套可重复的测试流程里：同一批样本、同一套触发方式、同一个文本接收区、同一种结果落库方式，最后把可比较的数据沉淀到本地 SQLite。
 
+## 参考展示
+
+[![Voice Typing Contest Demo](./docs/assets/readme-demo-cover.svg)](https://x.com/i/status/2036662683370741894)
+
+点击封面图可打开 X / Twitter 上的演示视频。GitHub 仓库首页目前不能直接内嵌播放这个外部视频，所以这里改成了封面跳转。
+
 ## 这项目主要解决什么
 
 - 用同一批音频样本跑多个 voice typing App

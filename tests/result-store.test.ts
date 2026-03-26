@@ -77,7 +77,15 @@ describe("ResultStore", () => {
     expect(csv).toContain("hello");
     const resourceCsv = store.exportResourceCsv();
     expect(resourceCsv).toContain("total_cpu_percent");
+    expect(resourceCsv).toContain("relative_sampled_at_ms");
     expect(resourceCsv).toContain("\"run-1\"");
+    expect(resourceCsv).toContain("\"0\"");
+    const resourceSummaryCsv = store.exportResourceSummaryCsv();
+    expect(resourceSummaryCsv).toContain("sampling_interval_ms");
+    expect(resourceSummaryCsv).toContain("average_cpu_percent");
+    expect(resourceSummaryCsv).toContain("peak_memory_mb");
+    expect(resourceSummaryCsv).toContain("\"2000\"");
+    expect(resourceSummaryCsv).toContain("\"128.25\"");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
     expect(store.getRunDetail("run-1")?.record.appVersion).toBe("1.2.3");
     expect(store.listRuns()[0]?.timeline).toEqual([]);

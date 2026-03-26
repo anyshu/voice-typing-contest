@@ -195,7 +195,7 @@ Each sample row should keep the path text truncated in the table cell, but hover
 
 When a sample row has retry history, the exported result bundle should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
 
-Each exported ZIP should contain `results.csv` and `system-info.csv`. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app.
+Each exported ZIP should contain `results.csv`, `system-info.csv`, and `system-summary.csv`. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app, while `system-summary.csv` provides one plotting-friendly summary row per run.
 
 Each session header should render the session start time first and then the app label in a heavier weight, so a single-app session reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`.
 

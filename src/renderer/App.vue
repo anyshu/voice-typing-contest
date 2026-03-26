@@ -75,6 +75,7 @@ const showLatestSessionTimeline = ref(true);
 const importCsvDialogVisible = ref(false);
 const importCsvDragActive = ref(false);
 const importCsvBusy = ref(false);
+const showAdvancedSettings = ref(false);
 const previewAudioBySampleId = new Map<string, HTMLAudioElement>();
 const previewSrcBySampleId = ref<Record<string, string>>({});
 const previewProgress = ref<Record<string, number>>({});
@@ -138,6 +139,8 @@ const installedRealApps = computed(() => realApps.value.filter((item) => install
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
 const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
+const grantedPermissionCount = computed(() => permissions.value.filter((item) => item.granted).length);
+const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
 const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
@@ -2170,102 +2173,177 @@ onBeforeUnmount(() => {
       </section>
 
 
-      <section v-else-if="page === 'settings'" class="settings-page">
-        <article class="panel">
-          <div class="panel-header-row">
-            <h3>基础设置</h3>
-            <button class="secondary-button" @click="saveSettings">保存设置</button>
-          </div>
-          <div class="settings-grid">
-            <label>
-              <span>工作区名称</span>
-              <input v-model="config.workspaceLabel" />
-            </label>
-            <label>
-              <span>输出设备</span>
-              <select v-model="config.selectedOutputDeviceId">
-                <option v-for="item in devices" :key="item.id" :value="item.id">
-                  {{ item.name }}{{ item.available ? "" : "（不可用）" }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>数据库路径</span>
-              <div class="inline-field">
-                <input v-model="config.databasePath" />
-                <button class="ghost-button" @click="chooseDatabasePath">选择</button>
-              </div>
-            </label>
-            <label>
-              <span>外部样本目录</span>
-              <div class="inline-field">
-                <input v-model="config.sampleRoot" placeholder="不填也可以，默认直接跑内建自测" />
-                <button class="ghost-button" @click="chooseSampleRoot">选择</button>
-              </div>
-            </label>
-            <label>
-              <span>启动 app 延时（毫秒）</span>
-              <input v-model.number="config.appLaunchDelayMs" type="number" min="0" step="100" />
-            </label>
-            <label>
-              <span>聚焦检测框延时（毫秒）</span>
-              <input v-model.number="config.focusInputDelayMs" type="number" min="0" step="100" />
-            </label>
-            <label>
-              <span>结果超时（毫秒）</span>
-              <input v-model.number="config.resultTimeoutMs" type="number" min="100" step="100" />
-            </label>
-            <label>
-              <span>系统数据采样间隔（毫秒）</span>
-              <input v-model.number="config.resourceSampleIntervalMs" type="number" min="250" step="250" />
-            </label>
-            <label>
-              <span>下一条样本播放延时（毫秒）</span>
-              <input v-model.number="config.betweenSamplesDelayMs" type="number" min="0" step="100" />
-            </label>
-            <label>
-              <span>关闭 app 延时（毫秒）</span>
-              <input v-model.number="config.closeAppDelayMs" type="number" min="0" step="100" />
-            </label>
-            <label style="grid-column: 1 / -1">
-              <span>运行备注</span>
-              <textarea v-model="config.runNotes" rows="3" />
-            </label>
+      <section v-else-if="page === 'settings'" class="settings-page settings-page--refined">
+        <article class="settings-hero settings-hero--simple">
+          <div class="settings-hero__actions">
+            <button class="ghost-button" @click="refreshEnvironment">刷新</button>
+            <button class="primary-button settings-primary-action" @click="saveSettings">保存设置</button>
           </div>
         </article>
 
-        <div class="settings-grid">
-          <article class="panel">
-            <div class="panel-header-row">
-              <h3>权限</h3>
-              <button class="ghost-button" @click="refreshEnvironment">刷新</button>
-            </div>
-            <ul class="meta-list">
-              <li v-for="item in permissions" :key="item.id" class="permission-row">
+        <div class="settings-layout">
+          <div class="settings-primary-column">
+            <article class="panel settings-card">
+              <div class="settings-card__header">
                 <div>
-                  <strong>{{ item.name }}</strong>
-                  <div class="muted">{{ item.required ? "必需" : "可选" }}</div>
+                  <span class="settings-section-kicker">基础设置</span>
+                  <h3>基本信息与资源路径</h3>
                 </div>
-                <span class="pill" :class="item.granted ? 'success' : 'warning'">{{ item.granted ? "已授权" : "未授权" }}</span>
-              </li>
-            </ul>
-          </article>
-
-          <article class="panel">
-            <h3>设备</h3>
-            <ul class="meta-list">
-              <li v-for="item in devices" :key="item.id" class="device-row">
-                <div>
-                  <strong>{{ item.name }}</strong>
-                  <div class="muted">
-                    {{ item.id }}
-                    <span v-if="item.id === config.selectedOutputDeviceId"> · 当前选择</span>
+                <p>把常改的全局配置集中到第一屏，减少来回寻找。</p>
+              </div>
+              <div class="settings-grid settings-grid--refined">
+                <label class="settings-field settings-field--emphasis">
+                  <span>工作区名称</span>
+                  <input v-model="config.workspaceLabel" />
+                </label>
+                <label class="settings-field settings-field--emphasis">
+                  <span>输出设备</span>
+                  <select v-model="config.selectedOutputDeviceId">
+                    <option v-for="item in devices" :key="item.id" :value="item.id">
+                      {{ item.name }}{{ item.available ? "" : "（不可用）" }}
+                    </option>
+                  </select>
+                </label>
+                <label class="settings-field settings-field--wide">
+                  <span>数据库路径</span>
+                  <div class="inline-field inline-field--soft">
+                    <input v-model="config.databasePath" />
+                    <button class="ghost-button" @click="chooseDatabasePath">选择</button>
                   </div>
+                  <small>建议放在固定目录，便于长期对比历史结果。</small>
+                </label>
+                <label class="settings-field settings-field--wide">
+                  <span>外部样本目录</span>
+                  <div class="inline-field inline-field--soft">
+                    <input v-model="config.sampleRoot" placeholder="不填也可以，默认直接跑内建自测" />
+                    <button class="ghost-button" @click="chooseSampleRoot">选择</button>
+                  </div>
+                  <small>不填也能运行；填写后可直接把目录里的 WAV / MP3 / OGG 纳入测试。</small>
+                </label>
+              </div>
+            </article>
+
+            <article class="panel settings-card">
+              <div class="settings-card__header">
+                <div>
+                  <span class="settings-section-kicker">Advanced Controls</span>
+                  <h3>运行节奏与高级参数</h3>
                 </div>
-                <span class="pill" :class="item.available ? 'success' : 'warning'">{{ item.available ? "可用" : "不可用" }}</span>
-              </li>
-            </ul>
-          </article>
+                <p>把常规节奏和高风险参数拆开，调优时更容易判断哪些修改会影响结果稳定性。</p>
+              </div>
+              <div class="settings-subsection">
+                <div class="settings-subsection__header">
+                  <div>
+                    <strong>节奏参数</strong>
+                    <span>建议先调整这里，通常只影响执行手感，不改变判定逻辑。</span>
+                  </div>
+                  <span class="settings-level-chip">推荐优先调整</span>
+                </div>
+                <div class="settings-grid settings-grid--refined settings-grid--timing">
+                  <label class="settings-field">
+                    <span>启动 app 延时（毫秒）</span>
+                    <input v-model.number="config.appLaunchDelayMs" type="number" min="0" step="100" />
+                  </label>
+                  <label class="settings-field">
+                    <span>聚焦检测框延时（毫秒）</span>
+                    <input v-model.number="config.focusInputDelayMs" type="number" min="0" step="100" />
+                  </label>
+                  <label class="settings-field">
+                    <span>下一条样本播放延时（毫秒）</span>
+                    <input v-model.number="config.betweenSamplesDelayMs" type="number" min="0" step="100" />
+                  </label>
+                </div>
+              </div>
+              <div class="settings-advanced-toggle-row">
+                <div class="settings-advanced-toggle-copy">
+                  <strong>高级参数</strong>
+                  <span>默认折叠，避免干扰日常使用；需要做判定级调优时再展开。</span>
+                </div>
+                <button
+                  class="ghost-button settings-advanced-toggle"
+                  type="button"
+                  @click="showAdvancedSettings = !showAdvancedSettings"
+                >
+                  {{ showAdvancedSettings ? "收起高级参数" : "展开高级参数" }}
+                </button>
+              </div>
+              <div v-if="showAdvancedSettings" class="settings-subsection settings-subsection--danger">
+                <div class="settings-subsection__header settings-subsection__header--danger">
+                  <div>
+                    <strong>高级 / 风险参数</strong>
+                    <span>改动后可能直接影响超时判断、采样密度和整轮结果解释。</span>
+                  </div>
+                  <span class="settings-level-chip settings-level-chip--danger">谨慎修改</span>
+                </div>
+                <div class="settings-grid settings-grid--refined settings-grid--timing">
+                  <label class="settings-field settings-field--danger">
+                    <span>结果超时（毫秒）</span>
+                    <input v-model.number="config.resultTimeoutMs" type="number" min="100" step="100" />
+                  </label>
+                  <label class="settings-field settings-field--danger">
+                    <span>系统数据采样间隔（毫秒）</span>
+                    <input v-model.number="config.resourceSampleIntervalMs" type="number" min="250" step="250" />
+                  </label>
+                  <label class="settings-field settings-field--danger">
+                    <span>关闭 app 延时（毫秒）</span>
+                    <input v-model.number="config.closeAppDelayMs" type="number" min="0" step="100" />
+                  </label>
+                </div>
+                <div class="settings-warning-note">
+                  这些值会改变测试判定边界。若只是想让流程更顺，优先调整上面的“节奏参数”。
+                </div>
+              </div>
+              <div v-else class="settings-advanced-preview">
+                当前已折叠 3 项高级参数：结果超时、系统数据采样间隔、关闭 app 延时。
+              </div>
+            </article>
+
+          </div>
+
+          <div class="settings-side-column">
+            <article class="panel settings-side-card">
+              <div class="settings-card__header settings-card__header--compact">
+                <div>
+                  <span class="settings-section-kicker">Permissions</span>
+                  <h3>系统权限</h3>
+                </div>
+                <span class="pill" :class="grantedPermissionCount === permissions.length ? 'success' : 'warning'">
+                  {{ grantedPermissionCount }}/{{ permissions.length || 0 }}
+                </span>
+              </div>
+              <ul class="meta-list settings-list">
+                <li v-for="item in permissions" :key="item.id" class="permission-row settings-list-row">
+                  <div>
+                    <strong>{{ item.name }}</strong>
+                    <div class="muted">{{ item.required ? "必需" : "可选" }}</div>
+                  </div>
+                  <span class="pill" :class="item.granted ? 'success' : 'warning'">{{ item.granted ? "已授权" : "未授权" }}</span>
+                </li>
+              </ul>
+            </article>
+
+            <article class="panel settings-side-card">
+              <div class="settings-card__header settings-card__header--compact">
+                <div>
+                  <span class="settings-section-kicker">Devices</span>
+                  <h3>音频设备</h3>
+                </div>
+                <span class="pill success">{{ availableDeviceCount }} 可用</span>
+              </div>
+              <ul class="meta-list settings-list">
+                <li v-for="item in devices" :key="item.id" class="device-row settings-list-row">
+                  <div>
+                    <strong>{{ item.name }}</strong>
+                    <div class="muted">
+                      {{ item.id }}
+                      <span v-if="item.id === config.selectedOutputDeviceId"> · 当前选择</span>
+                    </div>
+                  </div>
+                  <span class="pill" :class="item.available ? 'success' : 'warning'">{{ item.available ? "可用" : "不可用" }}</span>
+                </li>
+              </ul>
+            </article>
+          </div>
         </div>
       </section>
 

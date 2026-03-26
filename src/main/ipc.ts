@@ -193,6 +193,7 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
       await mkdir(bundleDir, { recursive: true });
       await writeFile(join(bundleDir, "results.csv"), deps.resultStore.exportCsv(runSessionId), "utf8");
       await writeFile(join(bundleDir, "system-info.csv"), deps.resultStore.exportResourceCsv(runSessionId), "utf8");
+      await writeFile(join(bundleDir, "system-summary.csv"), deps.resultStore.exportResourceSummaryCsv(runSessionId), "utf8");
       await execFileAsync("/usr/bin/ditto", ["-c", "-k", "--keepParent", bundleDir, result.filePath]);
     } finally {
       await rm(tempRoot, { recursive: true, force: true });

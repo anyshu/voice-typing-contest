@@ -644,6 +644,15 @@ export class ResultStore {
       ${sessionId ? "WHERE test_runs.run_session_id = ?" : ""}
       ORDER BY resource_samples.sampled_at ASC, resource_samples.sample_index ASC
     `).all(...(sessionId ? [sessionId] : [])) as Array<Record<string, string | number>>;
+    const firstSampledAtByRunId = new Map<string, number>();
+    for (const row of rows) {
+      const runId = String(row.runId);
+      const sampledAtMs = new Date(String(row.sampledAt)).getTime();
+      const current = firstSampledAtByRunId.get(runId);
+      if (Number.isFinite(sampledAtMs) && (current === undefined || sampledAtMs < current)) {
+        firstSampledAtByRunId.set(runId, sampledAtMs);
+      }
+    }
     const headers = [
       "run_id",
       "run_session_id",
@@ -653,6 +662,7 @@ export class ResultStore {
       "status",
       "sample_index",
       "sampled_at",
+      "relative_sampled_at_ms",
       "main_pid",
       "process_count",
       "main_cpu_percent",
@@ -663,6 +673,11 @@ export class ResultStore {
     ];
     const csvRows = [headers.join(",")];
     for (const row of rows) {
+      const sampledAtMs = new Date(String(row.sampledAt)).getTime();
+      const firstSampledAtMs = firstSampledAtByRunId.get(String(row.runId));
+      const relativeSampledAtMs = Number.isFinite(sampledAtMs) && firstSampledAtMs !== undefined
+        ? Math.max(0, sampledAtMs - firstSampledAtMs)
+        : "";
       const line = [
         row.runId,
         row.runSessionId,
@@ -672,6 +687,7 @@ export class ResultStore {
         row.status,
         row.sampleIndex,
         row.sampledAt,
+        relativeSampledAtMs,
         row.mainPid,
         row.processCount,
         row.mainCpuPercent,
@@ -679,6 +695,69 @@ export class ResultStore {
         row.mainMemoryMb,
         row.totalMemoryMb,
         row.intervalMs,
+      ].map((value) => `"${String(value).replaceAll(`"`, `""`)}"`).join(",");
+      csvRows.push(line);
+    }
+    return csvRows.join("\n");
+  }
+
+  exportResourceSummaryCsv(sessionId?: string): string {
+    const rows = this.db.prepare(`
+      SELECT
+        id AS runId,
+        run_session_id AS runSessionId,
+        app_name AS appName,
+        app_version AS appVersion,
+        sample_path AS samplePath,
+        status,
+        total_run_ms AS totalRunMs,
+        average_cpu_percent AS averageCpuPercent,
+        peak_cpu_percent AS peakCpuPercent,
+        average_memory_mb AS averageMemoryMb,
+        peak_memory_mb AS peakMemoryMb
+      FROM test_runs
+      ${sessionId ? "WHERE run_session_id = ?" : ""}
+      ORDER BY created_at ASC
+    `).all(...(sessionId ? [sessionId] : [])) as Array<Record<string, string | number | null>>;
+    const samplingIntervalByRunIdRows = this.db.prepare(`
+      SELECT
+        run_id AS runId,
+        MIN(interval_ms) AS samplingIntervalMs
+      FROM resource_samples
+      GROUP BY run_id
+    `).all() as Array<{ runId: string; samplingIntervalMs: number | null }>;
+    const samplingIntervalByRunId = new Map(
+      samplingIntervalByRunIdRows.map((row) => [row.runId, row.samplingIntervalMs]),
+    );
+    const headers = [
+      "run_id",
+      "run_session_id",
+      "app_name",
+      "app_version",
+      "sample_path",
+      "status",
+      "total_run_ms",
+      "sampling_interval_ms",
+      "average_cpu_percent",
+      "peak_cpu_percent",
+      "average_memory_mb",
+      "peak_memory_mb",
+    ];
+    const csvRows = [headers.join(",")];
+    for (const row of rows) {
+      const line = [
+        row.runId,
+        row.runSessionId,
+        row.appName,
+        row.appVersion ?? "",
+        row.samplePath,
+        row.status,
+        row.totalRunMs ?? "",
+        samplingIntervalByRunId.get(String(row.runId)) ?? "",
+        row.averageCpuPercent ?? "",
+        row.peakCpuPercent ?? "",
+        row.averageMemoryMb ?? "",
+        row.peakMemoryMb ?? "",
       ].map((value) => `"${String(value).replaceAll(`"`, `""`)}"`).join(",");
       csvRows.push(line);
     }

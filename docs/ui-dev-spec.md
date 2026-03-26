@@ -238,6 +238,7 @@ The editable fields should prefer single-row label-and-control layout when the c
 The settings page has two functional blocks:
 
 - base settings
+- advanced parameters
 - permissions and devices
 
 ### 5.1 Base settings
@@ -250,10 +251,12 @@ Current editable global settings:
 - external sample root
 - `启动 app 延时`
 - `聚焦检测框延时`
-- `结果超时`
 - `下一条样本播放延时`
-- `关闭 app 延时`
-- run notes
+
+The top of the page only keeps plain actions:
+
+- `刷新`
+- `保存设置`
 
 Default timing values:
 
@@ -265,7 +268,17 @@ Default timing values:
 
 Target-app editing no longer lives here; it belongs to the dedicated `App管理` page.
 
-### 5.2 App management
+### 5.2 Advanced parameters
+
+Advanced parameters are collapsed by default so the settings page stays clean for day-to-day use.
+
+Expandable fields:
+
+- `结果超时`
+- `系统数据采样间隔`
+- `关闭 app 延时`
+
+### 5.3 App management
 
 - name
 - `.app` file name
@@ -291,7 +304,7 @@ Built-in presets:
 - `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
 - `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
 
-### 5.3 Permissions and devices
+### 5.4 Permissions and devices
 
 These are diagnostic lists, not decorative cards.
 
@@ -305,6 +318,11 @@ Devices:
 
 - current selected output device
 - all discovered output devices
+
+Section titles in the UI:
+
+- `系统权限`
+- `音频设备`
 
 ## 6. Runtime Interaction Rules
 

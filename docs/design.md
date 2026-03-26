@@ -1,6 +1,6 @@
 # Voice Typing Contest Design
 
-Current spec baseline: `v0.1.6`
+Current spec baseline: `v0.1.7`
 
 ## 1. Goal
 
@@ -176,10 +176,18 @@ The tool should be designed as:
 - non-App-Sandbox
 - Developer ID signed
 - notarized for distribution when needed
+- distributed through GitHub Releases for repository-hosted builds instead of committing binary installers into git history
 
 Reason:
 
 This class of automation tool depends on permissions and system integrations that do not fit well inside a sandboxed Mac App Store app model.
+
+Current repository release rule:
+
+- CI should build the macOS installer on GitHub Actions when a `v*` tag is pushed
+- the generated `.dmg` and `.zip` should be attached to the corresponding GitHub Release
+- release binaries should not be checked into the repository tree
+- helper build output must be copied into a stable `native/helper/.build/release/vtc-helper` path before packaging so local builds and CI builds use the same electron-builder input
 
 ## 6. Architecture
 

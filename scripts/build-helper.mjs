@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -34,6 +34,18 @@ const swift = spawnSync("swift", ["build", "-c", profile], {
 });
 
 if (swift.status === 0) {
+  const showBinPath = spawnSync("swift", ["build", "-c", profile, "--show-bin-path"], {
+    cwd: helperRoot,
+    env,
+    encoding: "utf8",
+  });
+  const binaryDirectory = showBinPath.status === 0 ? showBinPath.stdout.trim() : null;
+  const builtBinaryPath = binaryDirectory ? join(binaryDirectory, "vtc-helper") : null;
+
+  if (builtBinaryPath) {
+    copyFileSync(builtBinaryPath, wrapperPath);
+    chmodSync(wrapperPath, 0o755);
+  }
   process.stdout.write(swift.stdout);
   process.stderr.write(swift.stderr);
   process.exit(0);

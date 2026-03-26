@@ -1,6 +1,6 @@
 {
   "name": "voice-typing-contest",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "macOS Electron benchmark app for voice typing tools",
   "main": "out/main/index.js",
@@ -53,7 +53,7 @@
         "to": "icon-macos.png"
       },
       {
-        "from": "native/helper/.build/arm64-apple-macosx/release/vtc-helper",
+        "from": "native/helper/.build/release/vtc-helper",
         "to": "native/helper/.build/release/vtc-helper"
       },
       {

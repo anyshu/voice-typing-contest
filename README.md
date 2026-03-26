@@ -77,7 +77,7 @@ https://github.com/user-attachments/assets/dde909e5-a18f-4d18-b6a8-4868375619b6
 在跑真实 App 之前，建议先准备好：
 
 - macOS
-- Node.js 20+
+- Node.js 22+
 - `pnpm`
 - Xcode Command Line Tools
 - Swift toolchain

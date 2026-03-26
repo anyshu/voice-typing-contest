@@ -1183,7 +1183,16 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("03/24 15:25:27");
+    const expectedDisplayTime = new Date("2026-03-24T07:25:27.000Z").toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+
+    expect(wrapper.text()).toContain(expectedDisplayTime);
   });
 
   it("shows the retry action for successful rows too", async () => {

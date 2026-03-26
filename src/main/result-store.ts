@@ -2,7 +2,19 @@ import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { nanoid } from "nanoid";
-import type { AppConfig, AudioDevice, CsvImportSummary, PermissionSnapshot, ResultDetail, ResultStatus, RunEventRecord, RunSessionRecord, RunSessionSummary, TestRunRecord } from "../shared/types";
+import type {
+  AppConfig,
+  AudioDevice,
+  CsvImportSummary,
+  PermissionSnapshot,
+  ResourceSampleRecord,
+  ResultDetail,
+  ResultStatus,
+  RunEventRecord,
+  RunSessionRecord,
+  RunSessionSummary,
+  TestRunRecord,
+} from "../shared/types";
 
 type DatabaseLike = {
   exec(sql: string): void;
@@ -223,6 +235,19 @@ export class ResultStore {
         ts_ms REAL NOT NULL,
         payload_json TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS resource_samples (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        sample_index INTEGER NOT NULL,
+        sampled_at TEXT NOT NULL,
+        main_pid INTEGER NOT NULL,
+        process_count INTEGER NOT NULL,
+        main_cpu_percent REAL NOT NULL,
+        total_cpu_percent REAL NOT NULL,
+        main_memory_mb REAL NOT NULL,
+        total_memory_mb REAL NOT NULL,
+        interval_ms INTEGER NOT NULL
+      );
     `);
 
     const testRunColumns = this.db.prepare("PRAGMA table_info(test_runs)").all() as Array<{ name: string }>;
@@ -244,6 +269,18 @@ export class ResultStore {
     }
     if (!testRunColumnNames.has("app_version")) {
       this.db.exec("ALTER TABLE test_runs ADD COLUMN app_version TEXT");
+    }
+    if (!testRunColumnNames.has("average_cpu_percent")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN average_cpu_percent REAL");
+    }
+    if (!testRunColumnNames.has("peak_cpu_percent")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN peak_cpu_percent REAL");
+    }
+    if (!testRunColumnNames.has("average_memory_mb")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN average_memory_mb REAL");
+    }
+    if (!testRunColumnNames.has("peak_memory_mb")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN peak_memory_mb REAL");
     }
   }
 
@@ -283,9 +320,10 @@ export class ResultStore {
         id, run_session_id, app_id, app_name, app_version, sample_id, sample_path, status, phase,
         failure_category, failure_reason, raw_text, normalized_text, expected_text,
         hotkey_to_audio_ms, trigger_stop_to_first_char_ms, trigger_stop_to_final_text_ms,
-        total_run_ms, input_event_count, final_text_length, created_at,
+        total_run_ms, average_cpu_percent, peak_cpu_percent, average_memory_mb, peak_memory_mb,
+        input_event_count, final_text_length, created_at,
         retry_root_run_id, retry_attempt, timeline_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.runSessionId,
@@ -305,6 +343,10 @@ export class ResultStore {
       record.triggerStopToFirstCharMs ?? null,
       record.triggerStopToFinalTextMs ?? null,
       record.totalRunMs ?? null,
+      record.averageCpuPercent ?? null,
+      record.peakCpuPercent ?? null,
+      record.averageMemoryMb ?? null,
+      record.peakMemoryMb ?? null,
       record.inputEventCount,
       record.finalTextLength,
       record.createdAt,
@@ -337,6 +379,31 @@ export class ResultStore {
     this.db.prepare("UPDATE test_runs SET timeline_json = ? WHERE id = ?").run(JSON.stringify(timeline), runId);
   }
 
+  insertResourceSamples(samples: ResourceSampleRecord[]): void {
+    if (!samples.length) return;
+    const insert = this.db.prepare(`
+      INSERT OR REPLACE INTO resource_samples (
+        id, run_id, sample_index, sampled_at, main_pid, process_count,
+        main_cpu_percent, total_cpu_percent, main_memory_mb, total_memory_mb, interval_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const sample of samples) {
+      insert.run(
+        sample.id,
+        sample.runId,
+        sample.sampleIndex,
+        sample.sampledAt,
+        sample.mainPid,
+        sample.processCount,
+        sample.mainCpuPercent,
+        sample.totalCpuPercent,
+        sample.mainMemoryMb,
+        sample.totalMemoryMb,
+        sample.intervalMs,
+      );
+    }
+  }
+
   listRuns(sessionId?: string): TestRunRecord[] {
     const query = `
       SELECT
@@ -358,6 +425,10 @@ export class ResultStore {
         trigger_stop_to_first_char_ms AS triggerStopToFirstCharMs,
         trigger_stop_to_final_text_ms AS triggerStopToFinalTextMs,
         total_run_ms AS totalRunMs,
+        average_cpu_percent AS averageCpuPercent,
+        peak_cpu_percent AS peakCpuPercent,
+        average_memory_mb AS averageMemoryMb,
+        peak_memory_mb AS peakMemoryMb,
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
         created_at AS createdAt,
@@ -448,6 +519,10 @@ export class ResultStore {
         trigger_stop_to_first_char_ms AS triggerStopToFirstCharMs,
         trigger_stop_to_final_text_ms AS triggerStopToFinalTextMs,
         total_run_ms AS totalRunMs,
+        average_cpu_percent AS averageCpuPercent,
+        peak_cpu_percent AS peakCpuPercent,
+        average_memory_mb AS averageMemoryMb,
+        peak_memory_mb AS peakMemoryMb,
         input_event_count AS inputEventCount,
         final_text_length AS finalTextLength,
         created_at AS createdAt,
@@ -507,6 +582,10 @@ export class ResultStore {
       "failure_reason",
       "trigger_stop_to_first_char_ms",
       "trigger_stop_to_final_text_ms",
+      "average_cpu_percent",
+      "peak_cpu_percent",
+      "average_memory_mb",
+      "peak_memory_mb",
       "retry_count",
       "final_text_length",
       "raw_text",
@@ -528,10 +607,78 @@ export class ResultStore {
         row.failureReason ?? "",
         row.triggerStopToFirstCharMs ?? "",
         row.triggerStopToFinalTextMs ?? "",
+        row.averageCpuPercent ?? "",
+        row.peakCpuPercent ?? "",
+        row.averageMemoryMb ?? "",
+        row.peakMemoryMb ?? "",
         row.retryCount ?? row.retryAttempt ?? 0,
         row.finalTextLength,
         row.rawText,
         row.createdAt,
+      ].map((value) => `"${String(value).replaceAll(`"`, `""`)}"`).join(",");
+      csvRows.push(line);
+    }
+    return csvRows.join("\n");
+  }
+
+  exportResourceCsv(sessionId?: string): string {
+    const rows = this.db.prepare(`
+      SELECT
+        resource_samples.run_id AS runId,
+        test_runs.run_session_id AS runSessionId,
+        test_runs.app_name AS appName,
+        test_runs.app_version AS appVersion,
+        test_runs.sample_path AS samplePath,
+        test_runs.status AS status,
+        resource_samples.sample_index AS sampleIndex,
+        resource_samples.sampled_at AS sampledAt,
+        resource_samples.main_pid AS mainPid,
+        resource_samples.process_count AS processCount,
+        resource_samples.main_cpu_percent AS mainCpuPercent,
+        resource_samples.total_cpu_percent AS totalCpuPercent,
+        resource_samples.main_memory_mb AS mainMemoryMb,
+        resource_samples.total_memory_mb AS totalMemoryMb,
+        resource_samples.interval_ms AS intervalMs
+      FROM resource_samples
+      INNER JOIN test_runs ON test_runs.id = resource_samples.run_id
+      ${sessionId ? "WHERE test_runs.run_session_id = ?" : ""}
+      ORDER BY resource_samples.sampled_at ASC, resource_samples.sample_index ASC
+    `).all(...(sessionId ? [sessionId] : [])) as Array<Record<string, string | number>>;
+    const headers = [
+      "run_id",
+      "run_session_id",
+      "app_name",
+      "app_version",
+      "sample_path",
+      "status",
+      "sample_index",
+      "sampled_at",
+      "main_pid",
+      "process_count",
+      "main_cpu_percent",
+      "total_cpu_percent",
+      "main_memory_mb",
+      "total_memory_mb",
+      "interval_ms",
+    ];
+    const csvRows = [headers.join(",")];
+    for (const row of rows) {
+      const line = [
+        row.runId,
+        row.runSessionId,
+        row.appName,
+        row.appVersion ?? "",
+        row.samplePath,
+        row.status,
+        row.sampleIndex,
+        row.sampledAt,
+        row.mainPid,
+        row.processCount,
+        row.mainCpuPercent,
+        row.totalCpuPercent,
+        row.mainMemoryMb,
+        row.totalMemoryMb,
+        row.intervalMs,
       ].map((value) => `"${String(value).replaceAll(`"`, `""`)}"`).join(",");
       csvRows.push(line);
     }

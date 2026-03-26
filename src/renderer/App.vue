@@ -616,6 +616,16 @@ function formatLatencyMs(value?: number): string {
   return `${value}`;
 }
 
+function formatCpuPercent(value?: number): string {
+  if (value === undefined) return "-";
+  return `${value.toFixed(value >= 100 ? 0 : 1)}%`;
+}
+
+function formatMemoryMb(value?: number): string {
+  if (value === undefined) return "-";
+  return `${value.toFixed(value >= 100 ? 0 : 1)} MB`;
+}
+
 function historyResultTooltip(result: TestRunRecord): string {
   const capturedText = result.normalizedText.trim() || result.rawText.trim();
   if (capturedText) {
@@ -694,6 +704,18 @@ const latestSessionAppStats = computed(() => (latestSessionGroup.value?.appGroup
   const totalRunValues = runs
     .map((item) => item.totalRunMs)
     .filter((value): value is number => value !== undefined);
+  const averageCpuValues = runs
+    .map((item) => item.averageCpuPercent)
+    .filter((value): value is number => value !== undefined);
+  const peakCpuValues = runs
+    .map((item) => item.peakCpuPercent)
+    .filter((value): value is number => value !== undefined);
+  const averageMemoryValues = runs
+    .map((item) => item.averageMemoryMb)
+    .filter((value): value is number => value !== undefined);
+  const peakMemoryValues = runs
+    .map((item) => item.peakMemoryMb)
+    .filter((value): value is number => value !== undefined);
 
   return {
     appName: group.appName,
@@ -707,6 +729,10 @@ const latestSessionAppStats = computed(() => (latestSessionGroup.value?.appGroup
       { label: "最长首字时间", value: formatLatencyMs(firstCharValues.length ? Math.max(...firstCharValues) : undefined), tone: "accent" },
       { label: "首字时间中位数", value: formatLatencyMs(median(firstCharValues)), tone: "accent" },
       { label: "总共耗时", value: formatLatencyMs(totalRunValues.length ? totalRunValues.reduce((sum, value) => sum + value, 0) : undefined), tone: "" },
+      { label: "平均 CPU", value: formatCpuPercent(average(averageCpuValues)), tone: "warning" },
+      { label: "最高 CPU", value: formatCpuPercent(peakCpuValues.length ? Math.max(...peakCpuValues) : undefined), tone: "warning" },
+      { label: "平均内存", value: formatMemoryMb(average(averageMemoryValues)), tone: "warning" },
+      { label: "最高内存", value: formatMemoryMb(peakMemoryValues.length ? Math.max(...peakMemoryValues) : undefined), tone: "warning" },
     ],
   };
 }));
@@ -721,6 +747,18 @@ const mainSessionAppStats = computed(() => (mainSessionGroup.value?.appGroups ??
   const totalRunValues = runs
     .map((item) => item.totalRunMs)
     .filter((value): value is number => value !== undefined);
+  const averageCpuValues = runs
+    .map((item) => item.averageCpuPercent)
+    .filter((value): value is number => value !== undefined);
+  const peakCpuValues = runs
+    .map((item) => item.peakCpuPercent)
+    .filter((value): value is number => value !== undefined);
+  const averageMemoryValues = runs
+    .map((item) => item.averageMemoryMb)
+    .filter((value): value is number => value !== undefined);
+  const peakMemoryValues = runs
+    .map((item) => item.peakMemoryMb)
+    .filter((value): value is number => value !== undefined);
 
   return {
     appName: group.appName,
@@ -734,6 +772,10 @@ const mainSessionAppStats = computed(() => (mainSessionGroup.value?.appGroups ??
       { label: "最长首字时间", value: formatLatencyMs(firstCharValues.length ? Math.max(...firstCharValues) : undefined), tone: "accent" },
       { label: "首字时间中位数", value: formatLatencyMs(median(firstCharValues)), tone: "accent" },
       { label: "总共耗时", value: formatLatencyMs(totalRunValues.length ? totalRunValues.reduce((sum, value) => sum + value, 0) : undefined), tone: "" },
+      { label: "平均 CPU", value: formatCpuPercent(average(averageCpuValues)), tone: "warning" },
+      { label: "最高 CPU", value: formatCpuPercent(peakCpuValues.length ? Math.max(...peakCpuValues) : undefined), tone: "warning" },
+      { label: "平均内存", value: formatMemoryMb(average(averageMemoryValues)), tone: "warning" },
+      { label: "最高内存", value: formatMemoryMb(peakMemoryValues.length ? Math.max(...peakMemoryValues) : undefined), tone: "warning" },
     ],
   };
 }));
@@ -1032,10 +1074,10 @@ function isSessionExpanded(sessionId: string): boolean {
   return expandedSessionIds.value.includes(sessionId);
 }
 
-async function exportCsv(runSessionId?: string): Promise<void> {
+async function exportBundle(runSessionId?: string): Promise<void> {
   try {
-    const path = await window.vtc.exportCsv(runSessionId) as string | undefined;
-    notice.value = path ? `CSV 已导出到：${path}` : "已取消导出。";
+    const path = await window.vtc.exportBundle(runSessionId) as string | undefined;
+    notice.value = path ? `结果 ZIP 已导出到：${path}` : "已取消导出。";
   } catch (error) {
     notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`;
   }
@@ -1524,7 +1566,7 @@ onBeforeUnmount(() => {
           <li>
             <button class="nav-button" :class="{ active: page === 'faq' }" @click="page = 'faq'">
               <HugeiconsIcon :icon="HelpCircleIcon" :size="18" class="nav-icon" />
-              <span class="nav-label">常见问题</span>
+              <span class="nav-label">Q&amp;A</span>
             </button>
           </li>
           <li>
@@ -1896,9 +1938,9 @@ onBeforeUnmount(() => {
                 </button>
                 <button
                   class="history-export-button"
-                  aria-label="导出本轮 CSV"
-                  data-tooltip="导出本轮 CSV"
-                  @click="exportCsv(group.session.id)"
+                  aria-label="导出本轮 ZIP"
+                  data-tooltip="导出本轮 ZIP"
+                  @click="exportBundle(group.session.id)"
                 >
                   <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
                 </button>
@@ -1951,7 +1993,7 @@ onBeforeUnmount(() => {
                               class="history-sample-tooltip"
                               tabindex="0"
                               :data-tooltip="historyResultTooltip(result)"
-                            ><span class="history-sample-text">{{ result.samplePath }}</span></span>
+                            ><span class="history-sample-text" :data-tooltip="result.samplePath">{{ result.samplePath }}</span></span>
                             <div v-if="result.appVersion" class="history-app-version">v{{ result.appVersion.replace(/^v/i, '') }}</div>
                           </div>
                         </td>
@@ -2172,6 +2214,10 @@ onBeforeUnmount(() => {
             <label>
               <span>结果超时（毫秒）</span>
               <input v-model.number="config.resultTimeoutMs" type="number" min="100" step="100" />
+            </label>
+            <label>
+              <span>系统数据采样间隔（毫秒）</span>
+              <input v-model.number="config.resourceSampleIntervalMs" type="number" min="250" step="250" />
             </label>
             <label>
               <span>下一条样本播放延时（毫秒）</span>

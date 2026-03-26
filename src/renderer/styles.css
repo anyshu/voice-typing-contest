@@ -946,6 +946,7 @@ select {
 
 .app-summary-block .detail-stat-grid {
   position: relative;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-left: 16px;
   padding-left: 16px;
 }

@@ -39,11 +39,30 @@ describe("ResultStore", () => {
       phase: "completed",
       rawText: "hello",
       normalizedText: "hello",
+      averageCpuPercent: 12.5,
+      peakCpuPercent: 23.5,
+      averageMemoryMb: 128.25,
+      peakMemoryMb: 156.75,
       inputEventCount: 2,
       finalTextLength: 5,
       createdAt: new Date().toISOString(),
       timeline: [],
     });
+    store.insertResourceSamples([
+      {
+        id: "resource-1",
+        runId: "run-1",
+        sampleIndex: 0,
+        sampledAt: "2026-03-24T10:00:01.000Z",
+        mainPid: 101,
+        processCount: 3,
+        mainCpuPercent: 9.4,
+        totalCpuPercent: 12.5,
+        mainMemoryMb: 88.5,
+        totalMemoryMb: 128.25,
+        intervalMs: 2000,
+      },
+    ]);
     const csv = store.exportCsv();
     expect(csv).toContain("run_id");
     expect(csv).toContain("latest_run_id");
@@ -53,7 +72,12 @@ describe("ResultStore", () => {
     expect(csv).toContain("app_version");
     expect(csv).toContain("trigger_stop_to_first_char_ms");
     expect(csv).toContain("trigger_stop_to_final_text_ms");
+    expect(csv).toContain("average_cpu_percent");
+    expect(csv).toContain("peak_memory_mb");
     expect(csv).toContain("hello");
+    const resourceCsv = store.exportResourceCsv();
+    expect(resourceCsv).toContain("total_cpu_percent");
+    expect(resourceCsv).toContain("\"run-1\"");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
     expect(store.getRunDetail("run-1")?.record.appVersion).toBe("1.2.3");
     expect(store.listRuns()[0]?.timeline).toEqual([]);

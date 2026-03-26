@@ -176,6 +176,10 @@ Current stats per app:
 - max first-char latency
 - median first-char latency
 - total run time
+- average CPU
+- peak CPU
+- average memory
+- peak memory
 
 ### 4.5 History page
 
@@ -185,11 +189,13 @@ The `测试历史` page is grouped as:
 - app
 - sample row
 
-The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 CSV` action.
+The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 ZIP` action.
 
 Each sample row should keep the path text truncated in the table cell, but hovering or keyboard focusing that path must reveal a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip should fall back to the failure reason or an explicit "未捕获到结果" message.
 
-When a sample row has retry history, the exported CSV should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+When a sample row has retry history, the exported result bundle should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+
+Each exported ZIP should contain `results.csv` and `system-info.csv`. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app.
 
 Each session header should render the session start time first and then the app label in a heavier weight, so a single-app session reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`.
 

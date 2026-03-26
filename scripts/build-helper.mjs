@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -13,14 +13,6 @@ const audioToolPath = join(buildRoot, "vtc-audioctl");
 
 mkdirSync(buildRoot, { recursive: true });
 
-const clang = spawnSync("clang", [audioToolSource, "-framework", "CoreAudio", "-framework", "CoreFoundation", "-o", audioToolPath], {
-  encoding: "utf8",
-});
-
-if (clang.status !== 0) {
-  process.stderr.write(clang.stderr || clang.stdout || "");
-}
-
 const env = {
   ...process.env,
   CLANG_MODULE_CACHE_PATH: resolve(".cache/clang-modules"),
@@ -34,6 +26,28 @@ const swift = spawnSync("swift", ["build", "-c", profile], {
 });
 
 if (swift.status === 0) {
+  const showBinPath = spawnSync("swift", ["build", "-c", profile, "--show-bin-path"], {
+    cwd: helperRoot,
+    env,
+    encoding: "utf8",
+  });
+  const binaryDirectory = showBinPath.status === 0 ? showBinPath.stdout.trim() : null;
+  const builtBinaryPath = binaryDirectory ? join(binaryDirectory, "vtc-helper") : null;
+
+  if (builtBinaryPath) {
+    copyFileSync(builtBinaryPath, wrapperPath);
+    chmodSync(wrapperPath, 0o755);
+  }
+  const stableAudioToolPath = binaryDirectory ? join(binaryDirectory, "vtc-audioctl") : audioToolPath;
+  const clang = spawnSync("clang", [audioToolSource, "-framework", "CoreAudio", "-framework", "CoreFoundation", "-o", stableAudioToolPath], {
+    encoding: "utf8",
+  });
+
+  if (clang.status !== 0) {
+    process.stderr.write(clang.stderr || clang.stdout || "");
+  } else if (stableAudioToolPath !== audioToolPath && existsSync(stableAudioToolPath)) {
+    copyFileSync(stableAudioToolPath, audioToolPath);
+  }
   process.stdout.write(swift.stdout);
   process.stderr.write(swift.stderr);
   process.exit(0);
@@ -47,7 +61,12 @@ writeFileSync(wrapperPath, wrapper, "utf8");
 chmodSync(wrapperPath, 0o755);
 
 process.stdout.write("Swift helper build failed, fallback helper installed instead.\n");
+const clang = spawnSync("clang", [audioToolSource, "-framework", "CoreAudio", "-framework", "CoreFoundation", "-o", audioToolPath], {
+  encoding: "utf8",
+});
 if (clang.status === 0) {
   process.stdout.write("CoreAudio helper built for fallback device routing.\n");
+} else {
+  process.stderr.write(clang.stderr || clang.stdout || "");
 }
 process.stderr.write(swift.stderr || swift.stdout || "");

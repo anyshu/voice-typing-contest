@@ -1,6 +1,6 @@
 {
   "name": "voice-typing-contest",
-  "version": "0.1.6",
+  "version": "0.1.12",
   "private": true,
   "description": "macOS Electron benchmark app for voice typing tools",
   "main": "out/main/index.js",
@@ -10,7 +10,7 @@
     "dev": "pnpm rebuild:electron-native && electron-vite dev",
     "build": "electron-vite build",
     "build:release": "pnpm helper:release && pnpm rebuild:electron-native && pnpm build",
-    "dist:mac": "pnpm build:release && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip",
+    "dist:mac": "pnpm build:release && electron-builder --publish never --mac dmg zip",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -40,6 +40,7 @@
   "build": {
     "appId": "com.hc.voicetypingcontest",
     "productName": "Voice Typing Contest",
+    "afterPack": "scripts/fix-macos-signatures.mjs",
     "directories": {
       "output": "release"
     },
@@ -53,7 +54,7 @@
         "to": "icon-macos.png"
       },
       {
-        "from": "native/helper/.build/arm64-apple-macosx/release/vtc-helper",
+        "from": "native/helper/.build/release/vtc-helper",
         "to": "native/helper/.build/release/vtc-helper"
       },
       {
@@ -79,6 +80,7 @@
     ],
     "mac": {
       "category": "public.app-category.utilities",
+      "identity": null,
       "target": [
         "dmg",
         "zip"

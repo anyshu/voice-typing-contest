@@ -1,7 +1,18 @@
-import { systemPreferences } from "electron";
+import { createRequire } from "node:module";
 import type { AudioDevice, FailureCategory, PermissionSnapshot, PreflightItem, PreflightReport } from "../shared/types";
 import { defaultDevices, defaultPermissions } from "../shared/defaults";
 import { HelperClient } from "./helper-client";
+
+const require = createRequire(import.meta.url);
+
+function getSystemPreferences(): { isTrustedAccessibilityClient(prompt: boolean): boolean } | null {
+  try {
+    const electronModule = require("electron") as typeof import("electron");
+    return electronModule.systemPreferences;
+  } catch {
+    return null;
+  }
+}
 
 export class PermissionManager {
   constructor(private readonly helper: HelperClient) {}
@@ -26,7 +37,7 @@ export class PermissionManager {
 
   async requestAccessibilityPermission(): Promise<boolean> {
     try {
-      systemPreferences.isTrustedAccessibilityClient(true);
+      getSystemPreferences()?.isTrustedAccessibilityClient(true);
       return this.checkAccessibilityPermission();
     } catch {
       try {
@@ -40,7 +51,7 @@ export class PermissionManager {
 
   private checkAccessibilityPermission(): boolean {
     try {
-      return systemPreferences.isTrustedAccessibilityClient(false);
+      return getSystemPreferences()?.isTrustedAccessibilityClient(false) ?? false;
     } catch {
       return false;
     }

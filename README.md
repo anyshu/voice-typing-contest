@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/dde909e5-a18f-4d18-b6a8-4868375619b6
 
 ## 当前实现结果
 
-截至 `v0.1.6`，项目已经把“能不能持续、成批、可回看地跑起来”这一层打通了：
+截至 `v0.1.12`，项目已经把“能不能持续、成批、可回看地跑起来”这一层打通了：
 
 - 可以管理目标 App、样本目录、热键、输出设备和运行参数
 - 内建预置目前包含 Xiguashuo、闪电说、Wispr Flow、Typeless 和“内建自测”
@@ -77,7 +77,7 @@ https://github.com/user-attachments/assets/dde909e5-a18f-4d18-b6a8-4868375619b6
 在跑真实 App 之前，建议先准备好：
 
 - macOS
-- Node.js 20+
+- Node.js 22+
 - `pnpm`
 - Xcode Command Line Tools
 - Swift toolchain
@@ -135,6 +135,35 @@ pnpm dist:mac      # 打包 macOS 安装产物
 ```
 
 打包产物默认输出到 `release/`。
+
+## GitHub 上放置 dmg 的推荐方式
+
+不要把 `.dmg` 直接提交进仓库历史，仓库会越来越重，后面也很难清理。这个项目现在更适合用 GitHub Releases 来放安装包。
+
+仓库里已经补了一条自动发布工作流：`.github/workflows/release-dmg.yml`。
+
+它会：
+
+- 推送 `v*` tag 时，在 GitHub Actions 的 macOS runner 上执行 `pnpm test`
+- 接着执行 `pnpm dist:mac`
+- 把生成的 `release/*.dmg` 和 `release/*.zip` 上传到对应的 GitHub Release
+- 同时把同一批产物挂到 Actions artifact，方便回看构建结果
+
+常见发布步骤：
+
+```bash
+git tag v0.1.12
+git push origin v0.1.12
+```
+
+推上去后，去 GitHub 的 `Actions` / `Releases` 页面就能拿到 dmg。
+
+补充说明：
+
+- 当前发布链显式关闭 Developer ID 签名，但会在打包后重新补一个一致的 ad-hoc 签名，避免 Electron 默认留下的损坏签名状态继续触发“已损坏”弹窗
+- 这意味着 GitHub Release 里的包默认仍是“未验证开发者”状态；首次打开时，用户需要到“系统设置 > 隐私与安全性”里点“仍要打开”，或者在 Finder 里右键应用后选择“打开”
+- 为了让 CI 上的打包路径稳定，helper 构建脚本现在会把 Swift 编译出的 `vtc-helper` 复制到固定的 `native/helper/.build/release/vtc-helper`
+- 同时也会把 `vtc-audioctl` 放到同一个稳定 release 路径，避免 electron-builder 在干净 CI 环境里漏资源
 
 ## 目录结构
 

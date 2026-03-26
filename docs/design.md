@@ -1,6 +1,6 @@
 # Voice Typing Contest Design
 
-Current spec baseline: `v0.1.9`
+Current spec baseline: `v0.1.11`
 
 ## 1. Goal
 
@@ -188,6 +188,10 @@ Current repository release rule:
 - the generated `.dmg` and `.zip` should be attached to the corresponding GitHub Release
 - release binaries should not be checked into the repository tree
 - helper build output must be copied into a stable `native/helper/.build/release/vtc-helper` path before packaging so local builds and CI builds use the same electron-builder input
+- release builds must bundle both `vtc-helper` and `vtc-audioctl` from the release helper output path so `dist:mac` works from a clean checkout without depending on debug helper artifacts
+- release builds should explicitly disable macOS signing in electron-builder so unsigned arm64 artifacts do not inherit a broken ad-hoc signature state
+- release packaging should strip Electron's remaining ad-hoc signatures after pack so Gatekeeper sees the app as unsigned rather than as a broken signed bundle
+- unsigned GitHub release builds are expected to rely on the operator manually allowing the app under macOS Privacy & Security on first launch
 
 ## 6. Architecture
 

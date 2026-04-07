@@ -112,6 +112,7 @@ function setupDesktopApi(options?: {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -217,6 +218,67 @@ describe("App renderer", () => {
     const text = wrapper.text().replace(/\s+/g, "");
     expect(text).toContain("启用1");
     expect(text).toContain("关闭1");
+    expect(text).toContain("启用1关闭1无效0总共2");
+  });
+
+  it("shows bootstrap checking notice before and after sample validation", async () => {
+    vi.useFakeTimers();
+    const { settings } = setupDesktopApi();
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在检查样本文件...");
+
+    vi.advanceTimersByTime(900);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("样本检查完成");
+    vi.useRealTimers();
+  });
+
+  it("keeps the checking notice visible for a short moment even when settings load immediately", async () => {
+    vi.useFakeTimers();
+    setupDesktopApi();
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在检查样本文件...");
+
+    vi.advanceTimersByTime(500);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在检查样本文件...");
+    vi.advanceTimersByTime(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("样本检查完成");
+    vi.useRealTimers();
+  });
+
+  it("marks invalid samples in red after bootstrap validation", async () => {
+    const { settings } = setupDesktopApi();
+    settings.audioSamples[1].exists = false;
+    settings.audioSamples[1].enabled = false;
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    await sampleButton!.trigger("click");
+    await flushPromises();
+
+    const missingRow = wrapper.findAll(".sample-row-clean").find((item) => item.classes().includes("is-missing"));
+    expect(missingRow).toBeTruthy();
+    expect(missingRow!.text()).toContain("无效");
+    expect(missingRow!.text()).toContain("文件不存在，请重新扫描或检查目录。");
+    const invalidToggle = missingRow!.find('input[type="checkbox"]');
+    expect((invalidToggle.element as HTMLInputElement).disabled).toBe(true);
+    const text = wrapper.text().replace(/\s+/g, "");
+    expect(text).toContain("启用1");
+    expect(text).toContain("关闭0");
+    expect(text).toContain("无效1");
     expect(text).toContain("总共2");
   });
 

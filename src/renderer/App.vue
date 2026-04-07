@@ -92,6 +92,7 @@ let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
 const PRE_RUN_RUN_ID_PREFIX = "prep:";
 const SAMPLE_ROW_HEIGHT = 44;
 const SAMPLE_LIST_OVERSCAN = 8;
+const SAMPLE_BOOTSTRAP_NOTICE_MIN_MS = 900;
 
 const phaseLabels: Record<RunPhase, string> = {
   idle: "空闲",
@@ -136,14 +137,18 @@ const builtinApps = computed(() => config.value.targetApps.filter((item) => isBu
 const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
 const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
 const installedRealApps = computed(() => realApps.value.filter((item) => installedAppInfoById.value[item.id]?.installed));
-const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
-const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
+const invalidSamples = computed(() => config.value.audioSamples.filter((item) => item.exists === false));
+const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && item.enabled));
+const disabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const grantedPermissionCount = computed(() => permissions.value.filter((item) => item.granted).length);
 const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
-const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
+const allSamplesEnabled = computed(() => {
+  const validSamples = config.value.audioSamples.filter((item) => item.exists !== false);
+  return validSamples.length > 0 && validSamples.every((item) => item.enabled);
+});
 const sampleListStartIndex = computed(() => Math.max(0, Math.floor(sampleListScrollTop.value / SAMPLE_ROW_HEIGHT) - SAMPLE_LIST_OVERSCAN));
 const sampleListVisibleCount = computed(() => Math.ceil(sampleListViewportHeight.value / SAMPLE_ROW_HEIGHT) + SAMPLE_LIST_OVERSCAN * 2);
 const sampleListEndIndex = computed(() => Math.min(config.value.audioSamples.length, sampleListStartIndex.value + sampleListVisibleCount.value));
@@ -204,6 +209,9 @@ const noticeTone = computed(() => {
     || notice.value.includes("不能")
     || notice.value.includes("没跑起来")
     || notice.value.includes("红色提示")
+    || notice.value.includes("不存在")
+    || notice.value.includes("缺失")
+    || notice.value.includes("无效")
   ) return "danger";
   if (notice.value.includes("取消") || notice.value.includes("未")) return "warning";
   return "success";
@@ -366,6 +374,10 @@ function formatPreviewTime(seconds?: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
+function isSampleMissing(sample: AudioSample): boolean {
+  return sample.exists === false;
+}
+
 function getSamplePreviewDuration(sampleId: string, fallbackMs?: number): number {
   const seconds = previewDuration.value[sampleId];
   if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0) return seconds;
@@ -387,6 +399,7 @@ async function ensureSamplePreviewSrc(sample: AudioSample): Promise<string | und
       durationMs: sample.durationMs,
       tags: [...sample.tags],
       enabled: sample.enabled,
+      exists: sample.exists,
     }) as string;
     previewSrcBySampleId.value = { ...previewSrcBySampleId.value, [sampleId]: src };
     return src;
@@ -499,8 +512,9 @@ function previewSliderStyle(sampleId: string): { background: string } {
   };
 }
 
-function shouldRenderSamplePreview(sampleId: string): boolean {
-  return hoveredSampleId.value === sampleId || previewPlayingSampleId.value === sampleId;
+function shouldRenderSamplePreview(sample: AudioSample): boolean {
+  if (isSampleMissing(sample)) return false;
+  return hoveredSampleId.value === sample.id || previewPlayingSampleId.value === sample.id;
 }
 
 function onSampleRowEnter(sampleId: string): void {
@@ -541,16 +555,30 @@ function scheduleNoticeDismiss(message: string): void {
   }, 2600);
 }
 
+async function waitForAtLeast(startedAt: number, minimumMs: number): Promise<void> {
+  const elapsed = performance.now() - startedAt;
+  const remain = Math.max(0, minimumMs - elapsed);
+  if (remain <= 0) return;
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, remain);
+  });
+}
+
 function toggleSampleEnabled(sampleId: string, enabled: boolean): void {
   const sample = config.value.audioSamples.find((item) => item.id === sampleId);
   if (!sample) return;
+  if (isSampleMissing(sample)) {
+    showToast(`${sample.displayName} 文件已不存在，不能启用。`);
+    return;
+  }
   sample.enabled = enabled;
   showToast(`${sample.displayName} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`);
 }
 
 function setAllSamplesEnabled(enabled: boolean): void {
-  if (!config.value.audioSamples.length) return;
-  for (const sample of config.value.audioSamples) {
+  const validSamples = config.value.audioSamples.filter((item) => item.exists !== false);
+  if (!validSamples.length) return;
+  for (const sample of validSamples) {
     sample.enabled = enabled;
   }
   showToast(`已${enabled ? "全局开启" : "全局关闭"}全部样本。`);
@@ -818,11 +846,22 @@ function timelineStateClass(item: RunEventRecord, isLatest: boolean): string {
 }
 
 async function loadBootstrap(): Promise<void> {
-  appVersion.value = `v${await window.vtc.getVersion() as string}`;
-  const settings = await window.vtc.getSettings() as SettingsPayload;
+  notice.value = "正在检查样本文件...";
+  await nextTick();
+  const checkingStartedAt = performance.now();
+  const [version, settings] = await Promise.all([
+    window.vtc.getVersion() as Promise<string>,
+    window.vtc.getSettings() as Promise<SettingsPayload>,
+  ]);
+  appVersion.value = `v${version}`;
   config.value = settings;
   permissions.value = settings.permissions;
   devices.value = settings.devices;
+  void waitForAtLeast(checkingStartedAt, SAMPLE_BOOTSTRAP_NOTICE_MIN_MS).then(() => {
+    if (notice.value === "正在检查样本文件...") {
+      notice.value = "样本检查完成";
+    }
+  });
   await refreshInstalledAppInfo();
   await refreshResultData();
 }
@@ -1818,6 +1857,11 @@ onBeforeUnmount(() => {
               <span class="summary-label">关闭</span>
               <strong>{{ disabledSamples.length }}</strong>
             </div>
+            <div class="summary-item" :class="{ 'summary-item--danger': invalidSamples.length > 0 }">
+              <HugeiconsIcon :icon="ReloadIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">无效</span>
+              <strong>{{ invalidSamples.length }}</strong>
+            </div>
             <div class="summary-item">
               <HugeiconsIcon :icon="Analytics01Icon" :size="16" class="summary-inline-icon" />
               <span class="summary-label">总共</span>
@@ -1844,14 +1888,16 @@ onBeforeUnmount(() => {
               v-for="(sample, offset) in visibleSamples"
               :key="sample.id"
               class="sample-row-clean"
+              :class="{ 'is-missing': isSampleMissing(sample) }"
               @mouseenter="onSampleRowEnter(sample.id)"
               @mouseleave="onSampleRowLeave(sample.id)"
             >
               <div class="sample-row-index">{{ sampleListStartIndex + offset + 1 }}、</div>
               <div class="sample-row-main">
-                <span class="sample-row-path">{{ sample.relativePath }}</span>
+                <span class="sample-row-path" :class="{ 'sample-row-path--missing': isSampleMissing(sample) }">{{ sample.relativePath }}</span>
+                <span v-if="isSampleMissing(sample)" class="sample-row-missing">文件不存在，请重新扫描或检查目录。</span>
                 <div
-                  v-if="shouldRenderSamplePreview(sample.id)"
+                  v-else-if="shouldRenderSamplePreview(sample)"
                   class="sample-preview"
                   :class="{ 'sample-preview--active': previewPlayingSampleId === sample.id }"
                   :data-sample-preview-id="sample.id"
@@ -1890,10 +1936,12 @@ onBeforeUnmount(() => {
                 <span v-else class="sample-preview__duration">{{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
               </div>
               <div class="sample-row-actions">
+                <span v-if="isSampleMissing(sample)" class="pill danger">无效</span>
                 <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
                 <label class="switch-row sample-switch-row">
                   <input
                     :checked="sample.enabled"
+                    :disabled="isSampleMissing(sample)"
                     type="checkbox"
                     @change="onSampleToggle(sample.id, $event)"
                   />

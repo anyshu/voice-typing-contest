@@ -60,4 +60,40 @@ describe("SampleManager", () => {
     expect(rescanned[0].enabled).toBe(false);
     expect(rescanned[0].expectedText).toBe("keep me");
   });
+
+  it("marks missing external samples during validation", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-samples-"));
+    await mkdir(join(root, "english"), { recursive: true });
+    const existingPath = join(root, "english", "line-1.wav");
+    const missingPath = join(root, "english", "line-2.wav");
+    await writeFile(existingPath, "wav");
+
+    const manager = new SampleManager();
+    const validation = await manager.validate([
+      {
+        id: "sample-existing",
+        filePath: existingPath,
+        relativePath: "english/line-1.wav",
+        displayName: "line-1.wav",
+        language: "en",
+        durationMs: 1200,
+        tags: ["english"],
+        enabled: true,
+      },
+      {
+        id: "sample-missing",
+        filePath: missingPath,
+        relativePath: "english/line-2.wav",
+        displayName: "line-2.wav",
+        language: "en",
+        durationMs: 1200,
+        tags: ["english"],
+        enabled: true,
+      },
+    ]);
+
+    expect(validation.changed).toBe(true);
+    expect(validation.samples.map((sample) => sample.exists)).toEqual([true, false]);
+    expect(validation.samples.map((sample) => sample.enabled)).toEqual([true, false]);
+  });
 });

@@ -588,8 +588,8 @@ export class RunController extends EventEmitter {
       ? config.targetApps.filter((item) => requestedAppIds.has(item.id))
       : config.targetApps.filter((item) => item.enabled);
     const samples = requestedSampleIds
-      ? config.audioSamples.filter((item) => requestedSampleIds.has(item.id))
-      : config.audioSamples.filter((item) => item.enabled);
+      ? config.audioSamples.filter((item) => requestedSampleIds.has(item.id) && item.exists !== false)
+      : config.audioSamples.filter((item) => item.enabled && item.exists !== false);
     const resolvedApps = await Promise.all(
       enabledApps.map(async (app) => {
         const installedInfo = await this.inspectTargetApp(app);

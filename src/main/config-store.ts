@@ -58,7 +58,10 @@ export class ConfigStore {
       })),
       ...config.targetApps.filter((app) => !defaultAppIds.has(app.id)),
     ];
-    const audioSamples = config.audioSamples.length ? config.audioSamples : defaults.audioSamples;
+    const audioSamples = (config.audioSamples.length ? config.audioSamples : defaults.audioSamples).map((sample) => ({
+      ...sample,
+      exists: sample.exists ?? true,
+    }));
     if (!targetApps.some((app) => app.enabled)) {
       const selftest = targetApps.find((app) => app.id === "selftest");
       if (selftest) {

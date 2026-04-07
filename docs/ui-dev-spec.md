@@ -218,12 +218,23 @@ Canceling the pre-start confirmation must restore the previously visible latest 
 The `样本管理` page should show:
 
 - the selected sample root
-- a compact summary strip with enabled / disabled / total sample counts
+- a compact summary strip with enabled / disabled / invalid / total sample counts, where `enabled + disabled + invalid = total`
 - one row per sample with path, preview player, duration, current status, and an enable toggle
 
 The list is virtualized. Heavier preview controls should mount only for the hovered or currently playing row.
 
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
+
+When the app boots, the top notice area should first show `正在检查样本文件...` for a perceptible short duration and then switch to `样本检查完成` so the operator can actually see both states.
+
+An invalid sample means the previously scanned file no longer exists on disk. Invalid samples should:
+
+- render in danger styling on the sample list
+- show an `无效` status in the summary strip and sample row
+- never be counted as `关闭`
+- be forced to `disabled`
+- not allow re-enabling from the UI
+- be excluded from benchmark runs and single-sample retries
 
 ### 4.7 App page
 

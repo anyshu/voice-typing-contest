@@ -112,6 +112,18 @@ Main page layout is:
 - three-column workspace
 - latest-session summary
 
+Main-page toast behavior:
+
+- keep the global toast in the top-right visual area
+- when `page === 'main'`, offset the toast left so it does not cover the top-right `开始` / `关闭` action
+- smaller responsive layouts can fall back to the default top-right anchor once the main-page actions stack vertically
+
+The left `目标App` panel on `主控台` is not read-only:
+
+- every app row keeps the existing status pill
+- every app row also exposes a direct toggle control without extra text label
+- toggling here should immediately affect the next batch, without forcing the operator to jump to `App管理`
+
 The persisted session list now belongs to the dedicated `测试历史` page.
 
 The FAQ entry should be labeled `常见问题`, and the first speaker troubleshooting item should read `为什么开始测试后，扬声器没声音了？`.
@@ -213,17 +225,35 @@ If a session contains one or more failed rows, only the session summary line tex
 
 Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
 
+When one or more real apps are enabled but Accessibility is still missing, `主控台` must show a visible warning banner before the generic preflight failure area. The banner copy should stay short and user-facing, and it must include both actions:
+
+- `请求辅助功能权限`
+- `打开系统设置`
+
 ### 4.6 Sample page
 
 The `样本管理` page should show:
 
 - the selected sample root
-- a compact summary strip with enabled / disabled / total sample counts
+- a compact summary strip with enabled / disabled / invalid / total sample counts, where `enabled + disabled + invalid = total`
 - one row per sample with path, preview player, duration, current status, and an enable toggle
 
 The list is virtualized. Heavier preview controls should mount only for the hovered or currently playing row.
 
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
+
+When the app boots, the top notice area should first show `正在检查样本文件...` for a perceptible short duration and then switch to `样本检查完成` so the operator can actually see both states.
+
+An invalid sample means the previously scanned file no longer exists on disk. Invalid samples should:
+
+- render in danger styling on the sample list
+- show an `无效` status in the summary strip and sample row
+- never be counted as `关闭`
+- be forced to `disabled`
+- not allow re-enabling from the UI
+- be excluded from benchmark runs and single-sample retries
+
+If rescanning the configured sample root fails because the directory is gone or unreadable, the renderer must show a visible failure notice instead of only logging the raw exception in devtools. The error copy should explain that the sample directory is missing and that the operator needs to re-pick it.
 
 ### 4.7 App page
 

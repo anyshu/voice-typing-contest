@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/dde909e5-a18f-4d18-b6a8-4868375619b6
 
 ## 当前实现结果
 
-截至 `v0.1.12`，项目已经把“能不能持续、成批、可回看地跑起来”这一层打通了：
+截至 `v0.1.13`，项目已经把“能不能持续、成批、可回看地跑起来”这一层打通了：
 
 - 可以管理目标 App、样本目录、热键、输出设备和运行参数
 - 内建预置目前包含 Xiguashuo、闪电说、Wispr Flow、Typeless 和“内建自测”
@@ -152,8 +152,8 @@ pnpm dist:mac      # 打包 macOS 安装产物
 常见发布步骤：
 
 ```bash
-git tag v0.1.12
-git push origin v0.1.12
+git tag v0.1.13
+git push origin v0.1.13
 ```
 
 推上去后，去 GitHub 的 `Actions` / `Releases` 页面就能拿到 dmg。
@@ -164,6 +164,19 @@ git push origin v0.1.12
 - 这意味着 GitHub Release 里的包默认仍是“未验证开发者”状态；首次打开时，用户需要到“系统设置 > 隐私与安全性”里点“仍要打开”，或者在 Finder 里右键应用后选择“打开”
 - 为了让 CI 上的打包路径稳定，helper 构建脚本现在会把 Swift 编译出的 `vtc-helper` 复制到固定的 `native/helper/.build/release/vtc-helper`
 - 同时也会把 `vtc-audioctl` 放到同一个稳定 release 路径，避免 electron-builder 在干净 CI 环境里漏资源
+
+推荐给最终用户的安装步骤：
+
+1. 从 GitHub Release 下载最新的 `arm64-mac.zip`
+2. 解压后把 `Voice Typing Contest.app` 拖到 `/Applications`
+3. 如果首次打开被 macOS 拦住，先执行：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Voice Typing Contest.app"
+open "/Applications/Voice Typing Contest.app"
+```
+
+4. 如果系统仍提示未验证开发者，再到“系统设置 > 隐私与安全性”里点“仍要打开”
 
 ## 目录结构
 

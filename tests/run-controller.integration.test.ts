@@ -44,6 +44,93 @@ afterEach(async () => {
 });
 
 describe("RunController integration", () => {
+  it("does not run invalid samples even when they are enabled", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-run-invalid-samples-"));
+    const sampleRoot = join(root, "samples");
+    await mkdir(sampleRoot, { recursive: true });
+    const validWavPath = join(sampleRoot, "valid.wav");
+    await writeFile(validWavPath, createWav());
+
+    const config = defaultConfig();
+    config.appLaunchDelayMs = 0;
+    config.focusInputDelayMs = 0;
+    config.closeAppDelayMs = 0;
+    config.betweenSamplesDelayMs = 0;
+    config.sampleRoot = sampleRoot;
+    config.databasePath = join(root, "vtc.sqlite");
+    config.targetApps = [{
+      ...config.targetApps.find((app) => app.id === "selftest")!,
+      enabled: true,
+    }];
+    config.audioSamples = [
+      {
+        id: "sample-valid",
+        filePath: validWavPath,
+        relativePath: "valid.wav",
+        displayName: "valid.wav",
+        expectedText: "valid transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["selftest"],
+        enabled: true,
+        exists: true,
+      },
+      {
+        id: "sample-invalid",
+        filePath: join(sampleRoot, "missing.wav"),
+        relativePath: "missing.wav",
+        displayName: "missing.wav",
+        expectedText: "missing transcript",
+        language: "en",
+        durationMs: 240,
+        tags: ["selftest"],
+        enabled: true,
+        exists: false,
+      },
+    ];
+
+    const store = new ResultStore(config.databasePath);
+    const permissions = new PermissionManager({
+      available: true,
+      checkPermissions: async () => ({
+        permissions: [
+          { id: "accessibility", name: "Accessibility", required: true, granted: true },
+          { id: "automation", name: "Automation", required: false, granted: true },
+          { id: "input-monitoring", name: "Input Monitoring", required: false, granted: true },
+        ],
+      }),
+      listAudioDevices: async () => ({
+        devices: [{ id: "system-default", name: "System Default", available: true, isDefault: true }],
+      }),
+      activateApp: async () => undefined,
+      playWav: async () => undefined,
+      sendHotkey: async () => undefined,
+    } as any);
+    (permissions as any).checkAccessibilityPermission = () => true;
+    const targetApps = new TargetAppManager();
+    const controller = new RunController(
+      store,
+      permissions,
+      targetApps,
+      { activateApp: async () => undefined, closeApp: async () => undefined, playWav: async () => undefined, sendHotkey: async () => undefined } as any,
+      (chunks) => {
+        chunks.forEach((value, index) => {
+          setTimeout(() => {
+            controller.onInputEvent({ type: "input", tsMs: performance.now(), value });
+          }, 40 * (index + 1));
+        });
+      },
+    );
+
+    const preflight = await controller.run(config);
+
+    expect(preflight.ok).toBe(true);
+    const runs = store.listRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.sampleId).toBe("sample-valid");
+    store.close();
+  });
+
   it("can rerun only a selected app and sample from history", async () => {
     root = await mkdtemp(join(tmpdir(), "vtc-run-retry-"));
     const sampleRoot = join(root, "samples");

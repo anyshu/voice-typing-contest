@@ -36,6 +36,7 @@ function makeSessions(): RunSessionSummary[] {
 
 function setupDesktopApi(options?: {
   startRunResult?: PreflightReport;
+  inspectRunResult?: PreflightReport;
 }) {
   const settings = makeSettings();
   const sessions = makeSessions();
@@ -46,7 +47,7 @@ function setupDesktopApi(options?: {
     isBuiltin: Boolean(app.launchCommand?.startsWith("selftest://")),
   }));
   const api = {
-    getVersion: vi.fn(async () => "0.1.12"),
+    getVersion: vi.fn(async () => "0.1.13"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),
@@ -59,6 +60,12 @@ function setupDesktopApi(options?: {
     getInstalledAppInfo: vi.fn(async () => installedInfo),
     focusBenchmarkWindow: vi.fn(async () => ({ ok: true })),
     startRun: vi.fn(async () => options?.startRunResult ?? {
+      ok: true,
+      items: [],
+      permissions: settings.permissions,
+      devices: settings.devices,
+    }),
+    inspectRun: vi.fn(async () => options?.inspectRunResult ?? {
       ok: true,
       items: [],
       permissions: settings.permissions,
@@ -112,6 +119,7 @@ function setupDesktopApi(options?: {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -217,6 +225,90 @@ describe("App renderer", () => {
     const text = wrapper.text().replace(/\s+/g, "");
     expect(text).toContain("启用1");
     expect(text).toContain("关闭1");
+    expect(text).toContain("启用1关闭1无效0总共2");
+  });
+
+  it("lets the user enable or disable app participation directly on the main console", async () => {
+    const { api } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const xiguashuoRow = wrapper.findAll(".panel-apps .app-row").find((item) => item.text().includes("Xiguashuo"));
+    expect(xiguashuoRow).toBeTruthy();
+
+    const toggle = xiguashuoRow!.find('.app-switch-row input[type="checkbox"]');
+    expect((toggle.element as HTMLInputElement).checked).toBe(false);
+
+    const saveCallCount = api.saveSettings.mock.calls.length;
+    await toggle.setValue(true);
+    await flushPromises();
+
+    expect((toggle.element as HTMLInputElement).checked).toBe(true);
+    expect(api.saveSettings).toHaveBeenCalledTimes(saveCallCount + 1);
+    expect(wrapper.text()).toContain("Xiguashuo 已启用，会参与后续测试。");
+
+    const text = wrapper.text().replace(/\s+/g, "");
+    expect(text).toContain("已启用应用2");
+  });
+
+  it("shows bootstrap checking notice before and after sample validation", async () => {
+    vi.useFakeTimers();
+    const { settings } = setupDesktopApi();
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在检查样本文件...");
+
+    vi.advanceTimersByTime(900);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("样本检查完成");
+    vi.useRealTimers();
+  });
+
+  it("keeps the checking notice visible for a short moment even when settings load immediately", async () => {
+    vi.useFakeTimers();
+    setupDesktopApi();
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在检查样本文件...");
+
+    vi.advanceTimersByTime(500);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在检查样本文件...");
+    vi.advanceTimersByTime(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("样本检查完成");
+    vi.useRealTimers();
+  });
+
+  it("marks invalid samples in red after bootstrap validation", async () => {
+    const { settings } = setupDesktopApi();
+    settings.audioSamples[1].exists = false;
+    settings.audioSamples[1].enabled = false;
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    await sampleButton!.trigger("click");
+    await flushPromises();
+
+    const missingRow = wrapper.findAll(".sample-row-clean").find((item) => item.classes().includes("is-missing"));
+    expect(missingRow).toBeTruthy();
+    expect(missingRow!.text()).toContain("无效");
+    expect(missingRow!.text()).toContain("文件不存在，请重新扫描或检查目录。");
+    const invalidToggle = missingRow!.find('input[type="checkbox"]');
+    expect((invalidToggle.element as HTMLInputElement).disabled).toBe(true);
+    const text = wrapper.text().replace(/\s+/g, "");
+    expect(text).toContain("启用1");
+    expect(text).toContain("关闭0");
+    expect(text).toContain("无效1");
     expect(text).toContain("总共2");
   });
 
@@ -269,6 +361,74 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("现在还不能运行");
     expect(wrapper.text()).toContain("缺少辅助功能权限");
     expect(wrapper.text()).toContain("先到系统设置里给这个应用打开辅助功能权限");
+  });
+
+  it("shows a visible notice when rescanning samples fails", async () => {
+    const { api, settings } = setupDesktopApi();
+    settings.sampleRoot = "/tmp/missing-samples";
+    api.rescanSamples.mockRejectedValueOnce(new Error("样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。"));
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    await sampleButton!.trigger("click");
+    await flushPromises();
+
+    const rescanButton = wrapper.findAll("button").find((item) => item.text() === "重新扫描");
+    expect(rescanButton).toBeTruthy();
+    await rescanButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("重新扫描失败：样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。");
+  });
+
+  it("shows accessibility actions on the main page when a real app is enabled but permission is missing", async () => {
+    const { api, settings } = setupDesktopApi();
+    settings.permissions = settings.permissions.map((item) => (item.id === "accessibility" ? { ...item, granted: false } : item));
+    settings.targetApps = settings.targetApps.map((item) => ({ ...item, enabled: item.id === "xiguashuo" }));
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("开始前先开启辅助功能权限");
+    const requestButton = wrapper.findAll("button").find((item) => item.text() === "请求辅助功能权限");
+    expect(requestButton).toBeTruthy();
+    await requestButton!.trigger("click");
+    await flushPromises();
+
+    expect(api.requestAccessibilityPermission).toHaveBeenCalled();
+  });
+
+  it("proactively requests accessibility permission before starting a real app run", async () => {
+    const inspectRunResult: PreflightReport = {
+      ok: false,
+      permissions: defaultPermissions(),
+      devices: defaultDevices(),
+      items: [
+        {
+          key: "accessibility",
+          ok: false,
+          message: "缺少辅助功能权限",
+          category: "permission_denied_accessibility",
+          hint: "先到系统设置里给这个应用打开辅助功能权限，再回来点开始。",
+        },
+      ],
+    };
+    const { api, settings } = setupDesktopApi({ inspectRunResult });
+    settings.permissions = settings.permissions.map((item) => (item.id === "accessibility" ? { ...item, granted: false } : item));
+    settings.targetApps = settings.targetApps.map((item) => ({ ...item, enabled: item.id === "xiguashuo" }));
+
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button.primary-button").trigger("click");
+    await flushPromises();
+
+    expect(api.requestAccessibilityPermission).toHaveBeenCalled();
+    expect(api.inspectRun).toHaveBeenCalled();
+    expect(api.startRun).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("缺少辅助功能权限");
   });
 
   it("sends close IPC from the close button while running", async () => {

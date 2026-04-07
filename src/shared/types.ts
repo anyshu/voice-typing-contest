@@ -84,6 +84,7 @@ export interface AudioSample {
   durationMs: number;
   tags: string[];
   enabled: boolean;
+  exists?: boolean;
 }
 
 export interface AppConfig {

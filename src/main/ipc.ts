@@ -38,11 +38,21 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     ipcMain.handle(channel, listener);
   };
 
-  handle("settings:get", async () => ({
-    ...deps.getConfig(),
-    devices: deps.getDevices(),
-    permissions: deps.getPermissions(),
-  }));
+  handle("settings:get", async () => {
+    let current = deps.getConfig();
+    const validation = await deps.sampleManager.validate(current.audioSamples);
+    if (validation.changed) {
+      current = { ...current, audioSamples: validation.samples };
+      deps.setConfig(current);
+      deps.configStore.save(current);
+      deps.resultStore.syncConfig(current);
+    }
+    return {
+      ...current,
+      devices: deps.getDevices(),
+      permissions: deps.getPermissions(),
+    };
+  });
 
   handle("settings:save", async (_event, config: AppConfig) => {
     deps.setConfig(config);

@@ -61,7 +61,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
-const appVersion = ref("v0.1.12");
+const appVersion = ref("v0.1.13");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -70,6 +70,7 @@ const completionDialogVisible = ref(false);
 const completionDialogShownForSessionId = ref<string | null>(null);
 const pendingRunStart = ref(false);
 const preRunDialogVisible = ref(false);
+const appToggleBusyById = ref<Record<string, boolean>>({});
 const preRunTimelineEvents = ref<RunEventRecord[]>([]);
 const showLatestSessionTimeline = ref(true);
 const importCsvDialogVisible = ref(false);
@@ -92,6 +93,7 @@ let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
 const PRE_RUN_RUN_ID_PREFIX = "prep:";
 const SAMPLE_ROW_HEIGHT = 44;
 const SAMPLE_LIST_OVERSCAN = 8;
+const SAMPLE_BOOTSTRAP_NOTICE_MIN_MS = 900;
 
 const phaseLabels: Record<RunPhase, string> = {
   idle: "空闲",
@@ -136,14 +138,20 @@ const builtinApps = computed(() => config.value.targetApps.filter((item) => isBu
 const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
 const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
 const installedRealApps = computed(() => realApps.value.filter((item) => installedAppInfoById.value[item.id]?.installed));
-const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.enabled));
-const disabledSamples = computed(() => config.value.audioSamples.filter((item) => !item.enabled));
+const invalidSamples = computed(() => config.value.audioSamples.filter((item) => item.exists === false));
+const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && item.enabled));
+const disabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && !item.enabled));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const grantedPermissionCount = computed(() => permissions.value.filter((item) => item.granted).length);
 const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
+const accessibilityActionNeeded = computed(() => enabledRealApps.value.length > 0 && !(accessibility.value?.granted ?? false));
+const appToggleLocked = computed(() => running.value || pendingRunStart.value || preRunDialogVisible.value);
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
-const allSamplesEnabled = computed(() => config.value.audioSamples.length > 0 && config.value.audioSamples.every((item) => item.enabled));
+const allSamplesEnabled = computed(() => {
+  const validSamples = config.value.audioSamples.filter((item) => item.exists !== false);
+  return validSamples.length > 0 && validSamples.every((item) => item.enabled);
+});
 const sampleListStartIndex = computed(() => Math.max(0, Math.floor(sampleListScrollTop.value / SAMPLE_ROW_HEIGHT) - SAMPLE_LIST_OVERSCAN));
 const sampleListVisibleCount = computed(() => Math.ceil(sampleListViewportHeight.value / SAMPLE_ROW_HEIGHT) + SAMPLE_LIST_OVERSCAN * 2);
 const sampleListEndIndex = computed(() => Math.min(config.value.audioSamples.length, sampleListStartIndex.value + sampleListVisibleCount.value));
@@ -204,6 +212,9 @@ const noticeTone = computed(() => {
     || notice.value.includes("不能")
     || notice.value.includes("没跑起来")
     || notice.value.includes("红色提示")
+    || notice.value.includes("不存在")
+    || notice.value.includes("缺失")
+    || notice.value.includes("无效")
   ) return "danger";
   if (notice.value.includes("取消") || notice.value.includes("未")) return "warning";
   return "success";
@@ -366,6 +377,10 @@ function formatPreviewTime(seconds?: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
+function isSampleMissing(sample: AudioSample): boolean {
+  return sample.exists === false;
+}
+
 function getSamplePreviewDuration(sampleId: string, fallbackMs?: number): number {
   const seconds = previewDuration.value[sampleId];
   if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0) return seconds;
@@ -387,6 +402,7 @@ async function ensureSamplePreviewSrc(sample: AudioSample): Promise<string | und
       durationMs: sample.durationMs,
       tags: [...sample.tags],
       enabled: sample.enabled,
+      exists: sample.exists,
     }) as string;
     previewSrcBySampleId.value = { ...previewSrcBySampleId.value, [sampleId]: src };
     return src;
@@ -499,8 +515,9 @@ function previewSliderStyle(sampleId: string): { background: string } {
   };
 }
 
-function shouldRenderSamplePreview(sampleId: string): boolean {
-  return hoveredSampleId.value === sampleId || previewPlayingSampleId.value === sampleId;
+function shouldRenderSamplePreview(sample: AudioSample): boolean {
+  if (isSampleMissing(sample)) return false;
+  return hoveredSampleId.value === sample.id || previewPlayingSampleId.value === sample.id;
 }
 
 function onSampleRowEnter(sampleId: string): void {
@@ -541,16 +558,30 @@ function scheduleNoticeDismiss(message: string): void {
   }, 2600);
 }
 
+async function waitForAtLeast(startedAt: number, minimumMs: number): Promise<void> {
+  const elapsed = performance.now() - startedAt;
+  const remain = Math.max(0, minimumMs - elapsed);
+  if (remain <= 0) return;
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, remain);
+  });
+}
+
 function toggleSampleEnabled(sampleId: string, enabled: boolean): void {
   const sample = config.value.audioSamples.find((item) => item.id === sampleId);
   if (!sample) return;
+  if (isSampleMissing(sample)) {
+    showToast(`${sample.displayName} 文件已不存在，不能启用。`);
+    return;
+  }
   sample.enabled = enabled;
   showToast(`${sample.displayName} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`);
 }
 
 function setAllSamplesEnabled(enabled: boolean): void {
-  if (!config.value.audioSamples.length) return;
-  for (const sample of config.value.audioSamples) {
+  const validSamples = config.value.audioSamples.filter((item) => item.exists !== false);
+  if (!validSamples.length) return;
+  for (const sample of validSamples) {
     sample.enabled = enabled;
   }
   showToast(`已${enabled ? "全局开启" : "全局关闭"}全部样本。`);
@@ -563,6 +594,39 @@ function toggleAllSamples(event: Event): void {
 
 function onSampleToggle(sampleId: string, event: Event): void {
   toggleSampleEnabled(sampleId, (event.target as HTMLInputElement).checked);
+}
+
+function setAppToggleBusy(appId: string, busy: boolean): void {
+  const nextBusy = { ...appToggleBusyById.value };
+  if (busy) {
+    nextBusy[appId] = true;
+  } else {
+    delete nextBusy[appId];
+  }
+  appToggleBusyById.value = nextBusy;
+}
+
+async function toggleAppEnabled(appId: string, enabled: boolean): Promise<void> {
+  const app = config.value.targetApps.find((item) => item.id === appId);
+  if (!app || app.enabled === enabled) return;
+
+  const previousEnabled = app.enabled;
+  app.enabled = enabled;
+  setAppToggleBusy(appId, true);
+
+  try {
+    await saveSettings(false);
+    showToast(`${app.name} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`);
+  } catch {
+    app.enabled = previousEnabled;
+  } finally {
+    setAppToggleBusy(appId, false);
+  }
+}
+
+function onMainAppToggle(appId: string, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  void toggleAppEnabled(appId, Boolean(target?.checked));
 }
 
 function sessionStatusText(status: RunSessionSummary["status"]): string {
@@ -818,11 +882,22 @@ function timelineStateClass(item: RunEventRecord, isLatest: boolean): string {
 }
 
 async function loadBootstrap(): Promise<void> {
-  appVersion.value = `v${await window.vtc.getVersion() as string}`;
-  const settings = await window.vtc.getSettings() as SettingsPayload;
+  notice.value = "正在检查样本文件...";
+  await nextTick();
+  const checkingStartedAt = performance.now();
+  const [version, settings] = await Promise.all([
+    window.vtc.getVersion() as Promise<string>,
+    window.vtc.getSettings() as Promise<SettingsPayload>,
+  ]);
+  appVersion.value = `v${version}`;
   config.value = settings;
   permissions.value = settings.permissions;
   devices.value = settings.devices;
+  void waitForAtLeast(checkingStartedAt, SAMPLE_BOOTSTRAP_NOTICE_MIN_MS).then(() => {
+    if (notice.value === "正在检查样本文件...") {
+      notice.value = "样本检查完成";
+    }
+  });
   await refreshInstalledAppInfo();
   await refreshResultData();
 }
@@ -904,8 +979,12 @@ async function rescanSamples(): Promise<void> {
     notice.value = "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
     return;
   }
-  config.value.audioSamples = await window.vtc.rescanSamples(config.value.sampleRoot);
-  notice.value = `重新扫描完成，共拿到 ${config.value.audioSamples.length} 条样本。`;
+  try {
+    config.value.audioSamples = await window.vtc.rescanSamples(config.value.sampleRoot);
+    notice.value = `重新扫描完成，共拿到 ${config.value.audioSamples.length} 条样本。`;
+  } catch (error) {
+    notice.value = `重新扫描失败：${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 async function chooseDatabasePath(): Promise<void> {
@@ -918,6 +997,26 @@ async function runBatch(): Promise<void> {
   await startRunBatch();
 }
 
+async function ensureAccessibilityPermissionBeforeRun(): Promise<boolean> {
+  if (!accessibilityActionNeeded.value) {
+    return true;
+  }
+
+  const granted = await requestAccessibilityPermission({ auto: true });
+  if (granted) {
+    return true;
+  }
+
+  preflightReport.value = await window.vtc.inspectRun() as PreflightReport;
+  if (!preflightReport.value.ok) {
+    notice.value = "缺少辅助功能权限，已帮你发起系统授权请求；授权后再点开始。";
+    return false;
+  }
+
+  notice.value = "已经尝试请求辅助功能权限；未授权的真实 App 本轮会先跳过。";
+  return true;
+}
+
 async function startRunBatch(options?: RunStartOptions): Promise<void> {
   try {
     pendingRunStart.value = true;
@@ -928,9 +1027,13 @@ async function startRunBatch(options?: RunStartOptions): Promise<void> {
     liveTimelineEvents.value = [];
     preRunTimelineEvents.value = [];
     showLatestSessionTimeline.value = false;
+    await saveSettings(false);
+    if (!(await ensureAccessibilityPermissionBeforeRun())) {
+      pendingRunStart.value = false;
+      return;
+    }
     notice.value = "开始前提示已弹出，确认开始后请不要操作鼠标和键盘。";
     await focusInputProbe();
-    await saveSettings(false);
     await runPreStartCountdown();
     const report = await window.vtc.startRun(options) as PreflightReport;
     preflightReport.value = report;
@@ -1327,14 +1430,21 @@ function openAccessibilitySettings(): void {
   void window.vtc.openPermissionSettings("Privacy_Accessibility");
 }
 
-async function requestAccessibilityPermission(): Promise<void> {
+async function requestAccessibilityPermission(options?: { auto?: boolean }): Promise<boolean> {
   try {
     const snapshot = await window.vtc.requestAccessibilityPermission() as { permissions: PermissionSnapshot[]; devices: AudioDevice[] };
     permissions.value = snapshot.permissions;
     devices.value = snapshot.devices;
-    notice.value = "已经发起辅助功能权限请求。系统如果没自动弹窗，你再点旁边的“打开系统设置”。";
+    const granted = snapshot.permissions.find((item) => item.id === "accessibility")?.granted ?? false;
+    notice.value = granted
+      ? (options?.auto ? "辅助功能权限已授权，继续开始测试。" : "辅助功能权限已授权。")
+      : (options?.auto
+          ? "已经尝试请求辅助功能权限；系统如果没自动弹窗，再点“打开系统设置”。"
+          : "已经发起辅助功能权限请求。系统如果没自动弹窗，你再点旁边的“打开系统设置”。");
+    return granted;
   } catch (error) {
     notice.value = `请求辅助功能权限失败：${error instanceof Error ? error.message : String(error)}`;
+    return false;
   }
 }
 
@@ -1587,7 +1697,13 @@ onBeforeUnmount(() => {
 
     <main class="content">
       <transition name="toast">
-        <div v-if="notice" class="notice-toast" :class="`notice-toast--${noticeTone}`" role="status" aria-live="polite">
+        <div
+          v-if="notice"
+          class="notice-toast"
+          :class="[`notice-toast--${noticeTone}`, { 'notice-toast--main': page === 'main' }]"
+          role="status"
+          aria-live="polite"
+        >
           {{ notice }}
         </div>
       </transition>
@@ -1640,6 +1756,15 @@ onBeforeUnmount(() => {
 
 
       <template v-if="page === 'main'">
+        <div v-if="accessibilityActionNeeded" class="banner">
+          <strong>开始前先开启辅助功能权限</strong>
+          <p class="muted">没有这个权限，工具就没法控制这些 App 的热键与焦点。先授权，再回来点开始。</p>
+          <div class="toolbar">
+            <button class="secondary-button" @click="requestAccessibilityPermission">请求辅助功能权限</button>
+            <button class="ghost-button" @click="openAccessibilitySettings">打开系统设置</button>
+          </div>
+        </div>
+
         <div v-if="preflightFailures.length" class="banner">
           <strong>现在还不能运行</strong>
           <ul class="banner-list">
@@ -1658,13 +1783,25 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" @click="page = 'apps'">去 App 管理</button>
               </div>
               <ul class="meta-list panel-scroll">
-                <li v-for="app in config.targetApps" :key="app.id" class="app-row">
-                  <div>
+                <li v-for="app in config.targetApps" :key="app.id" class="app-row app-row--main">
+                  <div class="app-row-main">
                     <strong>{{ app.name }}</strong>
-                    <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
-                    <div class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</div>
+                    <div class="muted app-row-meta">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
+                    <div class="muted app-row-meta">{{ appModeText(app.hotkeyTriggerMode) }}</div>
                   </div>
-                  <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                  <div class="app-row-actions">
+                    <span class="pill app-row-status" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                    <label class="switch-row app-switch-row">
+                      <input
+                        :checked="app.enabled"
+                        :disabled="appToggleLocked || appToggleBusyById[app.id]"
+                        :aria-label="`${app.name}${app.enabled ? '已启用，点击关闭' : '未启用，点击启用'}`"
+                        :title="app.enabled ? '关闭' : '启用'"
+                        type="checkbox"
+                        @change="onMainAppToggle(app.id, $event)"
+                      />
+                    </label>
+                  </div>
                 </li>
               </ul>
             </article>
@@ -1818,6 +1955,11 @@ onBeforeUnmount(() => {
               <span class="summary-label">关闭</span>
               <strong>{{ disabledSamples.length }}</strong>
             </div>
+            <div class="summary-item" :class="{ 'summary-item--danger': invalidSamples.length > 0 }">
+              <HugeiconsIcon :icon="ReloadIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">无效</span>
+              <strong>{{ invalidSamples.length }}</strong>
+            </div>
             <div class="summary-item">
               <HugeiconsIcon :icon="Analytics01Icon" :size="16" class="summary-inline-icon" />
               <span class="summary-label">总共</span>
@@ -1844,14 +1986,16 @@ onBeforeUnmount(() => {
               v-for="(sample, offset) in visibleSamples"
               :key="sample.id"
               class="sample-row-clean"
+              :class="{ 'is-missing': isSampleMissing(sample) }"
               @mouseenter="onSampleRowEnter(sample.id)"
               @mouseleave="onSampleRowLeave(sample.id)"
             >
               <div class="sample-row-index">{{ sampleListStartIndex + offset + 1 }}、</div>
               <div class="sample-row-main">
-                <span class="sample-row-path">{{ sample.relativePath }}</span>
+                <span class="sample-row-path" :class="{ 'sample-row-path--missing': isSampleMissing(sample) }">{{ sample.relativePath }}</span>
+                <span v-if="isSampleMissing(sample)" class="sample-row-missing">文件不存在，请重新扫描或检查目录。</span>
                 <div
-                  v-if="shouldRenderSamplePreview(sample.id)"
+                  v-else-if="shouldRenderSamplePreview(sample)"
                   class="sample-preview"
                   :class="{ 'sample-preview--active': previewPlayingSampleId === sample.id }"
                   :data-sample-preview-id="sample.id"
@@ -1890,10 +2034,12 @@ onBeforeUnmount(() => {
                 <span v-else class="sample-preview__duration">{{ formatPreviewTime(getSamplePreviewDuration(sample.id, sample.durationMs)) }}</span>
               </div>
               <div class="sample-row-actions">
+                <span v-if="isSampleMissing(sample)" class="pill danger">无效</span>
                 <span class="pill" :class="sample.enabled ? 'success' : 'warning'">{{ sample.enabled ? "启用" : "关闭" }}</span>
                 <label class="switch-row sample-switch-row">
                   <input
                     :checked="sample.enabled"
+                    :disabled="isSampleMissing(sample)"
                     type="checkbox"
                     @change="onSampleToggle(sample.id, $event)"
                   />

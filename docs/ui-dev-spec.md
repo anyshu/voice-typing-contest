@@ -112,6 +112,12 @@ Main page layout is:
 - three-column workspace
 - latest-session summary
 
+Main-page toast behavior:
+
+- keep the global toast in the top-right visual area
+- when `page === 'main'`, offset the toast left so it does not cover the top-right `开始` / `关闭` action
+- smaller responsive layouts can fall back to the default top-right anchor once the main-page actions stack vertically
+
 The left `目标App` panel on `主控台` is not read-only:
 
 - every app row keeps the existing status pill

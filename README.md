@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/dde909e5-a18f-4d18-b6a8-4868375619b6
 
 ## 当前实现结果
 
-截至 `v0.1.12`，项目已经把“能不能持续、成批、可回看地跑起来”这一层打通了：
+截至 `v0.1.13`，项目已经把“能不能持续、成批、可回看地跑起来”这一层打通了：
 
 - 可以管理目标 App、样本目录、热键、输出设备和运行参数
 - 内建预置目前包含 Xiguashuo、闪电说、Wispr Flow、Typeless 和“内建自测”
@@ -152,8 +152,8 @@ pnpm dist:mac      # 打包 macOS 安装产物
 常见发布步骤：
 
 ```bash
-git tag v0.1.12
-git push origin v0.1.12
+git tag v0.1.13
+git push origin v0.1.13
 ```
 
 推上去后，去 GitHub 的 `Actions` / `Releases` 页面就能拿到 dmg。

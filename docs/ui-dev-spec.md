@@ -213,6 +213,11 @@ If a session contains one or more failed rows, only the session summary line tex
 
 Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
 
+When one or more real apps are enabled but Accessibility is still missing, `主控台` must show a visible warning banner before the generic preflight failure area. The banner copy should stay short and user-facing, and it must include both actions:
+
+- `请求辅助功能权限`
+- `打开系统设置`
+
 ### 4.6 Sample page
 
 The `样本管理` page should show:
@@ -235,6 +240,8 @@ An invalid sample means the previously scanned file no longer exists on disk. In
 - be forced to `disabled`
 - not allow re-enabling from the UI
 - be excluded from benchmark runs and single-sample retries
+
+If rescanning the configured sample root fails because the directory is gone or unreadable, the renderer must show a visible failure notice instead of only logging the raw exception in devtools. The error copy should explain that the sample directory is missing and that the operator needs to re-pick it.
 
 ### 4.7 App page
 

@@ -144,6 +144,7 @@ const selectedDevice = computed(() => devices.value.find((item) => item.id === c
 const grantedPermissionCount = computed(() => permissions.value.filter((item) => item.granted).length);
 const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
+const accessibilityActionNeeded = computed(() => enabledRealApps.value.length > 0 && !(accessibility.value?.granted ?? false));
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
 const allSamplesEnabled = computed(() => {
   const validSamples = config.value.audioSamples.filter((item) => item.exists !== false);
@@ -943,8 +944,12 @@ async function rescanSamples(): Promise<void> {
     notice.value = "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
     return;
   }
-  config.value.audioSamples = await window.vtc.rescanSamples(config.value.sampleRoot);
-  notice.value = `重新扫描完成，共拿到 ${config.value.audioSamples.length} 条样本。`;
+  try {
+    config.value.audioSamples = await window.vtc.rescanSamples(config.value.sampleRoot);
+    notice.value = `重新扫描完成，共拿到 ${config.value.audioSamples.length} 条样本。`;
+  } catch (error) {
+    notice.value = `重新扫描失败：${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 async function chooseDatabasePath(): Promise<void> {
@@ -957,6 +962,26 @@ async function runBatch(): Promise<void> {
   await startRunBatch();
 }
 
+async function ensureAccessibilityPermissionBeforeRun(): Promise<boolean> {
+  if (!accessibilityActionNeeded.value) {
+    return true;
+  }
+
+  const granted = await requestAccessibilityPermission({ auto: true });
+  if (granted) {
+    return true;
+  }
+
+  preflightReport.value = await window.vtc.inspectRun() as PreflightReport;
+  if (!preflightReport.value.ok) {
+    notice.value = "缺少辅助功能权限，已帮你发起系统授权请求；授权后再点开始。";
+    return false;
+  }
+
+  notice.value = "已经尝试请求辅助功能权限；未授权的真实 App 本轮会先跳过。";
+  return true;
+}
+
 async function startRunBatch(options?: RunStartOptions): Promise<void> {
   try {
     pendingRunStart.value = true;
@@ -967,9 +992,13 @@ async function startRunBatch(options?: RunStartOptions): Promise<void> {
     liveTimelineEvents.value = [];
     preRunTimelineEvents.value = [];
     showLatestSessionTimeline.value = false;
+    await saveSettings(false);
+    if (!(await ensureAccessibilityPermissionBeforeRun())) {
+      pendingRunStart.value = false;
+      return;
+    }
     notice.value = "开始前提示已弹出，确认开始后请不要操作鼠标和键盘。";
     await focusInputProbe();
-    await saveSettings(false);
     await runPreStartCountdown();
     const report = await window.vtc.startRun(options) as PreflightReport;
     preflightReport.value = report;
@@ -1366,14 +1395,21 @@ function openAccessibilitySettings(): void {
   void window.vtc.openPermissionSettings("Privacy_Accessibility");
 }
 
-async function requestAccessibilityPermission(): Promise<void> {
+async function requestAccessibilityPermission(options?: { auto?: boolean }): Promise<boolean> {
   try {
     const snapshot = await window.vtc.requestAccessibilityPermission() as { permissions: PermissionSnapshot[]; devices: AudioDevice[] };
     permissions.value = snapshot.permissions;
     devices.value = snapshot.devices;
-    notice.value = "已经发起辅助功能权限请求。系统如果没自动弹窗，你再点旁边的“打开系统设置”。";
+    const granted = snapshot.permissions.find((item) => item.id === "accessibility")?.granted ?? false;
+    notice.value = granted
+      ? (options?.auto ? "辅助功能权限已授权，继续开始测试。" : "辅助功能权限已授权。")
+      : (options?.auto
+          ? "已经尝试请求辅助功能权限；系统如果没自动弹窗，再点“打开系统设置”。"
+          : "已经发起辅助功能权限请求。系统如果没自动弹窗，你再点旁边的“打开系统设置”。");
+    return granted;
   } catch (error) {
     notice.value = `请求辅助功能权限失败：${error instanceof Error ? error.message : String(error)}`;
+    return false;
   }
 }
 
@@ -1679,6 +1715,15 @@ onBeforeUnmount(() => {
 
 
       <template v-if="page === 'main'">
+        <div v-if="accessibilityActionNeeded" class="banner">
+          <strong>开始前先开启辅助功能权限</strong>
+          <p class="muted">没有这个权限，工具就没法控制这些 App 的热键与焦点。先授权，再回来点开始。</p>
+          <div class="toolbar">
+            <button class="secondary-button" @click="requestAccessibilityPermission">请求辅助功能权限</button>
+            <button class="ghost-button" @click="openAccessibilitySettings">打开系统设置</button>
+          </div>
+        </div>
+
         <div v-if="preflightFailures.length" class="banner">
           <strong>现在还不能运行</strong>
           <ul class="banner-list">

@@ -96,4 +96,11 @@ describe("SampleManager", () => {
     expect(validation.samples.map((sample) => sample.exists)).toEqual([true, false]);
     expect(validation.samples.map((sample) => sample.enabled)).toEqual([true, false]);
   });
+
+  it("returns a friendly error when the sample root is missing", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-samples-"));
+    await rm(root, { recursive: true, force: true });
+
+    await expect(new SampleManager().scan(root)).rejects.toThrow("样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。");
+  });
 });

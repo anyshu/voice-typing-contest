@@ -36,6 +36,7 @@ function makeSessions(): RunSessionSummary[] {
 
 function setupDesktopApi(options?: {
   startRunResult?: PreflightReport;
+  inspectRunResult?: PreflightReport;
 }) {
   const settings = makeSettings();
   const sessions = makeSessions();
@@ -59,6 +60,12 @@ function setupDesktopApi(options?: {
     getInstalledAppInfo: vi.fn(async () => installedInfo),
     focusBenchmarkWindow: vi.fn(async () => ({ ok: true })),
     startRun: vi.fn(async () => options?.startRunResult ?? {
+      ok: true,
+      items: [],
+      permissions: settings.permissions,
+      devices: settings.devices,
+    }),
+    inspectRun: vi.fn(async () => options?.inspectRunResult ?? {
       ok: true,
       items: [],
       permissions: settings.permissions,
@@ -331,6 +338,74 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("现在还不能运行");
     expect(wrapper.text()).toContain("缺少辅助功能权限");
     expect(wrapper.text()).toContain("先到系统设置里给这个应用打开辅助功能权限");
+  });
+
+  it("shows a visible notice when rescanning samples fails", async () => {
+    const { api, settings } = setupDesktopApi();
+    settings.sampleRoot = "/tmp/missing-samples";
+    api.rescanSamples.mockRejectedValueOnce(new Error("样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。"));
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const sampleButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "样本管理");
+    expect(sampleButton).toBeTruthy();
+    await sampleButton!.trigger("click");
+    await flushPromises();
+
+    const rescanButton = wrapper.findAll("button").find((item) => item.text() === "重新扫描");
+    expect(rescanButton).toBeTruthy();
+    await rescanButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("重新扫描失败：样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。");
+  });
+
+  it("shows accessibility actions on the main page when a real app is enabled but permission is missing", async () => {
+    const { api, settings } = setupDesktopApi();
+    settings.permissions = settings.permissions.map((item) => (item.id === "accessibility" ? { ...item, granted: false } : item));
+    settings.targetApps = settings.targetApps.map((item) => ({ ...item, enabled: item.id === "xiguashuo" }));
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("开始前先开启辅助功能权限");
+    const requestButton = wrapper.findAll("button").find((item) => item.text() === "请求辅助功能权限");
+    expect(requestButton).toBeTruthy();
+    await requestButton!.trigger("click");
+    await flushPromises();
+
+    expect(api.requestAccessibilityPermission).toHaveBeenCalled();
+  });
+
+  it("proactively requests accessibility permission before starting a real app run", async () => {
+    const inspectRunResult: PreflightReport = {
+      ok: false,
+      permissions: defaultPermissions(),
+      devices: defaultDevices(),
+      items: [
+        {
+          key: "accessibility",
+          ok: false,
+          message: "缺少辅助功能权限",
+          category: "permission_denied_accessibility",
+          hint: "先到系统设置里给这个应用打开辅助功能权限，再回来点开始。",
+        },
+      ],
+    };
+    const { api, settings } = setupDesktopApi({ inspectRunResult });
+    settings.permissions = settings.permissions.map((item) => (item.id === "accessibility" ? { ...item, granted: false } : item));
+    settings.targetApps = settings.targetApps.map((item) => ({ ...item, enabled: item.id === "xiguashuo" }));
+
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("button.primary-button").trigger("click");
+    await flushPromises();
+
+    expect(api.requestAccessibilityPermission).toHaveBeenCalled();
+    expect(api.inspectRun).toHaveBeenCalled();
+    expect(api.startRun).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("缺少辅助功能权限");
   });
 
   it("sends close IPC from the close button while running", async () => {

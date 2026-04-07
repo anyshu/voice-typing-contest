@@ -10,7 +10,14 @@ export class SampleManager {
     const resolvedRoot = resolveHomePath(root);
     const existingByPath = new Map(previousSamples.map((sample) => [sample.filePath, sample]));
     const found: AudioSample[] = [];
-    await this.walk(resolvedRoot, resolvedRoot, found, existingByPath);
+    try {
+      await this.walk(resolvedRoot, resolvedRoot, found, existingByPath);
+    } catch (error) {
+      if (this.isMissingPathError(error)) {
+        throw new Error("样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。");
+      }
+      throw error;
+    }
     return found.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   }
 
@@ -65,5 +72,9 @@ export class SampleManager {
     } catch {
       return false;
     }
+  }
+
+  private isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
+    return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
   }
 }

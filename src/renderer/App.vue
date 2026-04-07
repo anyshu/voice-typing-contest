@@ -70,6 +70,7 @@ const completionDialogVisible = ref(false);
 const completionDialogShownForSessionId = ref<string | null>(null);
 const pendingRunStart = ref(false);
 const preRunDialogVisible = ref(false);
+const appToggleBusyById = ref<Record<string, boolean>>({});
 const preRunTimelineEvents = ref<RunEventRecord[]>([]);
 const showLatestSessionTimeline = ref(true);
 const importCsvDialogVisible = ref(false);
@@ -145,6 +146,7 @@ const grantedPermissionCount = computed(() => permissions.value.filter((item) =>
 const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
 const accessibility = computed(() => permissions.value.find((item) => item.id === "accessibility"));
 const accessibilityActionNeeded = computed(() => enabledRealApps.value.length > 0 && !(accessibility.value?.granted ?? false));
+const appToggleLocked = computed(() => running.value || pendingRunStart.value || preRunDialogVisible.value);
 const preflightFailures = computed(() => preflightReport.value?.items.filter((item) => !item.ok) ?? []);
 const allSamplesEnabled = computed(() => {
   const validSamples = config.value.audioSamples.filter((item) => item.exists !== false);
@@ -592,6 +594,39 @@ function toggleAllSamples(event: Event): void {
 
 function onSampleToggle(sampleId: string, event: Event): void {
   toggleSampleEnabled(sampleId, (event.target as HTMLInputElement).checked);
+}
+
+function setAppToggleBusy(appId: string, busy: boolean): void {
+  const nextBusy = { ...appToggleBusyById.value };
+  if (busy) {
+    nextBusy[appId] = true;
+  } else {
+    delete nextBusy[appId];
+  }
+  appToggleBusyById.value = nextBusy;
+}
+
+async function toggleAppEnabled(appId: string, enabled: boolean): Promise<void> {
+  const app = config.value.targetApps.find((item) => item.id === appId);
+  if (!app || app.enabled === enabled) return;
+
+  const previousEnabled = app.enabled;
+  app.enabled = enabled;
+  setAppToggleBusy(appId, true);
+
+  try {
+    await saveSettings(false);
+    showToast(`${app.name} 已${enabled ? "启用" : "关闭"}，${enabled ? "会" : "不会"}参与后续测试。`);
+  } catch {
+    app.enabled = previousEnabled;
+  } finally {
+    setAppToggleBusy(appId, false);
+  }
+}
+
+function onMainAppToggle(appId: string, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  void toggleAppEnabled(appId, Boolean(target?.checked));
 }
 
 function sessionStatusText(status: RunSessionSummary["status"]): string {
@@ -1662,7 +1697,13 @@ onBeforeUnmount(() => {
 
     <main class="content">
       <transition name="toast">
-        <div v-if="notice" class="notice-toast" :class="`notice-toast--${noticeTone}`" role="status" aria-live="polite">
+        <div
+          v-if="notice"
+          class="notice-toast"
+          :class="[`notice-toast--${noticeTone}`, { 'notice-toast--main': page === 'main' }]"
+          role="status"
+          aria-live="polite"
+        >
           {{ notice }}
         </div>
       </transition>
@@ -1742,13 +1783,25 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" @click="page = 'apps'">去 App 管理</button>
               </div>
               <ul class="meta-list panel-scroll">
-                <li v-for="app in config.targetApps" :key="app.id" class="app-row">
-                  <div>
+                <li v-for="app in config.targetApps" :key="app.id" class="app-row app-row--main">
+                  <div class="app-row-main">
                     <strong>{{ app.name }}</strong>
-                    <div class="muted">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
-                    <div class="muted">{{ appModeText(app.hotkeyTriggerMode) }}</div>
+                    <div class="muted app-row-meta">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
+                    <div class="muted app-row-meta">{{ appModeText(app.hotkeyTriggerMode) }}</div>
                   </div>
-                  <span class="pill" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                  <div class="app-row-actions">
+                    <span class="pill app-row-status" :class="app.enabled ? 'success' : 'warning'">{{ app.enabled ? "已启用" : "未启用" }}</span>
+                    <label class="switch-row app-switch-row">
+                      <input
+                        :checked="app.enabled"
+                        :disabled="appToggleLocked || appToggleBusyById[app.id]"
+                        :aria-label="`${app.name}${app.enabled ? '已启用，点击关闭' : '未启用，点击启用'}`"
+                        :title="app.enabled ? '关闭' : '启用'"
+                        type="checkbox"
+                        @change="onMainAppToggle(app.id, $event)"
+                      />
+                    </label>
+                  </div>
                 </li>
               </ul>
             </article>

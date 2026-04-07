@@ -228,6 +228,29 @@ describe("App renderer", () => {
     expect(text).toContain("启用1关闭1无效0总共2");
   });
 
+  it("lets the user enable or disable app participation directly on the main console", async () => {
+    const { api } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const xiguashuoRow = wrapper.findAll(".panel-apps .app-row").find((item) => item.text().includes("Xiguashuo"));
+    expect(xiguashuoRow).toBeTruthy();
+
+    const toggle = xiguashuoRow!.find('.app-switch-row input[type="checkbox"]');
+    expect((toggle.element as HTMLInputElement).checked).toBe(false);
+
+    const saveCallCount = api.saveSettings.mock.calls.length;
+    await toggle.setValue(true);
+    await flushPromises();
+
+    expect((toggle.element as HTMLInputElement).checked).toBe(true);
+    expect(api.saveSettings).toHaveBeenCalledTimes(saveCallCount + 1);
+    expect(wrapper.text()).toContain("Xiguashuo 已启用，会参与后续测试。");
+
+    const text = wrapper.text().replace(/\s+/g, "");
+    expect(text).toContain("已启用应用2");
+  });
+
   it("shows bootstrap checking notice before and after sample validation", async () => {
     vi.useFakeTimers();
     const { settings } = setupDesktopApi();

@@ -232,6 +232,10 @@ select {
   backdrop-filter: blur(14px);
 }
 
+.notice-toast--main {
+  right: 156px;
+}
+
 .notice-toast--success {
   color: #166534;
   border-color: rgba(134, 239, 172, 0.9);
@@ -634,6 +638,36 @@ select {
 .result-row {
   grid-template-columns: 1fr auto;
   align-items: center;
+}
+
+.app-row--main {
+  gap: 12px;
+}
+
+.app-row-main {
+  min-width: 0;
+}
+
+.app-row-meta {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.app-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.app-row-status {
+  justify-self: flex-end;
+}
+
+.app-switch-row {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .pill {
@@ -2540,6 +2574,10 @@ pre {
   .summary-strip {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .notice-toast--main {
+    right: 24px;
   }
 
   .summary-strip {

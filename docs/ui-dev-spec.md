@@ -112,6 +112,12 @@ Main page layout is:
 - three-column workspace
 - latest-session summary
 
+The left `目标App` panel on `主控台` is not read-only:
+
+- every app row keeps the existing status pill
+- every app row also exposes a direct toggle control without extra text label
+- toggling here should immediately affect the next batch, without forcing the operator to jump to `App管理`
+
 The persisted session list now belongs to the dedicated `测试历史` page.
 
 The FAQ entry should be labeled `常见问题`, and the first speaker troubleshooting item should read `为什么开始测试后，扬声器没声音了？`.

@@ -476,7 +476,7 @@ It should feel factual, lightweight, and closer to an about / methodology page t
 | About                                                                            |
 |----------------------------------------------------------------------------------|
 | 方法说明 / 当前结果 / 接下来                                                     |
-| Version v0.1.14                                                                   |
+| Version v0.2.0                                                                    |
 |                                                                                  |
 | 这不是 release notes 墙，而是一页 methodology 说明。                             |
 |                                                                                  |

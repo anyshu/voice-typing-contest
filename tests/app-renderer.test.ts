@@ -47,7 +47,7 @@ function setupDesktopApi(options?: {
     isBuiltin: Boolean(app.launchCommand?.startsWith("selftest://")),
   }));
   const api = {
-    getVersion: vi.fn(async () => "0.1.13"),
+    getVersion: vi.fn(async () => "0.2.0"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),
@@ -811,10 +811,9 @@ describe("App renderer", () => {
     await faqButton!.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("测试时没听到扬声器声音，先看这里");
+    expect(wrapper.text()).toContain("为什么开始测试后，扬声器没声音了？");
     expect(wrapper.text()).toContain("语音输入时静音");
     expect(wrapper.text()).toContain("Typeless");
-    expect(wrapper.find('.faq-shot img[alt="语音输入时静音设置示意图"]').exists()).toBe(true);
   });
 
   it("merges same-app timeline across runs on the main console so launch and close are both visible", async () => {

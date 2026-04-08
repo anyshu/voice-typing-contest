@@ -1,6 +1,6 @@
 # Voice Typing Contest Design
 
-Current spec baseline: `v0.1.14`
+Current spec baseline: `v0.2.0`
 
 ## 1. Goal
 

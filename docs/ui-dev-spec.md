@@ -366,6 +366,14 @@ The Q&A page should also document the JSONL import contract in operator-facing l
 - `id` and `duration` are recommended
 - lightweight metadata such as `group_id`, `category`, `subcategory`, and `source_md` may be preserved for display and tracing
 
+Q&A cards should stay compact:
+
+- two-column layout on desktop
+- equal-width, equal-height cards within the grid
+- no oversized hero card
+- no large illustrative image blocks inside cards
+- minimal internal spacing and lightweight text treatment to keep card height down
+
 ### 4.8 App page
 
 The `App管理` page shows:

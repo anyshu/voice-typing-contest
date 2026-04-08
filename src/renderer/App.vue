@@ -2857,14 +2857,6 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="page === 'faq'" class="stack faq-page">
-        <article class="panel faq-hero">
-          <div>
-            <h3>测试时没听到扬声器声音，先看这里</h3>
-            <p class="muted">有些语音输入 App 会在听写开始时自动把其他活动音频静音。如果测试时听不到扬声器的声音，不一定是输出设备坏了，也可能是目标 App 自己把声音压掉了。</p>
-          </div>
-          <div class="pill warning">常见于语音输入类 App</div>
-        </article>
-
         <article class="panel faq-card">
           <div class="faq-card__copy">
             <div class="faq-eyebrow">常见问题 01</div>

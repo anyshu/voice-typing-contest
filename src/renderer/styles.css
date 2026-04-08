@@ -1888,7 +1888,11 @@ select {
 }
 
 .faq-page {
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  align-items: stretch;
 }
 
 .faq-hero {
@@ -1896,22 +1900,48 @@ select {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  grid-column: 1 / -1;
+}
+
+.faq-hero h3 {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.faq-hero .muted {
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .faq-card {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   align-items: start;
+  align-content: start;
+  height: 100%;
+  padding: 14px 16px;
 }
 
 .faq-card__copy {
   display: grid;
-  gap: 10px;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.faq-card__copy h3 {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.faq-card__copy p,
+.faq-card__copy code {
+  font-size: 12px;
 }
 
 .faq-eyebrow {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -1920,11 +1950,15 @@ select {
 
 .faq-callout {
   display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border-radius: 14px;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(245, 158, 11, 0.26);
   background: linear-gradient(180deg, #fffaf0, #fff5df);
+}
+
+.faq-callout strong {
+  font-size: 11px;
 }
 
 .faq-shot {
@@ -1944,7 +1978,7 @@ select {
 
 .faq-shot figcaption {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -3233,7 +3267,8 @@ pre {
   }
 
   .faq-hero,
-  .faq-card {
+  .faq-card,
+  .faq-page {
     display: grid;
     grid-template-columns: 1fr;
   }

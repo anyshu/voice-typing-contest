@@ -358,6 +358,14 @@ When loading JSONL:
 
 If rescanning the configured sample root fails because the directory is gone or unreadable, the renderer shows a visible failure notice instead of only logging the raw exception in devtools. The error copy explains that the sample directory is missing and that the operator needs to re-pick it.
 
+The Q&A page should also document the JSONL import contract in operator-facing language:
+
+- one JSON object per line
+- `audio_filepath` is required and is resolved relative to the JSONL file
+- `text` is strongly recommended because it becomes expected text for later report alignment
+- `id` and `duration` are recommended
+- lightweight metadata such as `group_id`, `category`, `subcategory`, and `source_md` may be preserved for display and tracing
+
 ### 4.8 App page
 
 The `App管理` page shows:

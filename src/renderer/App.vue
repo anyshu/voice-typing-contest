@@ -2901,6 +2901,30 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </article>
+
+        <article class="panel faq-card">
+          <div class="faq-card__copy">
+            <div class="faq-eyebrow">常见问题 03</div>
+            <h3>导入 JSONL 样本时，需要什么格式？</h3>
+            <p>JSONL 需要是 <strong>一行一个 JSON 对象</strong>。每条记录至少要能定位音频文件，并最好带上用于对齐分析的文本内容。</p>
+            <div class="faq-callout">
+              <strong>最低要求</strong>
+              <p>每行至少提供 <code>audio_filepath</code>。这个路径会按 <strong>相对 JSONL 文件所在目录</strong> 来解析。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>推荐字段</strong>
+              <p>推荐同时提供 <code>text</code>、<code>id</code>、<code>duration</code>。其中 <code>text</code> 会作为 expectedText，用于后续历史 report 的对齐分析。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>示例</strong>
+              <p><code>{"id":"001","audio_filepath":"audio/001.wav","text":"今天下午三点开会。","duration":2.35}</code></p>
+            </div>
+            <div class="faq-callout">
+              <strong>可选扩展字段</strong>
+              <p>像 <code>group_id</code>、<code>category</code>、<code>subcategory</code>、<code>source_md</code> 这类字段会被保留为样本元信息，方便后续排查和展示。</p>
+            </div>
+          </div>
+        </article>
       </section>
 
       <VersionNotesPanel v-else :version-label="appVersion" />

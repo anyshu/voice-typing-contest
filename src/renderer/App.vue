@@ -141,6 +141,10 @@ const installedRealApps = computed(() => realApps.value.filter((item) => install
 const invalidSamples = computed(() => config.value.audioSamples.filter((item) => item.exists === false));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && item.enabled));
 const disabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && !item.enabled));
+const currentSampleSourceLabel = computed(() => config.value.sampleSourceType === "jsonl" ? "JSONL" : "文件夹");
+const currentSampleSourcePath = computed(() => (
+  config.value.sampleSourceType === "jsonl" ? config.value.sampleJsonlPath : config.value.sampleRoot
+));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const grantedPermissionCount = computed(() => permissions.value.filter((item) => item.granted).length);
 const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
@@ -196,7 +200,7 @@ const pageTitle = computed(() => {
 const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
   if (page.value === "checks") return "开跑前检查清单";
-  if (page.value === "samples") return "测试集与目录视图";
+  if (page.value === "samples") return "样本管理";
   if (page.value === "apps") return "目标 App 配置与热键";
   if (page.value === "history") return "历史结果与分轮导出";
   if (page.value === "settings") return "运行参数与环境设置";
@@ -370,6 +374,23 @@ function sampleMeta(language: string, durationMs?: number): string {
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
 }
 
+function sampleSourceText(sample: AudioSample): string {
+  return sample.sourceType === "jsonl" ? "JSONL" : "文件夹";
+}
+
+function sampleTooltipBadges(sample: AudioSample): string[] {
+  const badges = [sampleSourceText(sample)];
+  if (sample.language) badges.push(sample.language);
+  if (sample.metadata?.groupId) badges.push(`分组 ${sample.metadata.groupId}`);
+  if (sample.metadata?.category) badges.push(sample.metadata.category);
+  if (sample.metadata?.subcategory) badges.push(sample.metadata.subcategory);
+  return badges;
+}
+
+function sampleTooltipStatus(sample: AudioSample): string {
+  return isSampleMissing(sample) ? "无效" : sample.enabled ? "启用" : "关闭";
+}
+
 function formatPreviewTime(seconds?: number): string {
   const totalSeconds = Math.max(0, Math.floor(seconds ?? 0));
   const minutes = Math.floor(totalSeconds / 60);
@@ -526,6 +547,11 @@ function onSampleRowEnter(sampleId: string): void {
 
 function onSampleRowLeave(sampleId: string): void {
   if (hoveredSampleId.value === sampleId) hoveredSampleId.value = null;
+}
+
+function shouldTooltipOpenBelow(index: number): boolean {
+  const rowTop = index * SAMPLE_ROW_HEIGHT - sampleListScrollTop.value;
+  return rowTop < 136;
 }
 
 function measureSampleListViewport(): void {
@@ -971,16 +997,33 @@ async function chooseSampleRoot(): Promise<void> {
   const picked = await window.vtc.pickSampleRoot();
   if (!picked) return;
   config.value.sampleRoot = picked;
+  config.value.sampleSourceType = "directory";
+  await rescanSamples();
+}
+
+async function chooseSampleJsonl(): Promise<void> {
+  const picked = await window.vtc.pickSampleJsonl();
+  if (!picked) return;
+  config.value.sampleJsonlPath = picked;
+  config.value.sampleSourceType = "jsonl";
   await rescanSamples();
 }
 
 async function rescanSamples(): Promise<void> {
-  if (!config.value.sampleRoot) {
-    notice.value = "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
+  const missingDirectory = config.value.sampleSourceType === "directory" && !config.value.sampleRoot;
+  const missingJsonl = config.value.sampleSourceType === "jsonl" && !config.value.sampleJsonlPath;
+  if (missingDirectory || missingJsonl) {
+    notice.value = config.value.sampleSourceType === "jsonl"
+      ? "还没有选 JSONL 样本文件。现在仍然可以直接跑内建自测。"
+      : "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
     return;
   }
   try {
-    config.value.audioSamples = await window.vtc.rescanSamples(config.value.sampleRoot);
+    config.value.audioSamples = await window.vtc.rescanSamples({
+      sampleSourceType: config.value.sampleSourceType,
+      sampleRoot: config.value.sampleRoot,
+      sampleJsonlPath: config.value.sampleJsonlPath,
+    });
     notice.value = `重新扫描完成，共拿到 ${config.value.audioSamples.length} 条样本。`;
   } catch (error) {
     notice.value = `重新扫描失败：${error instanceof Error ? error.message : String(error)}`;
@@ -1710,7 +1753,6 @@ onBeforeUnmount(() => {
 
       <header class="topbar">
         <div v-if="page !== 'main'">
-          <p class="muted">{{ pageSubtitle }}</p>
           <h2>{{ pageTitle }}</h2>
         </div>
         <div v-if="page === 'main'" class="topbar-main-actions">
@@ -1929,19 +1971,17 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="page === 'samples'" class="stack">
-        <article class="panel">
-          <div class="panel-header-row">
-            <div>
-              <h3>样本管理</h3>
-              <p class="muted">集中查看样本目录、扫描结果和启用状态。</p>
-            </div>
-            <strong>{{ config.sampleRoot || "未选择目录" }}</strong>
-            <div class="toolbar">
-              <button class="ghost-button" @click="chooseSampleRoot">选择目录</button>
-              <button class="secondary-button" @click="rescanSamples">重新扫描</button>
-            </div>
+        <div class="sample-import-toolbar">
+          <div class="sample-import-toolbar__source">
+            <span class="pill">{{ currentSampleSourceLabel }}</span>
+            <strong class="sample-import-toolbar__path">{{ currentSampleSourcePath || "未选择来源" }}</strong>
           </div>
-        </article>
+          <div class="toolbar">
+            <button class="ghost-button" @click="chooseSampleRoot">目录 导入</button>
+            <button class="ghost-button" @click="chooseSampleJsonl">JSONL 导入</button>
+            <button class="secondary-button" @click="rescanSamples">重新扫描</button>
+          </div>
+        </div>
 
         <article class="panel">
           <section class="summary-strip summary-strip--samples">
@@ -1986,13 +2026,53 @@ onBeforeUnmount(() => {
               v-for="(sample, offset) in visibleSamples"
               :key="sample.id"
               class="sample-row-clean"
-              :class="{ 'is-missing': isSampleMissing(sample) }"
+              :class="{
+                'is-missing': isSampleMissing(sample),
+                'is-hovered': hoveredSampleId === sample.id,
+              }"
               @mouseenter="onSampleRowEnter(sample.id)"
               @mouseleave="onSampleRowLeave(sample.id)"
             >
               <div class="sample-row-index">{{ sampleListStartIndex + offset + 1 }}、</div>
               <div class="sample-row-main">
-                <span class="sample-row-path" :class="{ 'sample-row-path--missing': isSampleMissing(sample) }">{{ sample.relativePath }}</span>
+                <div class="sample-row-path-wrap">
+                  <span class="sample-row-path" :class="{ 'sample-row-path--missing': isSampleMissing(sample) }">{{ sample.relativePath }}</span>
+                  <div
+                    v-if="hoveredSampleId === sample.id"
+                    class="sample-row-tooltip"
+                    :class="{ 'sample-row-tooltip--below': shouldTooltipOpenBelow(sampleListStartIndex + offset) }"
+                    role="tooltip"
+                  >
+                    <div class="sample-row-tooltip__header">
+                      <span class="sample-row-tooltip__title">{{ sample.displayName }}</span>
+                      <span class="sample-row-tooltip__meta">{{ sampleMeta(sample.language, sample.durationMs) }}</span>
+                    </div>
+                    <div class="sample-row-tooltip__badges">
+                      <span v-for="badge in sampleTooltipBadges(sample)" :key="badge" class="sample-row-tooltip__badge">{{ badge }}</span>
+                    </div>
+                    <div class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">路径</div>
+                      <p class="sample-row-tooltip__line">{{ sample.relativePath }}</p>
+                    </div>
+                    <div class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">原文</div>
+                      <p
+                        class="sample-row-tooltip__line sample-row-tooltip__line--highlight"
+                        :class="{ 'sample-row-tooltip__line--missing-text': !sample.expectedText?.trim() }"
+                      >
+                        {{ sample.expectedText?.trim() || "未读取到原文" }}
+                      </p>
+                    </div>
+                    <div v-if="sample.metadata?.sourceMd" class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">来源</div>
+                      <p class="sample-row-tooltip__line">{{ sample.metadata.sourceMd }}</p>
+                    </div>
+                    <div class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">状态</div>
+                      <p class="sample-row-tooltip__line">{{ sampleTooltipStatus(sample) }}</p>
+                    </div>
+                  </div>
+                </div>
                 <span v-if="isSampleMissing(sample)" class="sample-row-missing">文件不存在，请重新扫描或检查目录。</span>
                 <div
                   v-else-if="shouldRenderSamplePreview(sample)"

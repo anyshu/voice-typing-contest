@@ -61,6 +61,7 @@ export class ConfigStore {
     const audioSamples = (config.audioSamples.length ? config.audioSamples : defaults.audioSamples).map((sample) => ({
       ...sample,
       exists: sample.exists ?? true,
+      sourceType: sample.sourceType ?? "directory",
     }));
     if (!targetApps.some((app) => app.enabled)) {
       const selftest = targetApps.find((app) => app.id === "selftest");
@@ -78,6 +79,8 @@ export class ConfigStore {
       closeAppDelayMs: config.closeAppDelayMs ?? legacyCloseAppDelayMs ?? defaults.closeAppDelayMs,
       targetApps,
       audioSamples,
+      sampleSourceType: config.sampleSourceType ?? defaults.sampleSourceType,
+      sampleJsonlPath: resolveHomePath(config.sampleJsonlPath),
       sampleRoot: resolveHomePath(config.sampleRoot),
       databasePath: resolveHomePath(config.databasePath),
       logFolder: resolveHomePath(config.logFolder),

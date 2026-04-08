@@ -6,7 +6,9 @@ const api = {
   getSettings: async () => await ipcRenderer.invoke("settings:get"),
   saveSettings: async (config: AppConfig) => await ipcRenderer.invoke("settings:save", config),
   pickSampleRoot: async () => await ipcRenderer.invoke("samples:pickRoot"),
-  rescanSamples: async (root: string) => await ipcRenderer.invoke("samples:rescan", root),
+  pickSampleJsonl: async () => await ipcRenderer.invoke("samples:pickJsonl"),
+  rescanSamples: async (config: Pick<AppConfig, "sampleSourceType" | "sampleRoot" | "sampleJsonlPath">) =>
+    await ipcRenderer.invoke("samples:rescan", config),
   getSamplePreviewData: async (sample: AudioSample) => await ipcRenderer.invoke("samples:getPreviewData", sample),
   pickDatabasePath: async () => await ipcRenderer.invoke("database:pickPath"),
   refreshPermissions: async () => await ipcRenderer.invoke("permissions:refresh"),

@@ -17,6 +17,8 @@ export const defaultConfig = (): AppConfig => {
     theme: "light",
     workspaceLabel: "Contest Lab",
     sampleRoot: "",
+    sampleSourceType: "directory",
+    sampleJsonlPath: "",
     databasePath: "~/Library/Application Support/vtc/voice-typing-contest.sqlite",
     logFolder: "~/Library/Logs/vtc",
     helperPathOverride: "",
@@ -40,6 +42,7 @@ export const defaultConfig = (): AppConfig => {
         durationMs: 850,
         tags: ["builtin", "selftest", "zh"],
         enabled: true,
+        sourceType: "directory",
       },
       {
         id: "builtin-en-01",
@@ -51,6 +54,7 @@ export const defaultConfig = (): AppConfig => {
         durationMs: 760,
         tags: ["builtin", "selftest", "en"],
         enabled: true,
+        sourceType: "directory",
       },
     ],
   };

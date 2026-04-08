@@ -66,8 +66,20 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     return result.canceled ? undefined : result.filePaths[0];
   });
 
-  handle("samples:rescan", async (_event, root: string) => {
-    return await deps.sampleManager.scan(root, deps.getConfig().audioSamples);
+  handle("samples:pickJsonl", async () => {
+    const result = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      filters: [{ name: "JSON Lines", extensions: ["jsonl"] }],
+    });
+    return result.canceled ? undefined : result.filePaths[0];
+  });
+
+  handle("samples:rescan", async (_event, config: Pick<AppConfig, "sampleSourceType" | "sampleRoot" | "sampleJsonlPath">) => {
+    return await deps.sampleManager.loadFromConfig({
+      ...deps.getConfig(),
+      ...config,
+      audioSamples: deps.getConfig().audioSamples,
+    });
   });
   handle("samples:getPreviewData", async (_event, sample: AudioSample) => {
     const resolvedPath = await builtinSamples.resolve(sample);

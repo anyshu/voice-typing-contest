@@ -6,21 +6,30 @@ The renderer currently uses a desktop shell with:
 
 - fixed left sidebar
 - scrollable right content area
-- top bar with page title and main-page actions
+- top bar with page title or main-page summary/actions
+- global notice toast anchored in the top-right visual area
 
-Current first-level pages:
+Current first-level pages in the sidebar are:
 
 - `主控台`
-- `运行前检查`
-- `样本`
+- `样本管理`
 - `App管理`
 - `测试历史`
 - `设置`
+- `运行前检查`
 - `怎么开始`
-- `常见问题`
+- `Q&A`
 - `关于`
 
+Page-title copy still uses `常见问题`, but the current nav label is `Q&A`.
+
 `开始` and `关闭` belong only to `主控台`.
+
+The sidebar also shows:
+
+- product logo + `Voice Typing`
+- current workspace label
+- current app version in the secondary group footer
 
 ## 1.1 Repository Showcase
 
@@ -46,12 +55,22 @@ Current README showcase rule:
   --vtc-text-primary: #192132;
   --vtc-text-secondary: #6f7a8c;
   --vtc-accent: #1f2937;
+  --vtc-accent-soft: #f1f4f8;
   --vtc-success-text: #166534;
   --vtc-success-bg: #e9f8ee;
   --vtc-warning-text: #92400e;
   --vtc-warning-bg: #fff7e8;
   --vtc-danger-text: #991b1b;
   --vtc-danger-bg: #fff0f0;
+}
+```
+
+Additional shell tokens already in use:
+
+```css
+:root {
+  --vtc-timeline-height: 430px;
+  --vtc-main-panel-height: 560px;
 }
 ```
 
@@ -63,12 +82,10 @@ Current README showcase rule:
 
   --vtc-text-page-title: 18px;
   --vtc-text-section-title: 16px;
-  --vtc-text-card-title: 14px;
-  --vtc-text-body: 13px;
-  --vtc-text-meta: 11px;
-  --vtc-text-stat: 12px;
-  --vtc-text-stat-strong: 15px;
-  --vtc-text-chip: 10px;
+  --vtc-text-body: 14px;
+  --vtc-text-meta: 12px;
+  --vtc-text-nav: 13px;
+  --vtc-text-chip: 11px;
 }
 ```
 
@@ -79,7 +96,6 @@ Current README showcase rule:
   --vtc-sidebar-width: 196px;
   --vtc-radius-panel: 16px;
   --vtc-radius-control: 11px;
-  --vtc-panel-padding: 14px;
   --vtc-gap-page: 14px;
   --vtc-gap-panel: 12px;
 }
@@ -91,15 +107,19 @@ Current README showcase rule:
 |---|---|
 | 主控台 | `DashboardSquare01Icon` |
 | 运行前检查 | `CheckListIcon` |
-| 样本 | `FolderAudioIcon` |
+| 样本管理 | `FolderAudioIcon` |
 | App管理 | `AppStoreIcon` |
 | 测试历史 | `Analytics01Icon` |
 | 设置 | `Settings01Icon` |
 | 怎么开始 | `BookOpen01Icon` |
-| 常见问题 | `HelpCircleIcon` |
+| Q&A | `HelpCircleIcon` |
 | 关于 | `InformationCircleIcon` |
 | 开始 | `PlayCircleIcon` |
 | 关闭 | `StopCircleIcon` |
+| 样本预览播放 | `PlayIcon` |
+| 样本预览暂停 / 结束 | `StopIcon` |
+| 删除 App | `Delete02Icon` |
+| 导出结果包 | `FileExportIcon` |
 | 权限 | `Shield01Icon` |
 | 设备 | `Speaker01Icon` |
 | 统计 / 结果 | `Analytics01Icon` |
@@ -108,9 +128,9 @@ Current README showcase rule:
 
 Main page layout is:
 
-- summary strip
+- optional warning / failure banners above the workspace
 - three-column workspace
-- latest-session summary
+- latest-session summary block
 
 Main-page toast behavior:
 
@@ -120,13 +140,12 @@ Main-page toast behavior:
 
 The left `目标App` panel on `主控台` is not read-only:
 
-- every app row keeps the existing status pill
+- every app row keeps the enabled-state pill
 - every app row also exposes a direct toggle control without extra text label
-- toggling here should immediately affect the next batch, without forcing the operator to jump to `App管理`
+- the row also shows `.app` file名 or builtin-selftest copy, plus current trigger-mode summary
+- toggling here immediately updates the next batch without forcing the operator to jump to `App管理`
 
-The persisted session list now belongs to the dedicated `测试历史` page.
-
-The FAQ entry should be labeled `常见问题`, and the first speaker troubleshooting item should read `为什么开始测试后，扬声器没声音了？`.
+The persisted session list belongs to the dedicated `测试历史` page.
 
 ### 4.1 Summary strip
 
@@ -138,29 +157,28 @@ Show five compact items:
 - current output device
 - current progress
 
-Do not use oversized KPI cards. Keep icon left, text right, one-line value emphasis only.
+Do not use oversized KPI cards. Keep icon left, text label in the middle, and one-line value emphasis on the right.
 
 ### 4.2 Center workspace
 
-The center area contains:
+The center area currently contains:
 
-- live input box
-- compact current status stack
+- `输入检测区` header
+- current phase pill
+- one explanatory paragraph
+- a single shared textarea used as the unified text sink
 
-The current status stack shows:
+The renderer no longer shows a separate four-item "current status stack" on the main page. Current state is surfaced through:
 
-- current phase
-- current message
-- current app
-- current sample
-
-It should not be rendered as four identical cards.
+- the phase pill in the live-input card
+- the timeline on the right
+- the top summary strip progress item
 
 ### 4.3 Timeline
 
 Timeline rules:
 
-- render from per-run timeline data that is persisted with each `test_runs` row
+- render from per-run timeline data persisted with each `test_runs` row
 - merge live `run:event` updates with persisted runs only while the session is active
 - show the whole active session in chronological order across multiple apps; do not collapse the main console down to only the current app
 - auto-scroll with the newest event
@@ -176,123 +194,186 @@ Timeline rules:
 
 ### 4.4 Latest-session summary
 
-The section title is `测试统计`.
+The section title is `测试统计 {session time}`.
 
-This area shows aggregate stats for the latest session only and does not react to row selection.
+This area shows aggregate stats for the latest visible session on `主控台` and does not react to row selection in `测试历史`.
 
 It is grouped by app:
 
 - app name is the parent node
 - a short one-line app summary sits below the app name
-- stats are child nodes with smaller type and tighter spacing
-- child stats use a subtle tree indentation
-- eight stats should fit into two rows
+- stats render in a plain compact grid instead of large cards
+- stat tone can switch between accent / success / warning / danger
 
-Current stats per app:
+Current summary content is derived from the latest session's per-app run group and includes the current session status pill beside the headline.
 
+### 4.5 Main-page banners and dialogs
+
+When one or more real apps are enabled but Accessibility is still missing, `主控台` shows a dedicated warning banner before the generic preflight failure area. The banner keeps both actions:
+
+- `请求辅助功能权限`
+- `打开系统设置`
+
+If preflight has one or more blocking failures, the page also shows a second banner with the failure message plus hint for each failed item.
+
+Starting a run first opens a blocking pre-start confirmation dialog with copy telling the operator not to touch mouse or keyboard.
+
+After a batch ends, the renderer opens a completion dialog that shows:
+
+- batch end status
+- app count
 - sample count
-- success count
-- failure count
-- average first-char latency
-- average text length
-- max first-char latency
-- median first-char latency
-- total run time
-- average CPU
-- peak CPU
-- average memory
-- peak memory
+- total elapsed time
+- `回主控台` and `知道了` actions
 
-### 4.5 History page
+Canceling the pre-start confirmation restores the previously visible latest session on `主控台`.
+
+### 4.6 History page
 
 The `测试历史` page is grouped as:
 
 - session-app card
 - sample row
 
-The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each history app card owns a `导出该 App ZIP` action.
+The page header owns a text-style `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each history app card owns an icon-only `导出该 App ZIP` action.
 
-Each sample row should keep the path text truncated in the table cell, but hovering or keyboard focusing that path must reveal a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip should fall back to the failure reason or an explicit "未捕获到结果" message.
+Each sample row keeps the sample path truncated in the table cell, but hovering or keyboard focusing that path reveals a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip falls back to the failure reason or `未捕获到结果`.
 
-When a sample row has retry history, the exported result bundle should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
+When a sample row has retry history, the exported result bundle overwrites that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status / text / metrics together with the merged `retry_count`.
 
-Each exported ZIP should contain `results.csv`, `system-info.csv`, and `system-summary.csv`. When exporting from a history app card, all three files must be filtered down to that card's app within the original batch session. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app, while `system-summary.csv` provides one plotting-friendly summary row per run.
+Each exported ZIP contains:
 
-When one batch tests multiple apps, the history list must split it into separate cards per app instead of collapsing them into one combined `A 等 N 个 App` header.
+- `results.csv`
+- `system-info.csv`
+- `system-summary.csv`
 
-Each history card header should render the session start time first and then the app label in a heavier weight, so a single-app card reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`. The displayed timestamp must stay anchored to the batch start time rather than the latest row completion time.
+When exporting from a history app card, all three files are filtered down to that card's app within the original batch session. `system-info.csv` stores fixed-interval CPU and memory samples captured during the run window for that app, while `system-summary.csv` provides one plotting-friendly summary row per run.
 
-If a session contains one or more failed rows, only the session summary line text should switch to the danger color; do not add a red background, border, or full-row highlight.
+When one batch tests multiple apps, the history list splits it into separate cards per app instead of collapsing them into one combined header.
 
-Canceling the pre-start confirmation must restore the previously visible latest session on `主控台`.
+Each history card header renders:
 
-When one or more real apps are enabled but Accessibility is still missing, `主控台` must show a visible warning banner before the generic preflight failure area. The banner copy should stay short and user-facing, and it must include both actions:
+- session start time first
+- app label in heavier weight
+- optional aggregated app-version text when multiple rows carry versions
+- summary line `已结束 / 共 N 条 / 成功 X / 失败 Y / 取消 Z`
 
-- `请求辅助功能权限`
-- `打开系统设置`
+The displayed timestamp stays anchored to the batch start time rather than the latest row completion time.
 
-### 4.6 Sample page
+If a session contains one or more failed rows, only the session summary line text switches to the danger color; the card itself does not gain a red background or border.
 
-The `样本管理` page should show:
+Each history row also exposes a single-sample retry action.
 
-- the current sample source (`文件夹` or `JSONL`) and its selected path
-- a compact summary strip with enabled / disabled / invalid / total sample counts, where `enabled + disabled + invalid = total`
-- one row per sample with path, preview player, duration, current status, and an enable toggle
-- sample metadata such as expected text / language / group / category should stay off the main row and appear in a tooltip card when the operator hovers the sample path area
+### 4.7 Sample page
 
-The list is virtualized. Heavier preview controls should mount only for the hovered or currently playing row.
+The `样本管理` page currently shows:
+
+- the current sample source (`文件夹` or `JSONL`) and the selected path
+- actions for `目录 导入`, `JSONL 导入`, and `重新扫描`
+- a compact summary strip with enabled / disabled / invalid / total counts, plus a global `全选` toggle when samples exist
+- one virtualized row per sample with path, lightweight preview area, duration, current status, and enable toggle
+- a hover tooltip card for the sample path area
+
+Sample metadata stays off the main row and appears in the tooltip card. The tooltip currently includes:
+
+- display name
+- language + duration meta
+- tag badges
+- relative path
+- expected text
+- optional `sourceMd`
+- current status copy
+
+The list is virtualized. Heavier preview controls mount only for the hovered or currently playing row.
 
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
 
-The page header should keep the existing compact layout and only add one more import action: `导入 JSONL`. Importing a JSONL file replaces the current sample list the same way directory rescanning does, while keeping the page structure and row density close to the directory flow.
+When the app boots, the top notice area first shows `正在检查样本文件...` for a perceptible short duration and then switches to `样本检查完成` so the operator can actually see both states.
 
-When the app boots, the top notice area should first show `正在检查样本文件...` for a perceptible short duration and then switch to `样本检查完成` so the operator can actually see both states.
-
-An invalid sample means the previously scanned file no longer exists on disk. Invalid samples should:
+An invalid sample means the previously scanned file no longer exists on disk. Invalid samples:
 
 - render in danger styling on the sample list
-- show an `无效` status in the summary strip and sample row
-- never be counted as `关闭`
-- be forced to `disabled`
-- not allow re-enabling from the UI
-- be excluded from benchmark runs and single-sample retries
+- show an `无效` status pill
+- are forced to `disabled`
+- cannot be re-enabled from the UI
+- are excluded from benchmark runs and single-sample retries
 
 When loading JSONL:
 
-- the renderer should treat `audio_filepath` as a path relative to the JSONL file location
-- missing audio files should follow the same invalid-sample behavior as directory-based samples
-- `text` should populate the sample expected-text field so later comparisons and hover details can reuse it
-- extra metadata fields such as `group_id`, `category`, `subcategory`, and `source_md` should be preserved for tooltip display without widening the sample rows
+- the renderer treats `audio_filepath` as a path relative to the JSONL file location
+- missing audio files follow the same invalid-sample behavior as directory-based samples
+- `text` populates the sample expected-text field so later comparisons and hover details can reuse it
+- `duration` is used as a preferred duration hint; if absent or invalid, duration falls back to probing the audio file
+- extra metadata fields such as `group_id`, `category`, `subcategory`, and `source_md` are preserved for tooltip display and tagging without widening the sample rows
+- stable sample identity is derived from `jsonlPath + (record.id or relative audio path)` so repeated imports can preserve toggles when possible
 
-If rescanning the configured sample root fails because the directory is gone or unreadable, the renderer must show a visible failure notice instead of only logging the raw exception in devtools. The error copy should explain that the sample directory is missing and that the operator needs to re-pick it.
+If rescanning the configured sample root fails because the directory is gone or unreadable, the renderer shows a visible failure notice instead of only logging the raw exception in devtools. The error copy explains that the sample directory is missing and that the operator needs to re-pick it.
 
-### 4.7 App page
+### 4.8 App page
 
-The `App管理` page should show:
+The `App管理` page shows:
 
 - a compact summary strip with total apps, enabled apps, real-app enablement, installed real-app count, and builtin self-test state
 - one compact card per app
 - the nav entry in the upper group, directly below `样本管理`
 
-Each app card should keep the header on one row whenever width allows:
+The page header actions are:
+
+- `刷新安装信息`
+- `新增应用`
+- `保存设置`
+
+Each app card keeps the header on one row whenever width allows:
 
 - app name first
-- then app kind and enabled-state pills
-- then the enable toggle and delete action on the right
+- optional `官网` link button beside the name
+- installed / discovered app version text below the title row when available
+- app kind and enabled-state pills
+- enable toggle and delete action on the right
 
-The editable fields should prefer single-row label-and-control layout when the content is short enough, including `名称`, `.app 文件名`, `启动命令`, and `触发方式`.
+The card also shows a one-line summary strip for:
 
-`备注` should follow the same aligned form-row structure as the rest of the fields, even though it uses a textarea.
+- hotkey
+- trigger mode
+- launch target summary
+
+Current editable fields are:
+
+- `名称`
+- `.app 文件名`
+- `官网链接`
+- `启动命令`
+- `热键`
+- `触发方式`
+- `备注`
+
+`备注` follows the same aligned form-row structure as the rest of the fields, even though it uses a textarea.
+
+Standalone `Fn` is not captured reliably by Electron keyboard events, so the UI provides an explicit `设为 Fn` action.
+
+Trigger mode copy reflects two distinct behaviors instead of generic variants:
+
+- `hold_release`: `按住并保持，松开结束`
+- `press_start_press_stop`: `按下抬起开始，再按下抬起结束`
 
 ## 5. Settings Page Structure
 
-The settings page has two functional blocks:
+The settings page currently has three visible functional blocks:
 
-- base settings
-- advanced parameters
-- permissions and devices
+- simple top actions
+- primary-column settings cards
+- side-column diagnostic lists
 
-### 5.1 Base settings
+### 5.1 Top actions
+
+The top of the page keeps plain actions only:
+
+- `刷新`
+- `保存设置`
+
+### 5.2 Base settings
+
+The first main card is `基本信息与资源路径`.
 
 Current editable global settings:
 
@@ -300,26 +381,27 @@ Current editable global settings:
 - output device
 - database path
 - external sample root
+
+The database path and sample-root rows both keep inline `选择` actions.
+
+### 5.3 Timing and advanced parameters
+
+The second main card is `运行节奏与高级参数` and is split into two parts.
+
+Regular timing fields shown by default:
+
 - `启动 app 延时`
 - `聚焦检测框延时`
 - `下一条样本播放延时`
-
-The top of the page only keeps plain actions:
-
-- `刷新`
-- `保存设置`
 
 Default timing values:
 
 - app launch delay: `5000`
 - focus input delay: `2000`
 - result timeout: `5000`
+- resource sample interval: `1000`
 - next sample play delay: `3000`
 - close app delay: `3000`
-
-Target-app editing no longer lives here; it belongs to the dedicated `App管理` page.
-
-### 5.2 Advanced parameters
 
 Advanced parameters are collapsed by default so the settings page stays clean for day-to-day use.
 
@@ -329,31 +411,9 @@ Expandable fields:
 - `系统数据采样间隔`
 - `关闭 app 延时`
 
-### 5.3 App management
+When collapsed, the page shows a compact preview sentence instead of the form fields.
 
-- name
-- `.app` file name
-- launch command
-- hotkey
-- hotkey trigger mode
-- key-to-audio delay
-- audio-to-stop delay
-- settle window
-- notes
-- enabled flag
-
-Standalone `Fn` is not captured reliably by Electron keyboard events, so the UI must provide an explicit `设为 Fn` action.
-
-Trigger mode copy should reflect two different behaviors instead of two generic "trigger" variants:
-
-- `hold_release`: press and keep held, then release to finish
-- `press_start_press_stop`: press and release once to start, then press and release again to finish
-
-Built-in presets:
-
-- `闪电说`: default hotkey `Fn`, trigger mode `hold_release`
-- `Wispr Flow`: default hotkey `Fn`, trigger mode `hold_release`
-- `Typeless`: default hotkey `Fn`, trigger mode `hold_release`
+Target-app editing no longer lives here; it belongs to the dedicated `App管理` page.
 
 ### 5.4 Permissions and devices
 
@@ -375,15 +435,56 @@ Section titles in the UI:
 - `系统权限`
 - `音频设备`
 
-## 6. Runtime Interaction Rules
+The permission card shows a granted-count pill, and the device card shows the current available-device count.
+
+## 6. Intro, FAQ, and About Pages
+
+### 6.1 Intro
+
+The `怎么开始` page is a four-step guide made of clickable cards:
+
+- `1）添加 app`
+- `2）热键`
+- `3）样本添加`
+- `4）开始`
+
+Each card jumps to the corresponding target area in the current app.
+
+### 6.2 FAQ
+
+The FAQ page currently focuses on one speaker-audio troubleshooting scenario.
+
+Current structure:
+
+- hero panel explaining why some voice-typing apps may mute other active audio during dictation
+- main FAQ card with eyebrow `常见问题 01`
+- question copy `为什么开始测试后，扬声器没声音了？`
+- screenshot illustration loaded from `src/renderer/assets/mute-during-dictation.svg`
+
+### 6.3 About
+
+The `关于` page is currently implemented by `VersionNotesPanel` rather than a static about sheet.
+
+It contains:
+
+- hero block with headline, summary, focus tags, and current version pill
+- `评测方式` column
+- `当前结果` column
+- `接下来` ordered list
+
+The content lives in `src/renderer/content/version-notes.ts` and is framed as methodology + current-results notes rather than only release notes.
+
+## 7. Runtime Interaction Rules
 
 - The benchmark window must reclaim frontmost state before text observation.
 - The live textarea is the only text sink.
 - Starting a run first opens a blocking pre-start confirmation dialog.
 - Real-app launch happens once per app batch, not once per sample.
 - After the last sample for one app, the app is closed after `关闭 app 延时`.
+- While the pre-start dialog is open, the renderer blocks pointer and keyboard interaction outside the dialog.
+- Single-sample retry reuses the same run pipeline, but scopes the next run to the selected app + sample pair and records retry lineage.
 
-## 7. Suggested Component Inventory
+## 8. Suggested Component Inventory
 
 - `AppShell`
 - `Sidebar`
@@ -392,22 +493,28 @@ Section titles in the UI:
 - `LiveInputPanel`
 - `TimelineList`
 - `LatestSessionSummary`
-- `AppSummaryTree`
-- `SessionGroup`
-- `AppGroupTable`
-- `ChecksPage`
+- `SessionHistoryList`
 - `SamplesPage`
 - `AppsPage`
 - `SettingsPage`
+- `ChecksPage`
+- `IntroPage`
+- `FaqPage`
+- `VersionNotesPanel`
+- `PreRunDialog`
+- `CompletionDialog`
+- `CsvImportDialog`
 - `PermissionList`
 - `DeviceList`
 
-## 8. Renderer Structure
+## 9. Renderer Structure
 
 The current implementation is still centered around:
 
 - `src/renderer/App.vue`
 - `src/renderer/styles.css`
+- `src/renderer/components/VersionNotesPanel.vue`
+- `src/renderer/content/version-notes.ts`
 
 Later decomposition can move page sections into:
 
@@ -415,4 +522,4 @@ Later decomposition can move page sections into:
 - `src/renderer/components/`
 - `src/renderer/composables/`
 
-But new work should follow the current product behavior first, not the older modal/drawer plan.
+But new work should follow the current product behavior first, not older page-label or modal assumptions.

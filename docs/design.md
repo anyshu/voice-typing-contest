@@ -225,7 +225,7 @@ A Swift helper provides the intended long-term path, while the current product a
 
 Responsibilities:
 
-- page navigation for `主控台`, `运行前检查`, `样本管理`, `App管理`, `测试历史`, `设置`, `怎么开始`, `常见问题`, `关于`, with `App管理` moved into the upper run-focused group directly below `样本管理`
+- page navigation for `主控台`, `样本管理`, `App管理`, `测试历史`, `设置`, `运行前检查`, `怎么开始`, `Q&A`, `关于`, with `App管理` moved into the upper run-focused group directly below `样本管理`
 - configuration UI
 - `样本管理` keeps the sample list vertically scrollable while hiding the native scrollbar so dense directories stay browsable without adding visual noise
 - target app CRUD now lives in dedicated `App管理`, using compact per-app cards with a single-row header for app name, app kind, enable state, toggle, and delete action
@@ -234,7 +234,7 @@ Responsibilities:
 - live run timeline
 - latest-session summary on `主控台`
 - dedicated `测试历史` page for browsing persisted sessions, exporting one batch at a time, importing compatible result CSV files as synthetic history sessions, retrying one failed app/sample pair directly from history, and merging retry outcomes back onto the original row with a retry counter; CSV export should keep the original `run_id` while exposing the latest attempt as `latest_run_id`, and sample-path hover/focus should reveal the captured ASR text without widening the table
-- focused `常见问题` page for the current primary troubleshooting story around voice-typing apps muting other active audio during dictation
+- focused `Q&A` page for the current primary troubleshooting story around voice-typing apps muting other active audio during dictation; the in-page card copy still uses `常见问题 01`
 
 Current Vue structure is still centered in `App.vue`, with page sections inside the shell. It can be decomposed later, but the current behavior is already organized around those page roles.
 

@@ -18,6 +18,10 @@ interface JsonlSampleRecord {
 }
 
 export class SampleManager {
+  async scan(root: string, previousSamples: AudioSample[] = []): Promise<AudioSample[]> {
+    return await this.scanDirectory(root, previousSamples);
+  }
+
   async loadFromConfig(config: Pick<AppConfig, "sampleSourceType" | "sampleRoot" | "sampleJsonlPath" | "audioSamples">): Promise<AudioSample[]> {
     if (config.sampleSourceType === "jsonl") {
       return await this.loadJsonl(config.sampleJsonlPath, config.audioSamples);

@@ -47,7 +47,7 @@ function setupDesktopApi(options?: {
     isBuiltin: Boolean(app.launchCommand?.startsWith("selftest://")),
   }));
   const api = {
-    getVersion: vi.fn(async () => "0.2.0"),
+    getVersion: vi.fn(async () => "0.2.1"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),

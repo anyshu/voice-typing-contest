@@ -567,8 +567,8 @@ export class ResultStore {
     `).all(runId) as unknown as RunEventRecord[];
   }
 
-  exportCsv(sessionId?: string): string {
-    const rows = this.listRuns(sessionId);
+  exportCsv(sessionId?: string, appName?: string): string {
+    const rows = this.listRuns(sessionId).filter((row) => !appName || row.appName === appName);
     const headers = [
       "run_id",
       "latest_run_id",
@@ -621,7 +621,7 @@ export class ResultStore {
     return csvRows.join("\n");
   }
 
-  exportResourceCsv(sessionId?: string): string {
+  exportResourceCsv(sessionId?: string, appName?: string): string {
     const rows = this.db.prepare(`
       SELECT
         resource_samples.run_id AS runId,
@@ -644,8 +644,9 @@ export class ResultStore {
       ${sessionId ? "WHERE test_runs.run_session_id = ?" : ""}
       ORDER BY resource_samples.sampled_at ASC, resource_samples.sample_index ASC
     `).all(...(sessionId ? [sessionId] : [])) as Array<Record<string, string | number>>;
+    const filteredRows = rows.filter((row) => !appName || String(row.appName) === appName);
     const firstSampledAtByRunId = new Map<string, number>();
-    for (const row of rows) {
+    for (const row of filteredRows) {
       const runId = String(row.runId);
       const sampledAtMs = new Date(String(row.sampledAt)).getTime();
       const current = firstSampledAtByRunId.get(runId);
@@ -672,7 +673,7 @@ export class ResultStore {
       "interval_ms",
     ];
     const csvRows = [headers.join(",")];
-    for (const row of rows) {
+    for (const row of filteredRows) {
       const sampledAtMs = new Date(String(row.sampledAt)).getTime();
       const firstSampledAtMs = firstSampledAtByRunId.get(String(row.runId));
       const relativeSampledAtMs = Number.isFinite(sampledAtMs) && firstSampledAtMs !== undefined
@@ -701,7 +702,7 @@ export class ResultStore {
     return csvRows.join("\n");
   }
 
-  exportResourceSummaryCsv(sessionId?: string): string {
+  exportResourceSummaryCsv(sessionId?: string, appName?: string): string {
     const rows = this.db.prepare(`
       SELECT
         id AS runId,
@@ -719,6 +720,7 @@ export class ResultStore {
       ${sessionId ? "WHERE run_session_id = ?" : ""}
       ORDER BY created_at ASC
     `).all(...(sessionId ? [sessionId] : [])) as Array<Record<string, string | number | null>>;
+    const filteredRows = rows.filter((row) => !appName || String(row.appName) === appName);
     const samplingIntervalByRunIdRows = this.db.prepare(`
       SELECT
         run_id AS runId,
@@ -744,7 +746,7 @@ export class ResultStore {
       "peak_memory_mb",
     ];
     const csvRows = [headers.join(",")];
-    for (const row of rows) {
+    for (const row of filteredRows) {
       const line = [
         row.runId,
         row.runSessionId,

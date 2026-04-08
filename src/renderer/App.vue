@@ -166,11 +166,10 @@ const resultSessionGroups = computed(() => sessions.value
   .map((session) => {
     const runs = results.value.filter((item) => item.runSessionId === session.id);
     const appNames = [...new Set(runs.map((item) => item.appName))];
-    const displayTime = runs.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, session.startedAt);
     return {
       session,
       runs,
-      displayTime,
+      displayTime: session.startedAt,
       appGroups: appNames.map((appName) => {
         const appRuns = runs.filter((item) => item.appName === appName);
         const appVersions = [...new Set(appRuns.map((item) => item.appVersion).filter((value): value is string => Boolean(value?.trim())))];
@@ -186,6 +185,23 @@ const resultSessionGroups = computed(() => sessions.value
     };
   })
   .sort((left, right) => right.displayTime.localeCompare(left.displayTime)));
+const historyResultGroups = computed(() => resultSessionGroups.value
+  .flatMap((group) => {
+    const sortedAppGroups = [...group.appGroups].sort((left, right) => left.appName.localeCompare(right.appName, "zh-CN"));
+    return sortedAppGroups.map((appGroup, index) => ({
+      session: group.session,
+      displayTime: group.session.startedAt,
+      appGroup,
+      isSessionFirst: index === 0,
+      isSessionLast: index === sortedAppGroups.length - 1,
+      appGroupCount: sortedAppGroups.length,
+    }));
+  })
+  .sort((left, right) => {
+    const timeCompare = right.displayTime.localeCompare(left.displayTime);
+    if (timeCompare !== 0) return timeCompare;
+    return left.appGroup.appName.localeCompare(right.appGroup.appName, "zh-CN");
+  }));
 const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
@@ -674,17 +690,6 @@ function formatSessionTime(value: string): string {
   });
 }
 
-function sessionAppLabel(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
-  if (appGroups.length === 0) return "";
-  if (appGroups.length === 1) return appGroups[0].appName;
-  return `${appGroups[0].appName} 等 ${appGroups.length} 个 App`;
-}
-
-function sessionAppVersionText(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
-  if (appGroups.length !== 1) return "";
-  return appGroups[0].appVersions?.[0] ?? "";
-}
-
 function appGroupVersionText(appGroup: { appVersions?: string[] }): string {
   const versions = appGroup.appVersions ?? [];
   if (versions.length === 0) return "";
@@ -701,6 +706,10 @@ function formatSessionTimestamp(value: string): string {
   const minute = String(date.getMinutes()).padStart(2, "0");
   const second = String(date.getSeconds()).padStart(2, "0");
   return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+}
+
+function historyGroupKey(sessionId: string, appName: string): string {
+  return `${sessionId}:${appName}`;
 }
 
 function formatLatencyMs(value?: number): string {
@@ -954,9 +963,9 @@ async function refreshResultData(preferredRunId?: string): Promise<void> {
   results.value = nextResults;
   sessions.value = nextSessions;
 
-  const validExpandedIds = expandedSessionIds.value.filter((id) => nextSessions.some((item) => item.id === id));
-  if (!validExpandedIds.length && nextSessions[0]?.id) {
-    validExpandedIds.push(nextSessions[0].id);
+  const validExpandedIds = expandedSessionIds.value.filter((id) => historyResultGroups.value.some((item) => historyGroupKey(item.session.id, item.appGroup.appName) === id));
+  if (!validExpandedIds.length && historyResultGroups.value[0]) {
+    validExpandedIds.push(historyGroupKey(historyResultGroups.value[0].session.id, historyResultGroups.value[0].appGroup.appName));
   }
   expandedSessionIds.value = validExpandedIds;
   maybeShowCompletionDialog();
@@ -1223,9 +1232,9 @@ function isSessionExpanded(sessionId: string): boolean {
   return expandedSessionIds.value.includes(sessionId);
 }
 
-async function exportBundle(runSessionId?: string): Promise<void> {
+async function exportBundle(runSessionId?: string, appName?: string): Promise<void> {
   try {
-    const path = await window.vtc.exportBundle(runSessionId) as string | undefined;
+    const path = await window.vtc.exportBundle(runSessionId, appName) as string | undefined;
     notice.value = path ? `结果 ZIP 已导出到：${path}` : "已取消导出。";
   } catch (error) {
     notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`;
@@ -2143,53 +2152,49 @@ onBeforeUnmount(() => {
             <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
           </div>
           <div class="session-stack">
-            <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
+            <article
+              v-for="group in historyResultGroups"
+              :key="`${group.session.id}-${group.appGroup.appName}`"
+              class="session-card"
+              :class="{
+                'session-card--session-first': group.isSessionFirst,
+                'session-card--session-last': group.isSessionLast,
+                'session-card--session-linked': group.appGroupCount > 1,
+              }"
+            >
               <div class="session-header">
-                <button class="session-toggle" @click="toggleSession(group.session.id)">
+                <button class="session-toggle" @click="toggleSession(historyGroupKey(group.session.id, group.appGroup.appName))">
                   <strong>{{ formatSessionTime(group.displayTime) }}</strong>
-                  <span v-if="sessionAppLabel(group.appGroups)" class="session-app-name">
-                    {{ sessionAppLabel(group.appGroups) }}
+                  <span class="session-app-name">
+                    {{ group.appGroup.appName }}
                   </span>
-                  <span v-if="sessionAppVersionText(group.appGroups)" class="session-app-version">
-                    {{ sessionAppVersionText(group.appGroups) }}
+                  <span v-if="appGroupVersionText(group.appGroup)" class="session-app-version">
+                    {{ appGroupVersionText(group.appGroup) }}
                   </span>
                   <div
                     class="muted session-summary"
-                    :class="{ 'session-summary--danger': group.session.failedCount > 0 }"
+                    :class="{ 'session-summary--danger': group.appGroup.failedCount > 0 }"
                   >
                     {{ sessionStatusText(group.session.status) }}
-                    · 共 {{ group.session.runCount }} 条
-                    · 成功 {{ group.session.successCount }}
-                    · 失败 {{ group.session.failedCount }}
-                    · 取消 {{ group.session.cancelledCount }}
+                    · 共 {{ group.appGroup.runs.length }} 条
+                    · 成功 {{ group.appGroup.successCount }}
+                    · 失败 {{ group.appGroup.failedCount }}
+                    · 取消 {{ group.appGroup.cancelledCount }}
                   </div>
-                  <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
+                  <span class="pill">{{ isSessionExpanded(historyGroupKey(group.session.id, group.appGroup.appName)) ? "收起" : "展开" }}</span>
                 </button>
                 <button
                   class="history-export-button"
-                  aria-label="导出本轮 ZIP"
-                  data-tooltip="导出本轮 ZIP"
-                  @click="exportBundle(group.session.id)"
+                  aria-label="导出该 App ZIP"
+                  data-tooltip="导出该 App ZIP"
+                  @click="exportBundle(group.session.id, group.appGroup.appName)"
                 >
                   <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
                 </button>
               </div>
 
-              <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
-                <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
-                  <div v-if="group.appGroups.length > 1" class="app-group-header">
-                    <div class="app-group-title">
-                      <strong>{{ appGroup.appName }}</strong>
-                      <span v-if="appGroupVersionText(appGroup)" class="history-app-version">{{ appGroupVersionText(appGroup) }}</span>
-                    </div>
-                    <div class="muted">
-                      共 {{ appGroup.runs.length }} 条
-                      · 成功 {{ appGroup.successCount }}
-                      · 失败 {{ appGroup.failedCount }}
-                      · 取消 {{ appGroup.cancelledCount }}
-                    </div>
-                  </div>
-
+              <div v-if="isSessionExpanded(historyGroupKey(group.session.id, group.appGroup.appName))" class="app-group-stack">
+                <section class="app-group-card">
                   <table class="result-table">
                     <colgroup>
                       <col style="width: 60%" />
@@ -2213,7 +2218,7 @@ onBeforeUnmount(() => {
                     </thead>
                     <tbody>
                       <tr
-                        v-for="result in appGroup.runs"
+                        v-for="result in group.appGroup.runs"
                         :key="result.id"
                       >
                         <td class="history-sample-cell">
@@ -2247,7 +2252,7 @@ onBeforeUnmount(() => {
                           </button>
                         </td>
                       </tr>
-                      <tr v-if="!appGroup.runs.length">
+                      <tr v-if="!group.appGroup.runs.length">
                         <td colspan="7">这个应用在本轮还没有结果。</td>
                       </tr>
                     </tbody>
@@ -2256,7 +2261,7 @@ onBeforeUnmount(() => {
               </div>
             </article>
 
-            <div v-if="!resultSessionGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
+            <div v-if="!historyResultGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
           </div>
         </article>
       </section>

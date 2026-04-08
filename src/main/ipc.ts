@@ -205,17 +205,18 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   handle("results:list", async () => deps.resultStore.listRuns());
   handle("results:listSessions", async () => deps.resultStore.listSessions());
   handle("results:getDetail", async (_event, runId: string) => deps.resultStore.getRunDetail(runId));
-  handle("results:exportBundle", async (_event, runSessionId?: string) => {
-    const suffix = runSessionId ? `-${runSessionId.slice(0, 8)}` : "";
+  handle("results:exportBundle", async (_event, runSessionId?: string, appName?: string) => {
+    const safeAppName = appName?.replace(/[\\/:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
+    const suffix = `${runSessionId ? `-${runSessionId.slice(0, 8)}` : ""}${safeAppName ? `-${safeAppName}` : ""}`;
     const result = await dialog.showSaveDialog(win, { defaultPath: `voice-typing-contest-results${suffix}.zip` });
     if (result.canceled || !result.filePath) return undefined;
     const tempRoot = await mkdtemp(join(tmpdir(), "vtc-export-"));
     const bundleDir = join(tempRoot, `voice-typing-contest-results${suffix}`);
     try {
       await mkdir(bundleDir, { recursive: true });
-      await writeFile(join(bundleDir, "results.csv"), deps.resultStore.exportCsv(runSessionId), "utf8");
-      await writeFile(join(bundleDir, "system-info.csv"), deps.resultStore.exportResourceCsv(runSessionId), "utf8");
-      await writeFile(join(bundleDir, "system-summary.csv"), deps.resultStore.exportResourceSummaryCsv(runSessionId), "utf8");
+      await writeFile(join(bundleDir, "results.csv"), deps.resultStore.exportCsv(runSessionId, appName), "utf8");
+      await writeFile(join(bundleDir, "system-info.csv"), deps.resultStore.exportResourceCsv(runSessionId, appName), "utf8");
+      await writeFile(join(bundleDir, "system-summary.csv"), deps.resultStore.exportResourceSummaryCsv(runSessionId, appName), "utf8");
       await execFileAsync("/usr/bin/ditto", ["-c", "-k", "--keepParent", bundleDir, result.filePath]);
     } finally {
       await rm(tempRoot, { recursive: true, force: true });

@@ -2307,18 +2307,70 @@ select {
 }
 
 .session-card {
+  position: relative;
   border: 1px solid rgba(217, 222, 231, 0.88);
   border-radius: 14px;
-  padding: 11px 12px;
+  padding: 11px 12px 11px 28px;
   background: var(--panel-soft);
 }
 
+.session-card--session-linked {
+  margin-top: -4px;
+}
+
+.session-card--session-first {
+  margin-top: 0;
+}
+
+.session-card--session-linked::before {
+  content: "";
+  position: absolute;
+  left: 13.5px;
+  top: -7px;
+  bottom: -7px;
+  width: 1px;
+  border-radius: 999px;
+  background: rgba(225, 29, 72, 0.5);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.session-card--session-first::before {
+  top: 8px;
+}
+
+.session-card--session-last::before {
+  bottom: 8px;
+}
+
 .session-header {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.session-header::before {
+  content: "";
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: #cbd5e1;
+  border: 1px solid #94a3b8;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.session-card--session-linked .session-header::before {
+  background: #86efac;
+  border-color: #22c55e;
 }
 
 .history-export-button {

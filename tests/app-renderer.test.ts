@@ -711,7 +711,25 @@ describe("App renderer", () => {
   });
 
   it("shows only the history list on the history page", async () => {
-    setupDesktopApi();
+    const { api } = setupDesktopApi();
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-history-page-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "zh.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "ok",
+        normalizedText: "ok",
+        inputEventCount: 1,
+        finalTextLength: 2,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
     const wrapper = mount(App);
     await flushPromises();
 
@@ -722,7 +740,7 @@ describe("App renderer", () => {
 
     expect(wrapper.text()).toContain("历史列表");
     expect(wrapper.text()).toContain("导入CSV");
-    expect(wrapper.find('button[aria-label="导出本轮 ZIP"]').exists()).toBe(true);
+    expect(wrapper.find('button[aria-label="导出该 App ZIP"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain("输入检测区");
   });
 
@@ -1008,7 +1026,7 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("闪电说 已发送关闭指令");
   });
 
-  it("groups results under collapsible run sessions and exports the selected session", async () => {
+  it("groups results under collapsible run sessions and exports the selected app card", async () => {
     const { api } = setupDesktopApi();
     const groupedRuns: TestRunRecord[] = [
       {
@@ -1040,12 +1058,12 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("03/23");
     expect(wrapper.text()).toContain("Wispr Flow");
 
-    const exportButton = wrapper.find('button[aria-label="导出本轮 ZIP"]');
+    const exportButton = wrapper.find('button[aria-label="导出该 App ZIP"]');
     expect(exportButton.exists()).toBe(true);
     await exportButton.trigger("click");
     await flushPromises();
 
-    expect(api.exportBundle).toHaveBeenCalledWith("session-1");
+    expect(api.exportBundle).toHaveBeenCalledWith("session-1", "Wispr Flow");
   });
 
   it("highlights failed history session summary text in red", async () => {
@@ -1118,6 +1136,82 @@ describe("App renderer", () => {
     const sessionToggle = wrapper.get("button.session-toggle");
     expect(sessionToggle.text()).toContain("Typeless");
     expect(wrapper.get(".session-app-name").text()).toBe("Typeless");
+  });
+
+  it("splits multi-app history into separate app cards", async () => {
+    const { api, sessions } = setupDesktopApi();
+    sessions[0] = {
+      ...sessions[0],
+      id: "session-multi-app-history",
+      runCount: 2,
+      successCount: 2,
+      failedCount: 0,
+      cancelledCount: 0,
+      status: "completed",
+      startedAt: "2026-03-25T06:00:00.000Z",
+      finishedAt: "2026-03-25T06:00:45.000Z",
+    };
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-xigua-history-1",
+        runSessionId: "session-multi-app-history",
+        appId: "xiguashuo",
+        appName: "西瓜说",
+        sampleId: "sample-1",
+        samplePath: "first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "first",
+        normalizedText: "first",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-25T06:00:20.000Z",
+        timeline: [],
+      },
+      {
+        id: "run-shandian-history-1",
+        runSessionId: "session-multi-app-history",
+        appId: "shandianshuo",
+        appName: "闪电说",
+        sampleId: "sample-2",
+        samplePath: "second.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "second",
+        normalizedText: "second",
+        inputEventCount: 1,
+        finalTextLength: 6,
+        createdAt: "2026-03-25T06:00:45.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    const toggles = wrapper.findAll("button.session-toggle");
+    expect(toggles).toHaveLength(2);
+    const toggleTexts = toggles.map((item) => item.text());
+    expect(toggleTexts.some((text) => text.includes("西瓜说"))).toBe(true);
+    expect(toggleTexts.some((text) => text.includes("闪电说"))).toBe(true);
+    expect(wrapper.text()).not.toContain("本轮 2 个 App");
+    expect(wrapper.text()).not.toContain("等 2 个 App");
+
+    const exportButtons = wrapper.findAll('button[aria-label="导出该 App ZIP"]');
+    expect(exportButtons).toHaveLength(2);
+
+    await exportButtons[0]!.trigger("click");
+    await flushPromises();
+
+    expect(api.exportBundle).toHaveBeenCalledTimes(1);
+    expect(api.exportBundle.mock.calls[0]).toEqual([
+      "session-multi-app-history",
+      expect.stringMatching(/^(西瓜说|闪电说)$/),
+    ]);
   });
 
   it("shows a retry icon for failed history rows and reruns only that app/sample", async () => {
@@ -1310,7 +1404,7 @@ describe("App renderer", () => {
     expect(wrapper.find(".history-sample-text").attributes("data-tooltip")).toBe("内建自测/english-01.wav");
   });
 
-  it("uses the retry completion time as the displayed session time for merged history rows", async () => {
+  it("uses the session start time as the displayed history time for merged rows", async () => {
     const { api, sessions } = setupDesktopApi();
     sessions[0] = {
       ...sessions[0],
@@ -1343,7 +1437,7 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    const expectedDisplayTime = new Date("2026-03-24T07:25:27.000Z").toLocaleString("zh-CN", {
+    const expectedDisplayTime = new Date("2026-03-23T10:00:00.000Z").toLocaleString("zh-CN", {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",

@@ -207,19 +207,20 @@ Current stats per app:
 
 The `测试历史` page is grouped as:
 
-- session
-- app
+- session-app card
 - sample row
 
-The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each session header owns the `导出本轮 ZIP` action.
+The page header owns a blue-text `导入CSV` action that opens a drag-and-drop dialog for compatible result CSV files, while each history app card owns a `导出该 App ZIP` action.
 
 Each sample row should keep the path text truncated in the table cell, but hovering or keyboard focusing that path must reveal a tooltip with the sample path and the captured ASR result. If no ASR text was captured, the tooltip should fall back to the failure reason or an explicit "未捕获到结果" message.
 
 When a sample row has retry history, the exported result bundle should overwrite that row in-place from the reader's perspective: keep the original `run_id`, expose the newest attempt as `latest_run_id`, and export the latest status/text/metrics together with the merged `retry_count`.
 
-Each exported ZIP should contain `results.csv`, `system-info.csv`, and `system-summary.csv`. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app, while `system-summary.csv` provides one plotting-friendly summary row per run.
+Each exported ZIP should contain `results.csv`, `system-info.csv`, and `system-summary.csv`. When exporting from a history app card, all three files must be filtered down to that card's app within the original batch session. `system-info.csv` stores the fixed-interval CPU and memory samples captured during the whole run window for each tested app, while `system-summary.csv` provides one plotting-friendly summary row per run.
 
-Each session header should render the session start time first and then the app label in a heavier weight, so a single-app session reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`.
+When one batch tests multiple apps, the history list must split it into separate cards per app instead of collapsing them into one combined `A 等 N 个 App` header.
+
+Each history card header should render the session start time first and then the app label in a heavier weight, so a single-app card reads like `03/24 15:57:57 Typeless 已结束 · 共 4 条 · 成功 3 · 失败 0 · 取消 1`. The displayed timestamp must stay anchored to the batch start time rather than the latest row completion time.
 
 If a session contains one or more failed rows, only the session summary line text should switch to the danger color; do not add a red background, border, or full-row highlight.
 

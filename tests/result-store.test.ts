@@ -35,6 +35,12 @@ describe("ResultStore", () => {
       appVersion: "1.2.3",
       sampleId: "sample-1",
       samplePath: "a.wav",
+      sampleSourceType: "jsonl",
+      sampleMetadata: {
+        jsonlPath: "/tmp/source.jsonl",
+        sourceId: "item-1",
+        sourceMd: "dataset/v1",
+      },
       status: "success",
       phase: "completed",
       rawText: "hello",
@@ -45,6 +51,27 @@ describe("ResultStore", () => {
       peakMemoryMb: 156.75,
       inputEventCount: 2,
       finalTextLength: 5,
+      createdAt: new Date().toISOString(),
+      timeline: [],
+    });
+    store.insertRun({
+      id: "run-2",
+      runSessionId: "session-1",
+      appId: "app-2",
+      appName: "Other App",
+      appVersion: "9.9.9",
+      sampleId: "sample-2",
+      samplePath: "b.wav",
+      status: "failed",
+      phase: "failed",
+      rawText: "",
+      normalizedText: "",
+      averageCpuPercent: 2.5,
+      peakCpuPercent: 3.5,
+      averageMemoryMb: 28.25,
+      peakMemoryMb: 36.75,
+      inputEventCount: 0,
+      finalTextLength: 0,
       createdAt: new Date().toISOString(),
       timeline: [],
     });
@@ -62,6 +89,19 @@ describe("ResultStore", () => {
         totalMemoryMb: 128.25,
         intervalMs: 2000,
       },
+      {
+        id: "resource-2",
+        runId: "run-2",
+        sampleIndex: 0,
+        sampledAt: "2026-03-24T10:00:02.000Z",
+        mainPid: 102,
+        processCount: 1,
+        mainCpuPercent: 1.4,
+        totalCpuPercent: 2.5,
+        mainMemoryMb: 18.5,
+        totalMemoryMb: 28.25,
+        intervalMs: 2000,
+      },
     ]);
     const csv = store.exportCsv();
     expect(csv).toContain("run_id");
@@ -70,6 +110,9 @@ describe("ResultStore", () => {
     expect(csv).toContain("retry_attempt");
     expect(csv).toContain("app_name");
     expect(csv).toContain("app_version");
+    expect(csv).toContain("sample_source_type");
+    expect(csv).toContain("sample_jsonl_path");
+    expect(csv).toContain("sample_source_id");
     expect(csv).toContain("trigger_stop_to_first_char_ms");
     expect(csv).toContain("trigger_stop_to_final_text_ms");
     expect(csv).toContain("average_cpu_percent");
@@ -86,8 +129,19 @@ describe("ResultStore", () => {
     expect(resourceSummaryCsv).toContain("peak_memory_mb");
     expect(resourceSummaryCsv).toContain("\"2000\"");
     expect(resourceSummaryCsv).toContain("\"128.25\"");
+    const filteredCsv = store.exportCsv("session-1", "App");
+    expect(filteredCsv).toContain("\"App\"");
+    expect(filteredCsv).not.toContain("\"Other App\"");
+    const filteredResourceCsv = store.exportResourceCsv("session-1", "App");
+    expect(filteredResourceCsv).toContain("\"run-1\"");
+    expect(filteredResourceCsv).not.toContain("\"run-2\"");
+    const filteredResourceSummaryCsv = store.exportResourceSummaryCsv("session-1", "App");
+    expect(filteredResourceSummaryCsv).toContain("\"run-1\"");
+    expect(filteredResourceSummaryCsv).not.toContain("\"run-2\"");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
     expect(store.getRunDetail("run-1")?.record.appVersion).toBe("1.2.3");
+    expect(store.getRunDetail("run-1")?.record.sampleSourceType).toBe("jsonl");
+    expect(store.getRunDetail("run-1")?.record.sampleMetadata?.jsonlPath).toBe("/tmp/source.jsonl");
     expect(store.listRuns()[0]?.timeline).toEqual([]);
     store.close();
   });

@@ -74,6 +74,17 @@ export interface InstalledTargetAppInfo {
   buildVersion?: string;
 }
 
+export type SampleSourceType = "directory" | "jsonl";
+
+export interface AudioSampleMetadata {
+  sourceId?: string;
+  category?: string;
+  subcategory?: string;
+  groupId?: string;
+  sourceMd?: string;
+  jsonlPath?: string;
+}
+
 export interface AudioSample {
   id: string;
   filePath: string;
@@ -85,6 +96,8 @@ export interface AudioSample {
   tags: string[];
   enabled: boolean;
   exists?: boolean;
+  sourceType?: SampleSourceType;
+  metadata?: AudioSampleMetadata;
 }
 
 export interface AppConfig {
@@ -92,6 +105,8 @@ export interface AppConfig {
   theme: Theme;
   workspaceLabel: string;
   sampleRoot: string;
+  sampleSourceType: SampleSourceType;
+  sampleJsonlPath: string;
   databasePath: string;
   logFolder: string;
   helperPathOverride: string;
@@ -159,6 +174,8 @@ export interface TestRunRecord {
   appVersion?: string;
   sampleId: string;
   samplePath: string;
+  sampleSourceType?: SampleSourceType;
+  sampleMetadata?: AudioSampleMetadata;
   status: ResultStatus;
   phase: RunPhase;
   failureCategory?: FailureCategory;

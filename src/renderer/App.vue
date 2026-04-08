@@ -22,6 +22,7 @@ import {
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import VersionNotesPanel from "./components/VersionNotesPanel.vue";
+import MarkdownRender from "./components/MarkdownRender.vue";
 import { defaultConfig } from "../shared/defaults";
 import { safeTimelinePayload, timelineDetail, timelineTitle } from "../shared/timeline";
 import type {
@@ -53,6 +54,9 @@ const installedAppInfoById = ref<Record<string, InstalledTargetAppInfo>>({});
 const sessions = ref<RunSessionSummary[]>([]);
 const results = ref<TestRunRecord[]>([]);
 const expandedSessionIds = ref<string[]>([]);
+const selectedHistoryItemKey = ref<string | null>(null);
+const historyReportDrawerOpen = ref(false);
+const historyReportMarkdown = ref("# 测试历史总结\n\n正在准备报告…");
 const progress = ref<RunProgress>({ phase: "idle", textValue: "", message: "空闲", completedRuns: 0, totalRuns: 0 });
 const preflightReport = ref<PreflightReport | null>(null);
 const liveTimelineByRunId = ref<Record<string, RunEventRecord[]>>({});
@@ -61,7 +65,7 @@ const liveTimelineEvents = ref<RunEventRecord[]>([]);
 const timelineList = ref<HTMLUListElement | null>(null);
 const inputProbeText = ref("");
 const inputProbeTextarea = ref<HTMLTextAreaElement | null>(null);
-const appVersion = ref("v0.1.13");
+const appVersion = ref("v0.2.1");
 const notice = ref("");
 const capturingAppId = ref<string | null>(null);
 const capturePreview = ref("");
@@ -141,6 +145,10 @@ const installedRealApps = computed(() => realApps.value.filter((item) => install
 const invalidSamples = computed(() => config.value.audioSamples.filter((item) => item.exists === false));
 const enabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && item.enabled));
 const disabledSamples = computed(() => config.value.audioSamples.filter((item) => item.exists !== false && !item.enabled));
+const currentSampleSourceLabel = computed(() => config.value.sampleSourceType === "jsonl" ? "JSONL" : "文件夹");
+const currentSampleSourcePath = computed(() => (
+  config.value.sampleSourceType === "jsonl" ? config.value.sampleJsonlPath : config.value.sampleRoot
+));
 const selectedDevice = computed(() => devices.value.find((item) => item.id === config.value.selectedOutputDeviceId));
 const grantedPermissionCount = computed(() => permissions.value.filter((item) => item.granted).length);
 const availableDeviceCount = computed(() => devices.value.filter((item) => item.available).length);
@@ -162,11 +170,10 @@ const resultSessionGroups = computed(() => sessions.value
   .map((session) => {
     const runs = results.value.filter((item) => item.runSessionId === session.id);
     const appNames = [...new Set(runs.map((item) => item.appName))];
-    const displayTime = runs.reduce((latest, item) => item.createdAt > latest ? item.createdAt : latest, session.startedAt);
     return {
       session,
       runs,
-      displayTime,
+      displayTime: session.startedAt,
       appGroups: appNames.map((appName) => {
         const appRuns = runs.filter((item) => item.appName === appName);
         const appVersions = [...new Set(appRuns.map((item) => item.appVersion).filter((value): value is string => Boolean(value?.trim())))];
@@ -182,6 +189,39 @@ const resultSessionGroups = computed(() => sessions.value
     };
   })
   .sort((left, right) => right.displayTime.localeCompare(left.displayTime)));
+const historyResultGroups = computed(() => resultSessionGroups.value
+  .flatMap((group) => {
+    const sortedAppGroups = [...group.appGroups].sort((left, right) => left.appName.localeCompare(right.appName, "zh-CN"));
+    return sortedAppGroups.map((appGroup, index) => ({
+      session: group.session,
+      displayTime: group.session.startedAt,
+      appGroup,
+      isSessionFirst: index === 0,
+      isSessionLast: index === sortedAppGroups.length - 1,
+      appGroupCount: sortedAppGroups.length,
+    }));
+  })
+  .sort((left, right) => {
+    const timeCompare = right.displayTime.localeCompare(left.displayTime);
+    if (timeCompare !== 0) return timeCompare;
+    return left.appGroup.appName.localeCompare(right.appGroup.appName, "zh-CN");
+  }));
+const sampleExpectedTextById = computed(() => new Map(
+  config.value.audioSamples
+    .filter((sample) => sample.expectedText?.trim())
+    .map((sample) => [sample.id, sample.expectedText!.trim()]),
+));
+const sampleExpectedTextByPath = computed(() => new Map(
+  config.value.audioSamples
+    .filter((sample) => sample.expectedText?.trim())
+    .flatMap((sample) => {
+      const expected = sample.expectedText!.trim();
+      return [
+        [sample.relativePath, expected] as const,
+        [sample.filePath, expected] as const,
+      ];
+    }),
+));
 const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
@@ -196,7 +236,7 @@ const pageTitle = computed(() => {
 const pageSubtitle = computed(() => {
   if (page.value === "main") return "本地基准测试工具";
   if (page.value === "checks") return "开跑前检查清单";
-  if (page.value === "samples") return "测试集与目录视图";
+  if (page.value === "samples") return "样本管理";
   if (page.value === "apps") return "目标 App 配置与热键";
   if (page.value === "history") return "历史结果与分轮导出";
   if (page.value === "settings") return "运行参数与环境设置";
@@ -370,6 +410,23 @@ function sampleMeta(language: string, durationMs?: number): string {
   return `${language} / ${(durationMs / 1000).toFixed(2)} 秒`;
 }
 
+function sampleSourceText(sample: AudioSample): string {
+  return sample.sourceType === "jsonl" ? "JSONL" : "文件夹";
+}
+
+function sampleTooltipBadges(sample: AudioSample): string[] {
+  const badges = [sampleSourceText(sample)];
+  if (sample.language) badges.push(sample.language);
+  if (sample.metadata?.groupId) badges.push(`分组 ${sample.metadata.groupId}`);
+  if (sample.metadata?.category) badges.push(sample.metadata.category);
+  if (sample.metadata?.subcategory) badges.push(sample.metadata.subcategory);
+  return badges;
+}
+
+function sampleTooltipStatus(sample: AudioSample): string {
+  return isSampleMissing(sample) ? "无效" : sample.enabled ? "启用" : "关闭";
+}
+
 function formatPreviewTime(seconds?: number): string {
   const totalSeconds = Math.max(0, Math.floor(seconds ?? 0));
   const minutes = Math.floor(totalSeconds / 60);
@@ -528,6 +585,11 @@ function onSampleRowLeave(sampleId: string): void {
   if (hoveredSampleId.value === sampleId) hoveredSampleId.value = null;
 }
 
+function shouldTooltipOpenBelow(index: number): boolean {
+  const rowTop = index * SAMPLE_ROW_HEIGHT - sampleListScrollTop.value;
+  return rowTop < 136;
+}
+
 function measureSampleListViewport(): void {
   sampleListViewportHeight.value = sampleListViewport.value?.clientHeight || 520;
 }
@@ -648,22 +710,17 @@ function formatSessionTime(value: string): string {
   });
 }
 
-function sessionAppLabel(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
-  if (appGroups.length === 0) return "";
-  if (appGroups.length === 1) return appGroups[0].appName;
-  return `${appGroups[0].appName} 等 ${appGroups.length} 个 App`;
-}
-
-function sessionAppVersionText(appGroups: Array<{ appName: string; appVersions?: string[] }>): string {
-  if (appGroups.length !== 1) return "";
-  return appGroups[0].appVersions?.[0] ?? "";
-}
-
 function appGroupVersionText(appGroup: { appVersions?: string[] }): string {
   const versions = appGroup.appVersions ?? [];
   if (versions.length === 0) return "";
   if (versions.length === 1) return versions[0];
   return `${versions[0]} 等 ${versions.length} 个版本`;
+}
+
+function formatHistoryReportVersionLabel(versionText: string): string {
+  if (!versionText) return "";
+  if (versionText.includes("等")) return versionText.replace(/^v?/i, "v");
+  return `v${versionText.replace(/^v/i, "")}`;
 }
 
 function formatSessionTimestamp(value: string): string {
@@ -675,6 +732,81 @@ function formatSessionTimestamp(value: string): string {
   const minute = String(date.getMinutes()).padStart(2, "0");
   const second = String(date.getSeconds()).padStart(2, "0");
   return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+}
+
+function historyGroupKey(sessionId: string, appName: string): string {
+  return `${sessionId}:${appName}`;
+}
+
+function historyReportGroupKey(sessionId: string, appName: string): string {
+  return `group:${historyGroupKey(sessionId, appName)}`;
+}
+
+function historyReportRunKey(runId: string): string {
+  return `run:${runId}`;
+}
+
+function resolveHistoryExpectedText(run: TestRunRecord): string | undefined {
+  const own = run.expectedText?.trim();
+  if (own) return own;
+  const byId = sampleExpectedTextById.value.get(run.sampleId)?.trim();
+  if (byId) return byId;
+  const byPath = sampleExpectedTextByPath.value.get(run.samplePath)?.trim();
+  if (byPath) return byPath;
+  return undefined;
+}
+
+function hydrateHistoryRun(run: TestRunRecord): TestRunRecord {
+  const expectedText = resolveHistoryExpectedText(run);
+  return expectedText && expectedText !== run.expectedText
+    ? { ...run, expectedText }
+    : run;
+}
+
+function hydrateHistoryGroup<T extends { appGroup: { runs: TestRunRecord[] } }>(group: T): T {
+  return {
+    ...group,
+    appGroup: {
+      ...group.appGroup,
+      runs: group.appGroup.runs.map((run) => hydrateHistoryRun(run)),
+    },
+  };
+}
+
+async function loadSelectedHistoryReport(): Promise<void> {
+  const run = selectedHistoryRun.value ? hydrateHistoryRun(selectedHistoryRun.value) : undefined;
+  const group = selectedHistoryGroup.value ? hydrateHistoryGroup(selectedHistoryGroup.value) : undefined;
+  const fallbackGroup = !run && !group && historyResultGroups.value[0] ? hydrateHistoryGroup(historyResultGroups.value[0]) : undefined;
+  const targetGroup = group ?? fallbackGroup;
+
+  if (!run && !targetGroup) {
+    historyReportMarkdown.value = [
+      "# 测试历史总结",
+      "",
+      "还没有可展示的报告。",
+      "",
+      "- 先跑一轮测试，或者导入一份兼容的 CSV。",
+      "- 左侧点任意批次或样本，右侧会切换到对应的 Markdown 报告。",
+    ].join("\n");
+    return;
+  }
+
+  historyReportMarkdown.value = "# 测试历史总结\n\n正在生成 Python 报告…";
+  try {
+    historyReportMarkdown.value = await window.vtc.generateHistoryReport(
+      run?.runSessionId ?? targetGroup!.session.id,
+      run?.appName ?? targetGroup!.appGroup.appName,
+      run?.id,
+    ) as string;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast(message);
+    historyReportMarkdown.value = [
+      "# 测试历史总结",
+      "",
+      `生成报告失败：${message}`,
+    ].join("\n");
+  }
 }
 
 function formatLatencyMs(value?: number): string {
@@ -718,6 +850,35 @@ function median(values: number[]): number | undefined {
 }
 
 const latestSessionGroup = computed(() => resultSessionGroups.value[0]);
+const selectedHistoryGroup = computed(() => {
+  const key = selectedHistoryItemKey.value;
+  if (!key?.startsWith("group:")) return undefined;
+  return historyResultGroups.value.find((group) => historyReportGroupKey(group.session.id, group.appGroup.appName) === key);
+});
+const selectedHistoryRun = computed(() => {
+  const key = selectedHistoryItemKey.value;
+  if (!key?.startsWith("run:")) return undefined;
+  const runId = key.slice(4);
+  return results.value.find((item) => item.id === runId);
+});
+const selectedHistoryReportTitle = computed(() => {
+  if (selectedHistoryRun.value) {
+    return selectedHistoryRun.value.samplePath;
+  }
+  if (selectedHistoryGroup.value) {
+    return `${selectedHistoryGroup.value.appGroup.appName} · 批次总结`;
+  }
+  return "总结报告";
+});
+const selectedHistoryReportVersion = computed(() => {
+  if (selectedHistoryRun.value?.appVersion?.trim()) {
+    return formatHistoryReportVersionLabel(selectedHistoryRun.value.appVersion);
+  }
+  if (selectedHistoryGroup.value) {
+    return formatHistoryReportVersionLabel(appGroupVersionText(selectedHistoryGroup.value.appGroup));
+  }
+  return "";
+});
 const completedSessionGroup = computed(() => resultSessionGroups.value.find((item) => item.session.id === completedSessionId.value));
 const mainSessionGroup = computed(() => {
   if (pendingRunStart.value || running.value) {
@@ -928,12 +1089,66 @@ async function refreshResultData(preferredRunId?: string): Promise<void> {
   results.value = nextResults;
   sessions.value = nextSessions;
 
-  const validExpandedIds = expandedSessionIds.value.filter((id) => nextSessions.some((item) => item.id === id));
-  if (!validExpandedIds.length && nextSessions[0]?.id) {
-    validExpandedIds.push(nextSessions[0].id);
-  }
+  const validExpandedIds = expandedSessionIds.value.filter((id) => historyResultGroups.value.some((item) => historyGroupKey(item.session.id, item.appGroup.appName) === id));
   expandedSessionIds.value = validExpandedIds;
+  syncSelectedHistoryItem(preferredRunId);
   maybeShowCompletionDialog();
+}
+
+function syncSelectedHistoryItem(preferredRunId?: string): void {
+  const validKeys = new Set<string>();
+  historyResultGroups.value.forEach((group) => {
+    validKeys.add(historyReportGroupKey(group.session.id, group.appGroup.appName));
+    group.appGroup.runs.forEach((run) => {
+      validKeys.add(historyReportRunKey(run.id));
+    });
+  });
+
+  if (preferredRunId) {
+    const preferredKey = historyReportRunKey(preferredRunId);
+    if (validKeys.has(preferredKey)) {
+      selectedHistoryItemKey.value = preferredKey;
+      return;
+    }
+  }
+
+  if (selectedHistoryItemKey.value && validKeys.has(selectedHistoryItemKey.value)) {
+    return;
+  }
+
+  const fallbackGroup = historyResultGroups.value[0];
+  selectedHistoryItemKey.value = fallbackGroup
+    ? historyReportGroupKey(fallbackGroup.session.id, fallbackGroup.appGroup.appName)
+    : null;
+}
+
+function selectHistoryGroup(sessionId: string, appName: string): void {
+  selectedHistoryItemKey.value = historyReportGroupKey(sessionId, appName);
+}
+
+function selectHistoryRun(result: TestRunRecord): void {
+  selectedHistoryItemKey.value = historyReportRunKey(result.id);
+}
+
+function isSelectedHistoryGroup(sessionId: string, appName: string): boolean {
+  return selectedHistoryItemKey.value === historyReportGroupKey(sessionId, appName);
+}
+
+function isSelectedHistoryRun(runId: string): boolean {
+  return selectedHistoryItemKey.value === historyReportRunKey(runId);
+}
+
+function openHistoryReportDrawer(): void {
+  historyReportDrawerOpen.value = true;
+}
+
+function closeHistoryReportDrawer(): void {
+  historyReportDrawerOpen.value = false;
+}
+
+function openHistoryGroupReport(sessionId: string, appName: string): void {
+  selectHistoryGroup(sessionId, appName);
+  openHistoryReportDrawer();
 }
 
 function maybeShowCompletionDialog(): void {
@@ -971,16 +1186,33 @@ async function chooseSampleRoot(): Promise<void> {
   const picked = await window.vtc.pickSampleRoot();
   if (!picked) return;
   config.value.sampleRoot = picked;
+  config.value.sampleSourceType = "directory";
+  await rescanSamples();
+}
+
+async function chooseSampleJsonl(): Promise<void> {
+  const picked = await window.vtc.pickSampleJsonl();
+  if (!picked) return;
+  config.value.sampleJsonlPath = picked;
+  config.value.sampleSourceType = "jsonl";
   await rescanSamples();
 }
 
 async function rescanSamples(): Promise<void> {
-  if (!config.value.sampleRoot) {
-    notice.value = "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
+  const missingDirectory = config.value.sampleSourceType === "directory" && !config.value.sampleRoot;
+  const missingJsonl = config.value.sampleSourceType === "jsonl" && !config.value.sampleJsonlPath;
+  if (missingDirectory || missingJsonl) {
+    notice.value = config.value.sampleSourceType === "jsonl"
+      ? "还没有选 JSONL 样本文件。现在仍然可以直接跑内建自测。"
+      : "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
     return;
   }
   try {
-    config.value.audioSamples = await window.vtc.rescanSamples(config.value.sampleRoot);
+    config.value.audioSamples = await window.vtc.rescanSamples({
+      sampleSourceType: config.value.sampleSourceType,
+      sampleRoot: config.value.sampleRoot,
+      sampleJsonlPath: config.value.sampleJsonlPath,
+    });
     notice.value = `重新扫描完成，共拿到 ${config.value.audioSamples.length} 条样本。`;
   } catch (error) {
     notice.value = `重新扫描失败：${error instanceof Error ? error.message : String(error)}`;
@@ -1180,12 +1412,24 @@ function isSessionExpanded(sessionId: string): boolean {
   return expandedSessionIds.value.includes(sessionId);
 }
 
-async function exportBundle(runSessionId?: string): Promise<void> {
+async function exportBundle(runSessionId?: string, appName?: string): Promise<void> {
   try {
-    const path = await window.vtc.exportBundle(runSessionId) as string | undefined;
+    const path = await window.vtc.exportBundle(runSessionId, appName) as string | undefined;
     notice.value = path ? `结果 ZIP 已导出到：${path}` : "已取消导出。";
   } catch (error) {
     notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function exportHistoryReport(): Promise<void> {
+  try {
+    const path = await window.vtc.exportHistoryReport(
+      historyReportMarkdown.value,
+      selectedHistoryReportTitle.value,
+    ) as string | undefined;
+    notice.value = path ? `报告已导出到：${path}` : "已取消导出报告。";
+  } catch (error) {
+    notice.value = `导出报告失败：${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
@@ -1593,6 +1837,17 @@ watch(() => page.value, async (nextPage) => {
   measureSampleListViewport();
 });
 
+watch(
+  () => [
+    selectedHistoryItemKey.value,
+    historyResultGroups.value.map((group) => `${group.session.id}:${group.appGroup.appName}:${group.appGroup.runs.map((run) => run.id).join(",")}`).join("|"),
+  ],
+  async () => {
+    await loadSelectedHistoryReport();
+  },
+  { immediate: true },
+);
+
 watch(() => config.value.audioSamples.length, async () => {
   if (page.value !== "samples") return;
   await nextTick();
@@ -1710,7 +1965,6 @@ onBeforeUnmount(() => {
 
       <header class="topbar">
         <div v-if="page !== 'main'">
-          <p class="muted">{{ pageSubtitle }}</p>
           <h2>{{ pageTitle }}</h2>
         </div>
         <div v-if="page === 'main'" class="topbar-main-actions">
@@ -1929,19 +2183,17 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="page === 'samples'" class="stack">
-        <article class="panel">
-          <div class="panel-header-row">
-            <div>
-              <h3>样本管理</h3>
-              <p class="muted">集中查看样本目录、扫描结果和启用状态。</p>
-            </div>
-            <strong>{{ config.sampleRoot || "未选择目录" }}</strong>
-            <div class="toolbar">
-              <button class="ghost-button" @click="chooseSampleRoot">选择目录</button>
-              <button class="secondary-button" @click="rescanSamples">重新扫描</button>
-            </div>
+        <div class="sample-import-toolbar">
+          <div class="sample-import-toolbar__source">
+            <span class="pill">{{ currentSampleSourceLabel }}</span>
+            <strong class="sample-import-toolbar__path">{{ currentSampleSourcePath || "未选择来源" }}</strong>
           </div>
-        </article>
+          <div class="toolbar">
+            <button class="ghost-button" @click="chooseSampleRoot">目录 导入</button>
+            <button class="ghost-button" @click="chooseSampleJsonl">JSONL 导入</button>
+            <button class="secondary-button" @click="rescanSamples">重新扫描</button>
+          </div>
+        </div>
 
         <article class="panel">
           <section class="summary-strip summary-strip--samples">
@@ -1986,13 +2238,53 @@ onBeforeUnmount(() => {
               v-for="(sample, offset) in visibleSamples"
               :key="sample.id"
               class="sample-row-clean"
-              :class="{ 'is-missing': isSampleMissing(sample) }"
+              :class="{
+                'is-missing': isSampleMissing(sample),
+                'is-hovered': hoveredSampleId === sample.id,
+              }"
               @mouseenter="onSampleRowEnter(sample.id)"
               @mouseleave="onSampleRowLeave(sample.id)"
             >
               <div class="sample-row-index">{{ sampleListStartIndex + offset + 1 }}、</div>
               <div class="sample-row-main">
-                <span class="sample-row-path" :class="{ 'sample-row-path--missing': isSampleMissing(sample) }">{{ sample.relativePath }}</span>
+                <div class="sample-row-path-wrap">
+                  <span class="sample-row-path" :class="{ 'sample-row-path--missing': isSampleMissing(sample) }">{{ sample.relativePath }}</span>
+                  <div
+                    v-if="hoveredSampleId === sample.id"
+                    class="sample-row-tooltip"
+                    :class="{ 'sample-row-tooltip--below': shouldTooltipOpenBelow(sampleListStartIndex + offset) }"
+                    role="tooltip"
+                  >
+                    <div class="sample-row-tooltip__header">
+                      <span class="sample-row-tooltip__title">{{ sample.displayName }}</span>
+                      <span class="sample-row-tooltip__meta">{{ sampleMeta(sample.language, sample.durationMs) }}</span>
+                    </div>
+                    <div class="sample-row-tooltip__badges">
+                      <span v-for="badge in sampleTooltipBadges(sample)" :key="badge" class="sample-row-tooltip__badge">{{ badge }}</span>
+                    </div>
+                    <div class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">路径</div>
+                      <p class="sample-row-tooltip__line">{{ sample.relativePath }}</p>
+                    </div>
+                    <div class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">原文</div>
+                      <p
+                        class="sample-row-tooltip__line sample-row-tooltip__line--highlight"
+                        :class="{ 'sample-row-tooltip__line--missing-text': !sample.expectedText?.trim() }"
+                      >
+                        {{ sample.expectedText?.trim() || "未读取到原文" }}
+                      </p>
+                    </div>
+                    <div v-if="sample.metadata?.sourceMd" class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">来源</div>
+                      <p class="sample-row-tooltip__line">{{ sample.metadata.sourceMd }}</p>
+                    </div>
+                    <div class="sample-row-tooltip__section">
+                      <div class="sample-row-tooltip__label sample-row-tooltip__label--accent">状态</div>
+                      <p class="sample-row-tooltip__line">{{ sampleTooltipStatus(sample) }}</p>
+                    </div>
+                  </div>
+                </div>
                 <span v-if="isSampleMissing(sample)" class="sample-row-missing">文件不存在，请重新扫描或检查目录。</span>
                 <div
                   v-else-if="shouldRenderSamplePreview(sample)"
@@ -2053,63 +2345,75 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section v-else-if="page === 'history'" class="result-stack">
-        <article class="panel">
+      <section v-else-if="page === 'history'" class="result-stack history-page">
+        <article class="panel history-list-panel">
           <div class="panel-header-row history-page-header">
             <div>
               <h3>历史列表</h3>
-              <p class="muted">支持导出每轮结果，也支持把外部 CSV 补录成历史测试记录。</p>
+              <p class="muted">每个批次和样本都有独立的 report 入口，点击后从右侧滑出当前项的总结。</p>
             </div>
-            <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
+            <div class="history-header-actions">
+              <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
+            </div>
           </div>
           <div class="session-stack">
-            <article v-for="group in resultSessionGroups" :key="group.session.id" class="session-card">
+            <article
+              v-for="group in historyResultGroups"
+              :key="`${group.session.id}-${group.appGroup.appName}`"
+              class="session-card"
+              :class="{
+                'session-card--selected': isSelectedHistoryGroup(group.session.id, group.appGroup.appName),
+                'session-card--session-first': group.isSessionFirst,
+                'session-card--session-last': group.isSessionLast,
+                'session-card--session-linked': group.appGroupCount > 1,
+              }"
+            >
               <div class="session-header">
-                <button class="session-toggle" @click="toggleSession(group.session.id)">
+                <button class="session-toggle" @click="selectHistoryGroup(group.session.id, group.appGroup.appName)">
                   <strong>{{ formatSessionTime(group.displayTime) }}</strong>
-                  <span v-if="sessionAppLabel(group.appGroups)" class="session-app-name">
-                    {{ sessionAppLabel(group.appGroups) }}
+                  <span class="session-app-name">
+                    {{ group.appGroup.appName }}
                   </span>
-                  <span v-if="sessionAppVersionText(group.appGroups)" class="session-app-version">
-                    {{ sessionAppVersionText(group.appGroups) }}
+                  <span v-if="appGroupVersionText(group.appGroup)" class="session-app-version">
+                    {{ appGroupVersionText(group.appGroup) }}
                   </span>
                   <div
                     class="muted session-summary"
-                    :class="{ 'session-summary--danger': group.session.failedCount > 0 }"
+                    :class="{ 'session-summary--danger': group.appGroup.failedCount > 0 }"
                   >
                     {{ sessionStatusText(group.session.status) }}
-                    · 共 {{ group.session.runCount }} 条
-                    · 成功 {{ group.session.successCount }}
-                    · 失败 {{ group.session.failedCount }}
-                    · 取消 {{ group.session.cancelledCount }}
+                    · 共 {{ group.appGroup.runs.length }} 条
+                    · 成功 {{ group.appGroup.successCount }}
+                    · 失败 {{ group.appGroup.failedCount }}
+                    · 取消 {{ group.appGroup.cancelledCount }}
                   </div>
-                  <span class="pill">{{ isSessionExpanded(group.session.id) ? "收起" : "展开" }}</span>
+                </button>
+                <button
+                  class="history-report-button"
+                  aria-label="查看 report"
+                  data-tooltip="查看 report"
+                  @click="openHistoryGroupReport(group.session.id, group.appGroup.appName)"
+                >
+                  report
+                </button>
+                <button
+                  class="session-expand-button"
+                  @click="toggleSession(historyGroupKey(group.session.id, group.appGroup.appName))"
+                >
+                  <span class="pill">{{ isSessionExpanded(historyGroupKey(group.session.id, group.appGroup.appName)) ? "收起" : "展开" }}</span>
                 </button>
                 <button
                   class="history-export-button"
-                  aria-label="导出本轮 ZIP"
-                  data-tooltip="导出本轮 ZIP"
-                  @click="exportBundle(group.session.id)"
+                  aria-label="导出该 App ZIP"
+                  data-tooltip="导出该 App ZIP"
+                  @click="exportBundle(group.session.id, group.appGroup.appName)"
                 >
                   <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
                 </button>
               </div>
 
-              <div v-if="isSessionExpanded(group.session.id)" class="app-group-stack">
-                <section v-for="appGroup in group.appGroups" :key="`${group.session.id}-${appGroup.appName}`" class="app-group-card">
-                  <div v-if="group.appGroups.length > 1" class="app-group-header">
-                    <div class="app-group-title">
-                      <strong>{{ appGroup.appName }}</strong>
-                      <span v-if="appGroupVersionText(appGroup)" class="history-app-version">{{ appGroupVersionText(appGroup) }}</span>
-                    </div>
-                    <div class="muted">
-                      共 {{ appGroup.runs.length }} 条
-                      · 成功 {{ appGroup.successCount }}
-                      · 失败 {{ appGroup.failedCount }}
-                      · 取消 {{ appGroup.cancelledCount }}
-                    </div>
-                  </div>
-
+              <div v-if="isSessionExpanded(historyGroupKey(group.session.id, group.appGroup.appName))" class="app-group-stack">
+                <section class="app-group-card">
                   <table class="result-table">
                     <colgroup>
                       <col style="width: 60%" />
@@ -2133,8 +2437,11 @@ onBeforeUnmount(() => {
                     </thead>
                     <tbody>
                       <tr
-                        v-for="result in appGroup.runs"
+                        v-for="result in group.appGroup.runs"
                         :key="result.id"
+                        class="history-result-row"
+                        :class="{ 'history-result-row--selected': isSelectedHistoryRun(result.id) }"
+                        @click="selectHistoryRun(result)"
                       >
                         <td class="history-sample-cell">
                           <div class="history-sample-main">
@@ -2167,7 +2474,7 @@ onBeforeUnmount(() => {
                           </button>
                         </td>
                       </tr>
-                      <tr v-if="!appGroup.runs.length">
+                      <tr v-if="!group.appGroup.runs.length">
                         <td colspan="7">这个应用在本轮还没有结果。</td>
                       </tr>
                     </tbody>
@@ -2176,9 +2483,42 @@ onBeforeUnmount(() => {
               </div>
             </article>
 
-            <div v-if="!resultSessionGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
+            <div v-if="!historyResultGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
           </div>
         </article>
+
+        <div
+          v-if="historyReportDrawerOpen"
+          class="history-report-backdrop"
+          @click="closeHistoryReportDrawer"
+        ></div>
+
+        <div
+          class="history-report-drawer"
+          :class="{ 'history-report-drawer--open': historyReportDrawerOpen }"
+          aria-hidden="true"
+        >
+          <article class="panel history-report-panel">
+            <div class="panel-header-row history-report-panel__header">
+              <div>
+                <h3>总结报告</h3>
+                <p class="muted">直接调用项目内置的 Python `analyze.py` 生成完整 Markdown 报告。</p>
+              </div>
+              <div class="history-report-panel__actions">
+                <button
+                  class="history-report-export-button"
+                  aria-label="导出 report"
+                  data-tooltip="导出 report"
+                  @click="exportHistoryReport"
+                >
+                  <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
+                </button>
+                <button class="history-report-close-icon" aria-label="关闭 report" @click="closeHistoryReportDrawer">×</button>
+              </div>
+            </div>
+            <MarkdownRender class="history-report-markdown" :content="historyReportMarkdown" />
+          </article>
+        </div>
       </section>
 
       <section v-else-if="page === 'apps'" class="settings-page apps-page">
@@ -2517,14 +2857,6 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="page === 'faq'" class="stack faq-page">
-        <article class="panel faq-hero">
-          <div>
-            <h3>测试时没听到扬声器声音，先看这里</h3>
-            <p class="muted">有些语音输入 App 会在听写开始时自动把其他活动音频静音。如果测试时听不到扬声器的声音，不一定是输出设备坏了，也可能是目标 App 自己把声音压掉了。</p>
-          </div>
-          <div class="pill warning">常见于语音输入类 App</div>
-        </article>
-
         <article class="panel faq-card">
           <div class="faq-card__copy">
             <div class="faq-eyebrow">常见问题 01</div>
@@ -2540,6 +2872,50 @@ onBeforeUnmount(() => {
             <img :src="muteDuringDictationImageUrl" alt="语音输入时静音设置示意图" />
             <figcaption>示意图：开启后，语音输入时会自动静音其他活动音频。</figcaption>
           </figure>
+        </article>
+
+        <article class="panel faq-card">
+          <div class="faq-card__copy">
+            <div class="faq-eyebrow">常见问题 02</div>
+            <h3>历史总结报告提示缺少 Python 3，怎么安装和验证？</h3>
+            <p>历史里的 <strong>report</strong> 会直接调用项目内置的 <code>analyze.py</code>。如果系统里没有 <code>python3</code>，报告就无法生成。</p>
+            <div class="faq-callout">
+              <strong>安装方式（macOS）</strong>
+              <p>如果还没有 Homebrew，可以先执行 <code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code> 安装。然后再运行 <code>brew install python</code>。装好后系统通常会提供 <code>python3</code> 命令。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>验证方式</strong>
+              <p>打开终端，依次运行 <code>python3 --version</code> 和 <code>which python3</code>。能看到版本号和可执行文件路径，就说明环境已就绪。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>安装后怎么处理</strong>
+              <p>安装完成后，重新打开本应用，再去“测试历史”里点对应批次的 <code>report</code> 重新生成即可。</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel faq-card">
+          <div class="faq-card__copy">
+            <div class="faq-eyebrow">常见问题 03</div>
+            <h3>导入 JSONL 样本时，需要什么格式？</h3>
+            <p>JSONL 需要是 <strong>一行一个 JSON 对象</strong>。每条记录至少要能定位音频文件，并最好带上用于对齐分析的文本内容。</p>
+            <div class="faq-callout">
+              <strong>最低要求</strong>
+              <p>每行至少提供 <code>audio_filepath</code>。这个路径会按 <strong>相对 JSONL 文件所在目录</strong> 来解析。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>推荐字段</strong>
+              <p>推荐同时提供 <code>text</code>、<code>id</code>、<code>duration</code>。其中 <code>text</code> 会作为 expectedText，用于后续历史 report 的对齐分析。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>示例</strong>
+              <p><code>{"id":"001","audio_filepath":"audio/001.wav","text":"今天下午三点开会。","duration":2.35}</code></p>
+            </div>
+            <div class="faq-callout">
+              <strong>可选扩展字段</strong>
+              <p>像 <code>group_id</code>、<code>category</code>、<code>subcategory</code>、<code>source_md</code> 这类字段会被保留为样本元信息，方便后续排查和展示。</p>
+            </div>
+          </div>
         </article>
       </section>
 

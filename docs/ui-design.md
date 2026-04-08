@@ -122,13 +122,13 @@ Suggested icon mapping:
 The current app shell has these first-level pages:
 
 - 主控台
-- 运行前检查
-- 样本
+- 样本管理
 - App管理
 - 测试历史
 - 设置
+- 运行前检查
 - 怎么开始
-- 常见问题
+- Q&A
 - 关于
 
 Global configuration lives in the dedicated `设置` page, while per-app editing lives in the dedicated `App管理` page rather than a modal.
@@ -137,7 +137,7 @@ The result experience is split into:
 
 - `主控台` for the current timeline and latest-session summary
 - `测试历史` for browsing persisted sessions and exporting one batch at a time, with hover/focus tooltips on sample paths so long ASR output can still be inspected without widening the table
-- `常见问题` for the most common audio-routing troubleshooting case with an inline illustration
+- `Q&A` for the most common audio-routing troubleshooting case with an inline illustration; page-level content still uses `常见问题 01` inside the card copy
 
 The current renderer is Chinese-first.
 
@@ -156,13 +156,13 @@ Overall shell:
 |----------------------|---------------------------------------------------------------|
 | Logo / App name      | Current page title                            Quick actions   |
 | 主控台               |---------------------------------------------------------------|
-| 运行前检查           |                                                               |
-| 样本                 |                                                               |
+| 样本管理             |                                                               |
 | App管理              |                                                               |
 | 测试历史             |                                                               |
 | 设置                 |                                                               |
+| 运行前检查           |                                                               |
 | 怎么开始             |                                                               |
-| 常见问题             |                                                               |
+| Q&A                  |                                                               |
 | 关于                 |                                                               |
 +--------------------------------------------------------------------------------------+
 ```
@@ -204,6 +204,7 @@ It should answer these questions at a glance:
 +--------------------------------------------------------------------------------------------------+
 | Main                                                                    [Start] [Close] |
 |--------------------------------------------------------------------------------------------------|
+| Warning / preflight banners (optional)                                                        |
 | Summary strip                                                                                   |
 | [Apps: 3] [Samples: 24] [Permission: Ready] [Device: BlackHole 2ch] [Progress: 12 / 24]        |
 |--------------------------------------------------------------------------------------------------|
@@ -213,19 +214,32 @@ It should answer these questions at a glance:
 | > Xiguashuo        Enabled                    | | voice typing appears... | | App start            |
 |   Wispr Flow       Enabled                    | |                         | | Sample start         |
 |   App C            Disabled                   | +-------------------------+ | Trigger start        |
-|-----------------------------------------------| Current status             | Audio start          |
-| App / sample / phase / message                | Current app + sample       | Trigger stop         |
+|-----------------------------------------------| explanatory copy + phase   | Audio start          |
+| .app name / builtin note / trigger mode       | pill only, no 4-card stack | Trigger stop         |
 |                                               |                            | End                  |
 |--------------------------------------------------------------------------------------------------|
 | Latest Session Summary                                                                           |
-| Xiguashuo -> total / success / avg first char / median / total time                              |
-| Wispr Flow -> total / success / avg first char / median / total time                             |
+| headline includes session time + status pill                                                     |
+| Xiguashuo -> compact stat grid                                                                   |
+| Wispr Flow -> compact stat grid                                                                  |
 +--------------------------------------------------------------------------------------------------+
 ```
 
 The main timeline should read from the same per-run timeline data that is stored with each run record. Live events may be merged with persisted per-run timelines while a session is active, but the renderer should not maintain a separate display-only event model after the run finishes.
 
 ### 5.3 Regions
+
+#### Warning / preflight banners
+
+Use short full-width banners above the workspace when needed:
+
+- accessibility is still missing for one or more enabled real apps
+- preflight has one or more blocking failures
+
+The accessibility banner keeps these two actions:
+
+- `请求辅助功能权限`
+- `打开系统设置`
 
 #### Summary strip
 
@@ -259,18 +273,18 @@ This is the visual anchor.
 
 The input box card should be the largest area because it is the thing being measured.
 
-Under the input box, show a compact status stack:
+The current implementation no longer shows a separate four-item status stack under the input box.
+Current state is instead surfaced by:
 
-- current state
-- current message
-- current app
-- current sample
+- the phase pill on the live card
+- the right-side timeline
+- the progress item in the top summary strip
 
 Below the main region, show one summary area for the latest session:
 
 - grouped by app
 - parent app title is more prominent
-- child stats are smaller and tighter
+- child stats are smaller and tighter in a compact plain grid
 - no raw recognized paragraph in this area
 
 #### Right column
@@ -312,8 +326,9 @@ Only global editable settings live on the dedicated `设置` page.
 
 ### 6.2 Structure
 
-The current page has two main blocks:
+The current page has three visible functional blocks:
 
+- top actions
 - base settings
 - advanced parameters
 - permissions and devices
@@ -326,6 +341,14 @@ Fields:
 - output device
 - database path
 - external sample root
+
+These two path rows keep inline chooser buttons:
+
+- database path -> `选择`
+- external sample root -> `选择`
+
+Regular timing fields remain in the main settings card:
+
 - app launch delay
 - focus input delay
 - next sample play delay
@@ -453,7 +476,7 @@ It should feel factual, lightweight, and closer to an about / methodology page t
 | About                                                                            |
 |----------------------------------------------------------------------------------|
 | 方法说明 / 当前结果 / 接下来                                                     |
-| Version v0.1.13                                                                   |
+| Version v0.2.1                                                                    |
 |                                                                                  |
 | 这不是 release notes 墙，而是一页 methodology 说明。                             |
 |                                                                                  |

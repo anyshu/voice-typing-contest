@@ -47,7 +47,7 @@ function setupDesktopApi(options?: {
     isBuiltin: Boolean(app.launchCommand?.startsWith("selftest://")),
   }));
   const api = {
-    getVersion: vi.fn(async () => "0.1.13"),
+    getVersion: vi.fn(async () => "0.2.1"),
     getSettings: vi.fn(async (): Promise<SettingsPayload> => settings),
     saveSettings: vi.fn(async () => ({ ok: true })),
     pickSampleRoot: vi.fn(async () => undefined),
@@ -76,6 +76,9 @@ function setupDesktopApi(options?: {
     listResults: vi.fn(async (): Promise<TestRunRecord[]> => []),
     listResultSessions: vi.fn(async (): Promise<RunSessionSummary[]> => sessions),
     getResultDetail: vi.fn(async () => undefined),
+    generateHistoryReport: vi.fn(async (_runSessionId: string, appName: string, runId?: string) =>
+      runId ? `# ${runId}\n\n单条报告` : `# ${appName} 总结报告\n\n批次报告`),
+    exportHistoryReport: vi.fn(async () => undefined),
     exportBundle: vi.fn(async () => undefined),
     pickImportCsv: vi.fn(async () => undefined),
     importCsv: vi.fn(async () => ({
@@ -710,8 +713,29 @@ describe("App renderer", () => {
     expect(wrapper.text()).not.toContain("发送收口热键");
   });
 
-  it("shows only the history list on the history page", async () => {
-    setupDesktopApi();
+  it("opens the current item report drawer from its card-level report button", async () => {
+    const { api } = setupDesktopApi();
+    api.generateHistoryReport.mockResolvedValue("# Wispr Flow 总结报告\n\n## 整体指标");
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-history-page-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        appVersion: "1.2.3",
+        sampleId: "sample-1",
+        samplePath: "zh.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "ok",
+        normalizedText: "ok",
+        expectedText: "ok",
+        inputEventCount: 1,
+        finalTextLength: 2,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
     const wrapper = mount(App);
     await flushPromises();
 
@@ -722,8 +746,12 @@ describe("App renderer", () => {
 
     expect(wrapper.text()).toContain("历史列表");
     expect(wrapper.text()).toContain("导入CSV");
-    expect(wrapper.find('button[aria-label="导出本轮 ZIP"]').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain("输入检测区");
+    expect(wrapper.find('button[aria-label="导出该 App ZIP"]').exists()).toBe(true);
+    expect(wrapper.find(".history-report-drawer").classes()).not.toContain("history-report-drawer--open");
+    await wrapper.get("button.history-report-button").trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".history-report-drawer").classes()).toContain("history-report-drawer--open");
+    expect(wrapper.find(".history-report-markdown").text()).toContain("Wispr Flow 总结报告");
   });
 
   it("opens the CSV import dialog from the history header", async () => {
@@ -783,10 +811,9 @@ describe("App renderer", () => {
     await faqButton!.trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("测试时没听到扬声器声音，先看这里");
+    expect(wrapper.text()).toContain("为什么开始测试后，扬声器没声音了？");
     expect(wrapper.text()).toContain("语音输入时静音");
     expect(wrapper.text()).toContain("Typeless");
-    expect(wrapper.find('.faq-shot img[alt="语音输入时静音设置示意图"]').exists()).toBe(true);
   });
 
   it("merges same-app timeline across runs on the main console so launch and close are both visible", async () => {
@@ -1008,7 +1035,7 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("闪电说 已发送关闭指令");
   });
 
-  it("groups results under collapsible run sessions and exports the selected session", async () => {
+  it("groups results under collapsible run sessions and exports the selected app card", async () => {
     const { api } = setupDesktopApi();
     const groupedRuns: TestRunRecord[] = [
       {
@@ -1040,12 +1067,12 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("03/23");
     expect(wrapper.text()).toContain("Wispr Flow");
 
-    const exportButton = wrapper.find('button[aria-label="导出本轮 ZIP"]');
+    const exportButton = wrapper.find('button[aria-label="导出该 App ZIP"]');
     expect(exportButton.exists()).toBe(true);
     await exportButton.trigger("click");
     await flushPromises();
 
-    expect(api.exportBundle).toHaveBeenCalledWith("session-1");
+    expect(api.exportBundle).toHaveBeenCalledWith("session-1", "Wispr Flow");
   });
 
   it("highlights failed history session summary text in red", async () => {
@@ -1120,6 +1147,82 @@ describe("App renderer", () => {
     expect(wrapper.get(".session-app-name").text()).toBe("Typeless");
   });
 
+  it("splits multi-app history into separate app cards", async () => {
+    const { api, sessions } = setupDesktopApi();
+    sessions[0] = {
+      ...sessions[0],
+      id: "session-multi-app-history",
+      runCount: 2,
+      successCount: 2,
+      failedCount: 0,
+      cancelledCount: 0,
+      status: "completed",
+      startedAt: "2026-03-25T06:00:00.000Z",
+      finishedAt: "2026-03-25T06:00:45.000Z",
+    };
+    api.listResults.mockResolvedValueOnce([
+      {
+        id: "run-xigua-history-1",
+        runSessionId: "session-multi-app-history",
+        appId: "xiguashuo",
+        appName: "西瓜说",
+        sampleId: "sample-1",
+        samplePath: "first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "first",
+        normalizedText: "first",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-25T06:00:20.000Z",
+        timeline: [],
+      },
+      {
+        id: "run-shandian-history-1",
+        runSessionId: "session-multi-app-history",
+        appId: "shandianshuo",
+        appName: "闪电说",
+        sampleId: "sample-2",
+        samplePath: "second.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "second",
+        normalizedText: "second",
+        inputEventCount: 1,
+        finalTextLength: 6,
+        createdAt: "2026-03-25T06:00:45.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    const toggles = wrapper.findAll("button.session-toggle");
+    expect(toggles).toHaveLength(2);
+    const toggleTexts = toggles.map((item) => item.text());
+    expect(toggleTexts.some((text) => text.includes("西瓜说"))).toBe(true);
+    expect(toggleTexts.some((text) => text.includes("闪电说"))).toBe(true);
+    expect(wrapper.text()).not.toContain("本轮 2 个 App");
+    expect(wrapper.text()).not.toContain("等 2 个 App");
+
+    const exportButtons = wrapper.findAll('button[aria-label="导出该 App ZIP"]');
+    expect(exportButtons).toHaveLength(2);
+
+    await exportButtons[0]!.trigger("click");
+    await flushPromises();
+
+    expect(api.exportBundle).toHaveBeenCalledTimes(1);
+    expect(api.exportBundle.mock.calls[0]).toEqual([
+      "session-multi-app-history",
+      expect.stringMatching(/^(西瓜说|闪电说)$/),
+    ]);
+  });
+
   it("shows a retry icon for failed history rows and reruns only that app/sample", async () => {
     const { api } = setupDesktopApi();
     const groupedRuns: TestRunRecord[] = [
@@ -1149,6 +1252,8 @@ describe("App renderer", () => {
     const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
     expect(historyButton).toBeTruthy();
     await historyButton!.trigger("click");
+    await flushPromises();
+    await wrapper.get(".session-expand-button").trigger("click");
     await flushPromises();
 
     const retryButton = wrapper.find('button[aria-label="重新测试"]');
@@ -1209,6 +1314,8 @@ describe("App renderer", () => {
     expect(historyButton).toBeTruthy();
     await historyButton!.trigger("click");
     await flushPromises();
+    await wrapper.get(".session-expand-button").trigger("click");
+    await flushPromises();
 
     await wrapper.find('button[aria-label="重新测试"]').trigger("click");
     await flushPromises();
@@ -1266,6 +1373,8 @@ describe("App renderer", () => {
     expect(historyButton).toBeTruthy();
     await historyButton!.trigger("click");
     await flushPromises();
+    await wrapper.get(".session-expand-button").trigger("click");
+    await flushPromises();
 
     await wrapper.find('button[aria-label="重新测试"]').trigger("click");
     await flushPromises();
@@ -1304,13 +1413,15 @@ describe("App renderer", () => {
     expect(historyButton).toBeTruthy();
     await historyButton!.trigger("click");
     await flushPromises();
+    await wrapper.get(".session-expand-button").trigger("click");
+    await flushPromises();
 
     expect(wrapper.text()).toContain("重试");
     expect(wrapper.text()).toContain("2");
     expect(wrapper.find(".history-sample-text").attributes("data-tooltip")).toBe("内建自测/english-01.wav");
   });
 
-  it("uses the retry completion time as the displayed session time for merged history rows", async () => {
+  it("uses the session start time as the displayed history time for merged rows", async () => {
     const { api, sessions } = setupDesktopApi();
     sessions[0] = {
       ...sessions[0],
@@ -1343,7 +1454,7 @@ describe("App renderer", () => {
     await historyButton!.trigger("click");
     await flushPromises();
 
-    const expectedDisplayTime = new Date("2026-03-24T07:25:27.000Z").toLocaleString("zh-CN", {
+    const expectedDisplayTime = new Date("2026-03-23T10:00:00.000Z").toLocaleString("zh-CN", {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
@@ -1382,8 +1493,277 @@ describe("App renderer", () => {
     expect(historyButton).toBeTruthy();
     await historyButton!.trigger("click");
     await flushPromises();
+    await wrapper.get(".session-expand-button").trigger("click");
+    await flushPromises();
 
     expect(wrapper.find('button[aria-label="重新测试"]').exists()).toBe(true);
+  });
+
+  it("switches the right-side history report when selecting a sample row", async () => {
+    const { api } = setupDesktopApi();
+    api.generateHistoryReport
+      .mockResolvedValueOnce("# Wispr Flow 总结报告\n\n批次")
+      .mockResolvedValueOnce("# second.wav\n\n## 捕获文本\n\nbroken output");
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-sample-report-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "first output",
+        normalizedText: "first output",
+        expectedText: "first output",
+        inputEventCount: 1,
+        finalTextLength: 12,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+      {
+        id: "run-sample-report-2",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-2",
+        samplePath: "second.wav",
+        status: "failed",
+        phase: "failed",
+        rawText: "broken output",
+        normalizedText: "broken output",
+        expectedText: "second output",
+        failureReason: "no text observed",
+        inputEventCount: 1,
+        finalTextLength: 13,
+        createdAt: "2026-03-23T10:02:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+    await wrapper.get(".session-expand-button").trigger("click");
+    await flushPromises();
+
+    const report = () => wrapper.get(".history-report-markdown").text();
+    expect(report()).toContain("Wispr Flow 总结报告");
+
+    await wrapper.findAll("tr.history-result-row")[1]!.trigger("click");
+    await flushPromises();
+
+    expect(report()).toContain("second.wav");
+    expect(report()).toContain("捕获文本");
+    expect(report()).toContain("broken output");
+  });
+
+  it("backfills expectedText for history reports from the current sample config", async () => {
+    const { api, settings } = setupDesktopApi();
+    api.generateHistoryReport.mockResolvedValue("# Wispr Flow 总结报告\n\n| 对齐样本平均准确率 | 100.00% |");
+    settings.sampleSourceType = "jsonl";
+    settings.audioSamples = [
+      {
+        id: "sample-jsonl-1",
+        filePath: "/tmp/first.wav",
+        relativePath: "jsonl/first.wav",
+        displayName: "first.wav",
+        expectedText: "jsonl ground truth",
+        language: "zh",
+        durationMs: 1000,
+        tags: ["jsonl"],
+        enabled: true,
+        exists: true,
+        sourceType: "jsonl",
+        metadata: { jsonlPath: "/tmp/samples.jsonl" },
+      },
+    ];
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-jsonl-history-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-jsonl-1",
+        samplePath: "jsonl/first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "jsonl ground truth",
+        normalizedText: "jsonl ground truth",
+        inputEventCount: 1,
+        finalTextLength: 17,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    const report = wrapper.get(".history-report-markdown").text();
+    expect(report).not.toContain("当前缺少 expectedText 对齐样本");
+    expect(report).toContain("对齐样本平均准确率");
+  });
+
+  it("shows recorded jsonl source info in the history report when expectedText is missing", async () => {
+    const { api } = setupDesktopApi();
+    api.generateHistoryReport.mockResolvedValue("# Wispr Flow 总结报告\n\n- 对齐来源：/tmp/archive/samples.jsonl#row-19");
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-jsonl-source-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-jsonl-missing",
+        samplePath: "jsonl/missing.wav",
+        sampleSourceType: "jsonl",
+        sampleMetadata: {
+          jsonlPath: "/tmp/archive/samples.jsonl",
+          sourceId: "row-19",
+          sourceMd: "dataset/v2",
+        },
+        status: "success",
+        phase: "completed",
+        rawText: "some output",
+        normalizedText: "some output",
+        inputEventCount: 1,
+        finalTextLength: 11,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    const report = wrapper.get(".history-report-markdown").text();
+    expect(report).toContain("/tmp/archive/samples.jsonl#row-19");
+    expect(report).not.toContain("当前缺少 expectedText 对齐样本");
+  });
+
+  it("keeps history groups collapsed by default", async () => {
+    const { api } = setupDesktopApi();
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-collapsed-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "samples/first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "hello",
+        normalizedText: "hello",
+        expectedText: "hello",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".app-group-stack").exists()).toBe(false);
+    expect(wrapper.get(".session-expand-button .pill").text()).toBe("展开");
+  });
+
+  it("exports the visible history report from the drawer", async () => {
+    const { api } = setupDesktopApi();
+    api.exportHistoryReport.mockResolvedValue("/tmp/Wispr-Flow-批次总结.md");
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-history-export-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "samples/first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "hello",
+        normalizedText: "hello",
+        expectedText: "hello",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    await wrapper.get("button.history-report-button").trigger("click");
+    await flushPromises();
+
+    await wrapper.get("button.history-report-export-button").trigger("click");
+    await flushPromises();
+
+    expect(api.exportHistoryReport).toHaveBeenCalledWith(
+      "# Wispr Flow 总结报告\n\n批次报告",
+      "Wispr Flow · 批次总结",
+    );
+    expect(wrapper.text()).toContain("报告已导出到：/tmp/Wispr-Flow-批次总结.md");
+  });
+
+  it("shows a clear message when Python 3 is unavailable for history reports", async () => {
+    const { api } = setupDesktopApi();
+    api.generateHistoryReport.mockRejectedValue(new Error("当前机器缺少 Python 3 运行环境，无法生成历史总结报告。请先安装 `python3`，或改用 CSV / ZIP 导出。"));
+    api.listResults.mockResolvedValue([
+      {
+        id: "run-python-missing-1",
+        runSessionId: "session-1",
+        appId: "wispr",
+        appName: "Wispr Flow",
+        sampleId: "sample-1",
+        samplePath: "samples/first.wav",
+        status: "success",
+        phase: "completed",
+        rawText: "hello",
+        normalizedText: "hello",
+        expectedText: "hello",
+        inputEventCount: 1,
+        finalTextLength: 5,
+        createdAt: "2026-03-23T10:01:00.000Z",
+        timeline: [],
+      },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const historyButton = wrapper.findAll("button.nav-button").find((item) => item.text() === "测试历史");
+    expect(historyButton).toBeTruthy();
+    await historyButton!.trigger("click");
+    await flushPromises();
+
+    await wrapper.get("button.history-report-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".history-report-markdown").text()).toContain("当前机器缺少 Python 3 运行环境");
+    expect(wrapper.text()).toContain("当前机器缺少 Python 3 运行环境");
   });
 
   it("clears the previous main-page results when a new run starts", async () => {

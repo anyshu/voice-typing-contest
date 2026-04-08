@@ -207,7 +207,7 @@ async function createWindow(): Promise<void> {
   const sampleManager = new SampleManager();
   if (!config.audioSamples.length) {
     try {
-      config.audioSamples = await sampleManager.scan(config.sampleRoot);
+      config.audioSamples = await sampleManager.loadFromConfig(config);
       configStore.save(config);
     } catch {
       config.audioSamples = [];
@@ -270,7 +270,7 @@ async function createWindow(): Promise<void> {
     setConfig: (next) => {
       config = next;
       if (!config.audioSamples.length) {
-        void sampleManager.scan(config.sampleRoot).then((samples) => {
+        void sampleManager.loadFromConfig(config).then((samples) => {
           config.audioSamples = samples;
           configStore.save(config);
           resultStore.syncConfig(config);

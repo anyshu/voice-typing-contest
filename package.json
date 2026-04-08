@@ -1,6 +1,6 @@
 {
   "name": "voice-typing-contest",
-  "version": "0.1.13",
+  "version": "0.2.1",
   "private": true,
   "description": "macOS Electron benchmark app for voice typing tools",
   "main": "out/main/index.js",
@@ -76,6 +76,14 @@
       {
         "from": "scripts/vtc-helper-fallback.mjs",
         "to": "scripts/vtc-helper-fallback.mjs"
+      },
+      {
+        "from": "scripts/history-report/analyze.py",
+        "to": "scripts/history-report/analyze.py"
+      },
+      {
+        "from": "scripts/history-report/西瓜说_语音测试数据集_v1.md",
+        "to": "scripts/history-report/西瓜说_语音测试数据集_v1.md"
       }
     ],
     "mac": {

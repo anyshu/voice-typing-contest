@@ -6,7 +6,9 @@ const api = {
   getSettings: async () => await ipcRenderer.invoke("settings:get"),
   saveSettings: async (config: AppConfig) => await ipcRenderer.invoke("settings:save", config),
   pickSampleRoot: async () => await ipcRenderer.invoke("samples:pickRoot"),
-  rescanSamples: async (root: string) => await ipcRenderer.invoke("samples:rescan", root),
+  pickSampleJsonl: async () => await ipcRenderer.invoke("samples:pickJsonl"),
+  rescanSamples: async (config: Pick<AppConfig, "sampleSourceType" | "sampleRoot" | "sampleJsonlPath">) =>
+    await ipcRenderer.invoke("samples:rescan", config),
   getSamplePreviewData: async (sample: AudioSample) => await ipcRenderer.invoke("samples:getPreviewData", sample),
   pickDatabasePath: async () => await ipcRenderer.invoke("database:pickPath"),
   refreshPermissions: async () => await ipcRenderer.invoke("permissions:refresh"),
@@ -23,7 +25,11 @@ const api = {
   listResults: async () => await ipcRenderer.invoke("results:list"),
   listResultSessions: async () => await ipcRenderer.invoke("results:listSessions"),
   getResultDetail: async (runId: string) => await ipcRenderer.invoke("results:getDetail", runId),
-  exportBundle: async (runSessionId?: string) => await ipcRenderer.invoke("results:exportBundle", runSessionId),
+  generateHistoryReport: async (runSessionId: string, appName: string, runId?: string) =>
+    await ipcRenderer.invoke("results:generateHistoryReport", runSessionId, appName, runId),
+  exportHistoryReport: async (markdown: string, reportTitle?: string) =>
+    await ipcRenderer.invoke("results:exportHistoryReport", markdown, reportTitle),
+  exportBundle: async (runSessionId?: string, appName?: string) => await ipcRenderer.invoke("results:exportBundle", runSessionId, appName),
   pickImportCsv: async () => await ipcRenderer.invoke("results:pickImportCsv"),
   importCsv: async (filePath: string) => await ipcRenderer.invoke("results:importCsv", filePath),
   importCsvContent: async (csvText: string, sourceName: string) => await ipcRenderer.invoke("results:importCsvContent", csvText, sourceName),

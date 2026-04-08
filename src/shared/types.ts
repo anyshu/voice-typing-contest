@@ -174,6 +174,8 @@ export interface TestRunRecord {
   appVersion?: string;
   sampleId: string;
   samplePath: string;
+  sampleSourceType?: SampleSourceType;
+  sampleMetadata?: AudioSampleMetadata;
   status: ResultStatus;
   phase: RunPhase;
   failureCategory?: FailureCategory;

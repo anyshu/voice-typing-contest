@@ -76,6 +76,14 @@
       {
         "from": "scripts/vtc-helper-fallback.mjs",
         "to": "scripts/vtc-helper-fallback.mjs"
+      },
+      {
+        "from": "scripts/history-report/analyze.py",
+        "to": "scripts/history-report/analyze.py"
+      },
+      {
+        "from": "scripts/history-report/西瓜说_语音测试数据集_v1.md",
+        "to": "scripts/history-report/西瓜说_语音测试数据集_v1.md"
       }
     ],
     "mac": {

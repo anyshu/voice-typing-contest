@@ -35,6 +35,12 @@ describe("ResultStore", () => {
       appVersion: "1.2.3",
       sampleId: "sample-1",
       samplePath: "a.wav",
+      sampleSourceType: "jsonl",
+      sampleMetadata: {
+        jsonlPath: "/tmp/source.jsonl",
+        sourceId: "item-1",
+        sourceMd: "dataset/v1",
+      },
       status: "success",
       phase: "completed",
       rawText: "hello",
@@ -104,6 +110,9 @@ describe("ResultStore", () => {
     expect(csv).toContain("retry_attempt");
     expect(csv).toContain("app_name");
     expect(csv).toContain("app_version");
+    expect(csv).toContain("sample_source_type");
+    expect(csv).toContain("sample_jsonl_path");
+    expect(csv).toContain("sample_source_id");
     expect(csv).toContain("trigger_stop_to_first_char_ms");
     expect(csv).toContain("trigger_stop_to_final_text_ms");
     expect(csv).toContain("average_cpu_percent");
@@ -131,6 +140,8 @@ describe("ResultStore", () => {
     expect(filteredResourceSummaryCsv).not.toContain("\"run-2\"");
     expect(store.getRunDetail("run-1")?.record.appName).toBe("App");
     expect(store.getRunDetail("run-1")?.record.appVersion).toBe("1.2.3");
+    expect(store.getRunDetail("run-1")?.record.sampleSourceType).toBe("jsonl");
+    expect(store.getRunDetail("run-1")?.record.sampleMetadata?.jsonlPath).toBe("/tmp/source.jsonl");
     expect(store.listRuns()[0]?.timeline).toEqual([]);
     store.close();
   });

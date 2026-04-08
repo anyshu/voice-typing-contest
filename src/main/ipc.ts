@@ -38,6 +38,61 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
     ipcMain.handle(channel, listener);
   };
 
+  const resolveAnalyzeScriptPath = (): string => {
+    if (app.isPackaged) {
+      return join(process.resourcesPath, "scripts", "history-report", "analyze.py");
+    }
+    return join(app.getAppPath(), "scripts", "history-report", "analyze.py");
+  };
+
+  const buildHistoryReportRows = (runSessionId: string, appName: string, runId?: string) => {
+    const runs = deps.resultStore.listRuns(runSessionId)
+      .filter((row) => row.appName === appName)
+      .filter((row) => !runId || row.id === runId);
+    const samples = deps.getConfig().audioSamples;
+    const expectedById = new Map(samples.filter((item) => item.expectedText?.trim()).map((item) => [item.id, item.expectedText!.trim()]));
+    const expectedByPath = new Map(samples
+      .filter((item) => item.expectedText?.trim())
+      .flatMap((item) => [[item.relativePath, item.expectedText!.trim()], [item.filePath, item.expectedText!.trim()]]));
+    const metadataById = new Map(samples.filter((item) => item.metadata).map((item) => [item.id, item.metadata]));
+    const metadataByPath = new Map(samples
+      .filter((item) => item.metadata)
+      .flatMap((item) => [[item.relativePath, item.metadata], [item.filePath, item.metadata]]));
+    const sourceTypeById = new Map(samples.filter((item) => item.sourceType).map((item) => [item.id, item.sourceType]));
+    const sourceTypeByPath = new Map(samples
+      .filter((item) => item.sourceType)
+      .flatMap((item) => [[item.relativePath, item.sourceType], [item.filePath, item.sourceType]]));
+
+    return runs.map((row) => {
+      const expectedText = row.expectedText?.trim()
+        || expectedById.get(row.sampleId)
+        || expectedByPath.get(row.samplePath)
+        || "";
+      const metadata = row.sampleMetadata
+        ?? metadataById.get(row.sampleId)
+        ?? metadataByPath.get(row.samplePath);
+      const sampleSourceType = row.sampleSourceType
+        ?? sourceTypeById.get(row.sampleId)
+        ?? sourceTypeByPath.get(row.samplePath)
+        ?? "";
+      const sampleSource = sampleSourceType === "jsonl"
+        ? [metadata?.jsonlPath, metadata?.sourceId].filter(Boolean).join("#")
+        : "";
+      return {
+        app_name: row.appName,
+        app_version: row.appVersion ?? "",
+        sample_path: row.samplePath,
+        status: row.status,
+        failure_category: row.failureCategory ?? "",
+        failure_reason: row.failureReason ?? "",
+        trigger_stop_to_final_text_ms: row.triggerStopToFinalTextMs ?? "",
+        raw_text: row.rawText,
+        expected_text: expectedText,
+        sample_source: sampleSource,
+      };
+    });
+  };
+
   handle("settings:get", async () => {
     let current = deps.getConfig();
     const validation = await deps.sampleManager.validate(current.audioSamples);
@@ -205,6 +260,55 @@ export function registerIpc(win: BrowserWindow, deps: IpcDeps): void {
   handle("results:list", async () => deps.resultStore.listRuns());
   handle("results:listSessions", async () => deps.resultStore.listSessions());
   handle("results:getDetail", async (_event, runId: string) => deps.resultStore.getRunDetail(runId));
+  handle("results:generateHistoryReport", async (_event, runSessionId: string, appName: string, runId?: string) => {
+    const rows = buildHistoryReportRows(runSessionId, appName, runId);
+    if (!rows.length) {
+      return "# 测试历史总结\n\n没有可供分析的样本。";
+    }
+
+    const tempRoot = await mkdtemp(join(tmpdir(), "vtc-history-report-"));
+    const inputCsvPath = join(tempRoot, "history-input.csv");
+    const outputCsvPath = join(tempRoot, "history-output.csv");
+    const outputMdPath = join(tempRoot, "history-report.md");
+    try {
+      const headers = Object.keys(rows[0]!);
+      const csv = [
+        headers.join(","),
+        ...rows.map((row) => headers.map((key) => `"${String(row[key as keyof typeof row]).replaceAll(`"`, `""`)}"`).join(",")),
+      ].join("\n");
+      await writeFile(inputCsvPath, csv, "utf8");
+      await execFileAsync("python3", [
+        resolveAnalyzeScriptPath(),
+        "--apps", appName,
+        "--input-csv", inputCsvPath,
+        "--out-csv", outputCsvPath,
+        "--out-md", outputMdPath,
+      ]);
+      return await readFile(outputMdPath, "utf8");
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        throw new Error("当前机器缺少 Python 3 运行环境，无法生成历史总结报告。请先安装 `python3`，或改用 CSV / ZIP 导出。");
+      }
+      throw new Error(`生成历史报告失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+  handle("results:exportHistoryReport", async (_event, markdown: string, reportTitle?: string) => {
+    const safeTitle = (reportTitle ?? "history-report")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      || "history-report";
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: `${safeTitle}.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (result.canceled || !result.filePath) return undefined;
+    await writeFile(result.filePath, markdown, "utf8");
+    return result.filePath;
+  });
   handle("results:exportBundle", async (_event, runSessionId?: string, appName?: string) => {
     const safeAppName = appName?.replace(/[\\/:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
     const suffix = `${runSessionId ? `-${runSessionId.slice(0, 8)}` : ""}${safeAppName ? `-${safeAppName}` : ""}`;

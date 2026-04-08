@@ -22,6 +22,7 @@ import {
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import VersionNotesPanel from "./components/VersionNotesPanel.vue";
+import MarkdownRender from "./components/MarkdownRender.vue";
 import { defaultConfig } from "../shared/defaults";
 import { safeTimelinePayload, timelineDetail, timelineTitle } from "../shared/timeline";
 import type {
@@ -53,6 +54,9 @@ const installedAppInfoById = ref<Record<string, InstalledTargetAppInfo>>({});
 const sessions = ref<RunSessionSummary[]>([]);
 const results = ref<TestRunRecord[]>([]);
 const expandedSessionIds = ref<string[]>([]);
+const selectedHistoryItemKey = ref<string | null>(null);
+const historyReportDrawerOpen = ref(false);
+const historyReportMarkdown = ref("# 测试历史总结\n\n正在准备报告…");
 const progress = ref<RunProgress>({ phase: "idle", textValue: "", message: "空闲", completedRuns: 0, totalRuns: 0 });
 const preflightReport = ref<PreflightReport | null>(null);
 const liveTimelineByRunId = ref<Record<string, RunEventRecord[]>>({});
@@ -202,6 +206,22 @@ const historyResultGroups = computed(() => resultSessionGroups.value
     if (timeCompare !== 0) return timeCompare;
     return left.appGroup.appName.localeCompare(right.appGroup.appName, "zh-CN");
   }));
+const sampleExpectedTextById = computed(() => new Map(
+  config.value.audioSamples
+    .filter((sample) => sample.expectedText?.trim())
+    .map((sample) => [sample.id, sample.expectedText!.trim()]),
+));
+const sampleExpectedTextByPath = computed(() => new Map(
+  config.value.audioSamples
+    .filter((sample) => sample.expectedText?.trim())
+    .flatMap((sample) => {
+      const expected = sample.expectedText!.trim();
+      return [
+        [sample.relativePath, expected] as const,
+        [sample.filePath, expected] as const,
+      ];
+    }),
+));
 const pageTitle = computed(() => {
   if (page.value === "main") return "主控台";
   if (page.value === "checks") return "运行前检查";
@@ -697,6 +717,12 @@ function appGroupVersionText(appGroup: { appVersions?: string[] }): string {
   return `${versions[0]} 等 ${versions.length} 个版本`;
 }
 
+function formatHistoryReportVersionLabel(versionText: string): string {
+  if (!versionText) return "";
+  if (versionText.includes("等")) return versionText.replace(/^v?/i, "v");
+  return `v${versionText.replace(/^v/i, "")}`;
+}
+
 function formatSessionTimestamp(value: string): string {
   const date = new Date(value);
   const year = date.getFullYear();
@@ -710,6 +736,77 @@ function formatSessionTimestamp(value: string): string {
 
 function historyGroupKey(sessionId: string, appName: string): string {
   return `${sessionId}:${appName}`;
+}
+
+function historyReportGroupKey(sessionId: string, appName: string): string {
+  return `group:${historyGroupKey(sessionId, appName)}`;
+}
+
+function historyReportRunKey(runId: string): string {
+  return `run:${runId}`;
+}
+
+function resolveHistoryExpectedText(run: TestRunRecord): string | undefined {
+  const own = run.expectedText?.trim();
+  if (own) return own;
+  const byId = sampleExpectedTextById.value.get(run.sampleId)?.trim();
+  if (byId) return byId;
+  const byPath = sampleExpectedTextByPath.value.get(run.samplePath)?.trim();
+  if (byPath) return byPath;
+  return undefined;
+}
+
+function hydrateHistoryRun(run: TestRunRecord): TestRunRecord {
+  const expectedText = resolveHistoryExpectedText(run);
+  return expectedText && expectedText !== run.expectedText
+    ? { ...run, expectedText }
+    : run;
+}
+
+function hydrateHistoryGroup<T extends { appGroup: { runs: TestRunRecord[] } }>(group: T): T {
+  return {
+    ...group,
+    appGroup: {
+      ...group.appGroup,
+      runs: group.appGroup.runs.map((run) => hydrateHistoryRun(run)),
+    },
+  };
+}
+
+async function loadSelectedHistoryReport(): Promise<void> {
+  const run = selectedHistoryRun.value ? hydrateHistoryRun(selectedHistoryRun.value) : undefined;
+  const group = selectedHistoryGroup.value ? hydrateHistoryGroup(selectedHistoryGroup.value) : undefined;
+  const fallbackGroup = !run && !group && historyResultGroups.value[0] ? hydrateHistoryGroup(historyResultGroups.value[0]) : undefined;
+  const targetGroup = group ?? fallbackGroup;
+
+  if (!run && !targetGroup) {
+    historyReportMarkdown.value = [
+      "# 测试历史总结",
+      "",
+      "还没有可展示的报告。",
+      "",
+      "- 先跑一轮测试，或者导入一份兼容的 CSV。",
+      "- 左侧点任意批次或样本，右侧会切换到对应的 Markdown 报告。",
+    ].join("\n");
+    return;
+  }
+
+  historyReportMarkdown.value = "# 测试历史总结\n\n正在生成 Python 报告…";
+  try {
+    historyReportMarkdown.value = await window.vtc.generateHistoryReport(
+      run?.runSessionId ?? targetGroup!.session.id,
+      run?.appName ?? targetGroup!.appGroup.appName,
+      run?.id,
+    ) as string;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast(message);
+    historyReportMarkdown.value = [
+      "# 测试历史总结",
+      "",
+      `生成报告失败：${message}`,
+    ].join("\n");
+  }
 }
 
 function formatLatencyMs(value?: number): string {
@@ -753,6 +850,35 @@ function median(values: number[]): number | undefined {
 }
 
 const latestSessionGroup = computed(() => resultSessionGroups.value[0]);
+const selectedHistoryGroup = computed(() => {
+  const key = selectedHistoryItemKey.value;
+  if (!key?.startsWith("group:")) return undefined;
+  return historyResultGroups.value.find((group) => historyReportGroupKey(group.session.id, group.appGroup.appName) === key);
+});
+const selectedHistoryRun = computed(() => {
+  const key = selectedHistoryItemKey.value;
+  if (!key?.startsWith("run:")) return undefined;
+  const runId = key.slice(4);
+  return results.value.find((item) => item.id === runId);
+});
+const selectedHistoryReportTitle = computed(() => {
+  if (selectedHistoryRun.value) {
+    return selectedHistoryRun.value.samplePath;
+  }
+  if (selectedHistoryGroup.value) {
+    return `${selectedHistoryGroup.value.appGroup.appName} · 批次总结`;
+  }
+  return "总结报告";
+});
+const selectedHistoryReportVersion = computed(() => {
+  if (selectedHistoryRun.value?.appVersion?.trim()) {
+    return formatHistoryReportVersionLabel(selectedHistoryRun.value.appVersion);
+  }
+  if (selectedHistoryGroup.value) {
+    return formatHistoryReportVersionLabel(appGroupVersionText(selectedHistoryGroup.value.appGroup));
+  }
+  return "";
+});
 const completedSessionGroup = computed(() => resultSessionGroups.value.find((item) => item.session.id === completedSessionId.value));
 const mainSessionGroup = computed(() => {
   if (pendingRunStart.value || running.value) {
@@ -964,11 +1090,65 @@ async function refreshResultData(preferredRunId?: string): Promise<void> {
   sessions.value = nextSessions;
 
   const validExpandedIds = expandedSessionIds.value.filter((id) => historyResultGroups.value.some((item) => historyGroupKey(item.session.id, item.appGroup.appName) === id));
-  if (!validExpandedIds.length && historyResultGroups.value[0]) {
-    validExpandedIds.push(historyGroupKey(historyResultGroups.value[0].session.id, historyResultGroups.value[0].appGroup.appName));
-  }
   expandedSessionIds.value = validExpandedIds;
+  syncSelectedHistoryItem(preferredRunId);
   maybeShowCompletionDialog();
+}
+
+function syncSelectedHistoryItem(preferredRunId?: string): void {
+  const validKeys = new Set<string>();
+  historyResultGroups.value.forEach((group) => {
+    validKeys.add(historyReportGroupKey(group.session.id, group.appGroup.appName));
+    group.appGroup.runs.forEach((run) => {
+      validKeys.add(historyReportRunKey(run.id));
+    });
+  });
+
+  if (preferredRunId) {
+    const preferredKey = historyReportRunKey(preferredRunId);
+    if (validKeys.has(preferredKey)) {
+      selectedHistoryItemKey.value = preferredKey;
+      return;
+    }
+  }
+
+  if (selectedHistoryItemKey.value && validKeys.has(selectedHistoryItemKey.value)) {
+    return;
+  }
+
+  const fallbackGroup = historyResultGroups.value[0];
+  selectedHistoryItemKey.value = fallbackGroup
+    ? historyReportGroupKey(fallbackGroup.session.id, fallbackGroup.appGroup.appName)
+    : null;
+}
+
+function selectHistoryGroup(sessionId: string, appName: string): void {
+  selectedHistoryItemKey.value = historyReportGroupKey(sessionId, appName);
+}
+
+function selectHistoryRun(result: TestRunRecord): void {
+  selectedHistoryItemKey.value = historyReportRunKey(result.id);
+}
+
+function isSelectedHistoryGroup(sessionId: string, appName: string): boolean {
+  return selectedHistoryItemKey.value === historyReportGroupKey(sessionId, appName);
+}
+
+function isSelectedHistoryRun(runId: string): boolean {
+  return selectedHistoryItemKey.value === historyReportRunKey(runId);
+}
+
+function openHistoryReportDrawer(): void {
+  historyReportDrawerOpen.value = true;
+}
+
+function closeHistoryReportDrawer(): void {
+  historyReportDrawerOpen.value = false;
+}
+
+function openHistoryGroupReport(sessionId: string, appName: string): void {
+  selectHistoryGroup(sessionId, appName);
+  openHistoryReportDrawer();
 }
 
 function maybeShowCompletionDialog(): void {
@@ -1238,6 +1418,18 @@ async function exportBundle(runSessionId?: string, appName?: string): Promise<vo
     notice.value = path ? `结果 ZIP 已导出到：${path}` : "已取消导出。";
   } catch (error) {
     notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function exportHistoryReport(): Promise<void> {
+  try {
+    const path = await window.vtc.exportHistoryReport(
+      historyReportMarkdown.value,
+      selectedHistoryReportTitle.value,
+    ) as string | undefined;
+    notice.value = path ? `报告已导出到：${path}` : "已取消导出报告。";
+  } catch (error) {
+    notice.value = `导出报告失败：${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
@@ -1644,6 +1836,17 @@ watch(() => page.value, async (nextPage) => {
   await nextTick();
   measureSampleListViewport();
 });
+
+watch(
+  () => [
+    selectedHistoryItemKey.value,
+    historyResultGroups.value.map((group) => `${group.session.id}:${group.appGroup.appName}:${group.appGroup.runs.map((run) => run.id).join(",")}`).join("|"),
+  ],
+  async () => {
+    await loadSelectedHistoryReport();
+  },
+  { immediate: true },
+);
 
 watch(() => config.value.audioSamples.length, async () => {
   if (page.value !== "samples") return;
@@ -2142,14 +2345,16 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section v-else-if="page === 'history'" class="result-stack">
-        <article class="panel">
+      <section v-else-if="page === 'history'" class="result-stack history-page">
+        <article class="panel history-list-panel">
           <div class="panel-header-row history-page-header">
             <div>
               <h3>历史列表</h3>
-              <p class="muted">支持导出每轮结果，也支持把外部 CSV 补录成历史测试记录。</p>
+              <p class="muted">每个批次和样本都有独立的 report 入口，点击后从右侧滑出当前项的总结。</p>
             </div>
-            <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
+            <div class="history-header-actions">
+              <button class="history-import-link" @click="openImportCsvDialog">导入CSV</button>
+            </div>
           </div>
           <div class="session-stack">
             <article
@@ -2157,13 +2362,14 @@ onBeforeUnmount(() => {
               :key="`${group.session.id}-${group.appGroup.appName}`"
               class="session-card"
               :class="{
+                'session-card--selected': isSelectedHistoryGroup(group.session.id, group.appGroup.appName),
                 'session-card--session-first': group.isSessionFirst,
                 'session-card--session-last': group.isSessionLast,
                 'session-card--session-linked': group.appGroupCount > 1,
               }"
             >
               <div class="session-header">
-                <button class="session-toggle" @click="toggleSession(historyGroupKey(group.session.id, group.appGroup.appName))">
+                <button class="session-toggle" @click="selectHistoryGroup(group.session.id, group.appGroup.appName)">
                   <strong>{{ formatSessionTime(group.displayTime) }}</strong>
                   <span class="session-app-name">
                     {{ group.appGroup.appName }}
@@ -2181,6 +2387,19 @@ onBeforeUnmount(() => {
                     · 失败 {{ group.appGroup.failedCount }}
                     · 取消 {{ group.appGroup.cancelledCount }}
                   </div>
+                </button>
+                <button
+                  class="history-report-button"
+                  aria-label="查看 report"
+                  data-tooltip="查看 report"
+                  @click="openHistoryGroupReport(group.session.id, group.appGroup.appName)"
+                >
+                  report
+                </button>
+                <button
+                  class="session-expand-button"
+                  @click="toggleSession(historyGroupKey(group.session.id, group.appGroup.appName))"
+                >
                   <span class="pill">{{ isSessionExpanded(historyGroupKey(group.session.id, group.appGroup.appName)) ? "收起" : "展开" }}</span>
                 </button>
                 <button
@@ -2220,6 +2439,9 @@ onBeforeUnmount(() => {
                       <tr
                         v-for="result in group.appGroup.runs"
                         :key="result.id"
+                        class="history-result-row"
+                        :class="{ 'history-result-row--selected': isSelectedHistoryRun(result.id) }"
+                        @click="selectHistoryRun(result)"
                       >
                         <td class="history-sample-cell">
                           <div class="history-sample-main">
@@ -2264,6 +2486,39 @@ onBeforeUnmount(() => {
             <div v-if="!historyResultGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
           </div>
         </article>
+
+        <div
+          v-if="historyReportDrawerOpen"
+          class="history-report-backdrop"
+          @click="closeHistoryReportDrawer"
+        ></div>
+
+        <div
+          class="history-report-drawer"
+          :class="{ 'history-report-drawer--open': historyReportDrawerOpen }"
+          aria-hidden="true"
+        >
+          <article class="panel history-report-panel">
+            <div class="panel-header-row history-report-panel__header">
+              <div>
+                <h3>总结报告</h3>
+                <p class="muted">直接调用项目内置的 Python `analyze.py` 生成完整 Markdown 报告。</p>
+              </div>
+              <div class="history-report-panel__actions">
+                <button
+                  class="history-report-export-button"
+                  aria-label="导出 report"
+                  data-tooltip="导出 report"
+                  @click="exportHistoryReport"
+                >
+                  <HugeiconsIcon :icon="FileExportIcon" :size="14" class="button-icon" />
+                </button>
+                <button class="history-report-close-icon" aria-label="关闭 report" @click="closeHistoryReportDrawer">×</button>
+              </div>
+            </div>
+            <MarkdownRender class="history-report-markdown" :content="historyReportMarkdown" />
+          </article>
+        </div>
       </section>
 
       <section v-else-if="page === 'apps'" class="settings-page apps-page">
@@ -2625,6 +2880,26 @@ onBeforeUnmount(() => {
             <img :src="muteDuringDictationImageUrl" alt="语音输入时静音设置示意图" />
             <figcaption>示意图：开启后，语音输入时会自动静音其他活动音频。</figcaption>
           </figure>
+        </article>
+
+        <article class="panel faq-card">
+          <div class="faq-card__copy">
+            <div class="faq-eyebrow">常见问题 02</div>
+            <h3>历史总结报告提示缺少 Python 3，怎么安装和验证？</h3>
+            <p>历史里的 <strong>report</strong> 会直接调用项目内置的 <code>analyze.py</code>。如果系统里没有 <code>python3</code>，报告就无法生成。</p>
+            <div class="faq-callout">
+              <strong>安装方式（macOS）</strong>
+              <p>如果还没有 Homebrew，可以先执行 <code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code> 安装。然后再运行 <code>brew install python</code>。装好后系统通常会提供 <code>python3</code> 命令。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>验证方式</strong>
+              <p>打开终端，依次运行 <code>python3 --version</code> 和 <code>which python3</code>。能看到版本号和可执行文件路径，就说明环境已就绪。</p>
+            </div>
+            <div class="faq-callout">
+              <strong>安装后怎么处理</strong>
+              <p>安装完成后，重新打开本应用，再去“测试历史”里点对应批次的 <code>report</code> 重新生成即可。</p>
+            </div>
+          </div>
         </article>
       </section>
 

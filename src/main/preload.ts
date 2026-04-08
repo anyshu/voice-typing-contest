@@ -25,6 +25,10 @@ const api = {
   listResults: async () => await ipcRenderer.invoke("results:list"),
   listResultSessions: async () => await ipcRenderer.invoke("results:listSessions"),
   getResultDetail: async (runId: string) => await ipcRenderer.invoke("results:getDetail", runId),
+  generateHistoryReport: async (runSessionId: string, appName: string, runId?: string) =>
+    await ipcRenderer.invoke("results:generateHistoryReport", runSessionId, appName, runId),
+  exportHistoryReport: async (markdown: string, reportTitle?: string) =>
+    await ipcRenderer.invoke("results:exportHistoryReport", markdown, reportTitle),
   exportBundle: async (runSessionId?: string, appName?: string) => await ipcRenderer.invoke("results:exportBundle", runSessionId, appName),
   pickImportCsv: async () => await ipcRenderer.invoke("results:pickImportCsv"),
   importCsv: async (filePath: string) => await ipcRenderer.invoke("results:importCsv", filePath),

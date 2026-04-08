@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { nanoid } from "nanoid";
 import type {
   AppConfig,
+  AudioSampleMetadata,
   AudioDevice,
   CsvImportSummary,
   PermissionSnapshot,
@@ -13,6 +14,7 @@ import type {
   RunEventRecord,
   RunSessionRecord,
   RunSessionSummary,
+  SampleSourceType,
   TestRunRecord,
 } from "../shared/types";
 
@@ -207,6 +209,8 @@ export class ResultStore {
         app_version TEXT,
         sample_id TEXT NOT NULL,
         sample_path TEXT NOT NULL,
+        sample_source_type TEXT,
+        sample_metadata_json TEXT,
         status TEXT NOT NULL,
         phase TEXT NOT NULL,
         failure_category TEXT,
@@ -282,6 +286,12 @@ export class ResultStore {
     if (!testRunColumnNames.has("peak_memory_mb")) {
       this.db.exec("ALTER TABLE test_runs ADD COLUMN peak_memory_mb REAL");
     }
+    if (!testRunColumnNames.has("sample_source_type")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN sample_source_type TEXT");
+    }
+    if (!testRunColumnNames.has("sample_metadata_json")) {
+      this.db.exec("ALTER TABLE test_runs ADD COLUMN sample_metadata_json TEXT");
+    }
   }
 
   syncConfig(config: AppConfig): void {
@@ -317,13 +327,13 @@ export class ResultStore {
   insertRun(record: TestRunRecord): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO test_runs (
-        id, run_session_id, app_id, app_name, app_version, sample_id, sample_path, status, phase,
+        id, run_session_id, app_id, app_name, app_version, sample_id, sample_path, sample_source_type, sample_metadata_json, status, phase,
         failure_category, failure_reason, raw_text, normalized_text, expected_text,
         hotkey_to_audio_ms, trigger_stop_to_first_char_ms, trigger_stop_to_final_text_ms,
         total_run_ms, average_cpu_percent, peak_cpu_percent, average_memory_mb, peak_memory_mb,
         input_event_count, final_text_length, created_at,
         retry_root_run_id, retry_attempt, timeline_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       record.id,
       record.runSessionId,
@@ -332,6 +342,8 @@ export class ResultStore {
       record.appVersion ?? null,
       record.sampleId,
       record.samplePath,
+      record.sampleSourceType ?? null,
+      record.sampleMetadata ? JSON.stringify(record.sampleMetadata) : null,
       record.status,
       record.phase,
       record.failureCategory ?? null,
@@ -414,6 +426,8 @@ export class ResultStore {
         app_version AS appVersion,
         sample_id AS sampleId,
         sample_path AS samplePath,
+        sample_source_type AS sampleSourceType,
+        sample_metadata_json AS sampleMetadataJson,
         status,
         phase,
         failure_category AS failureCategory,
@@ -438,12 +452,13 @@ export class ResultStore {
       FROM test_runs
       ORDER BY created_at DESC
     `;
-    const rows = this.db.prepare(query).all() as Array<TestRunRecord & { timelineJson?: string }>;
-    const normalizedRows = rows.map(({ id, timelineJson, ...row }) => {
+    const rows = this.db.prepare(query).all() as Array<TestRunRecord & { timelineJson?: string; sampleMetadataJson?: string }>;
+    const normalizedRows = rows.map(({ id, timelineJson, sampleMetadataJson, ...row }) => {
       const timeline = this.parseTimeline(timelineJson);
       return {
         id,
         ...row,
+        sampleMetadata: this.parseSampleMetadata(sampleMetadataJson),
         timeline: timeline.length ? timeline : this.listEventsForRun(id),
       };
     });
@@ -508,6 +523,8 @@ export class ResultStore {
         app_version AS appVersion,
         sample_id AS sampleId,
         sample_path AS samplePath,
+        sample_source_type AS sampleSourceType,
+        sample_metadata_json AS sampleMetadataJson,
         status,
         phase,
         failure_category AS failureCategory,
@@ -531,16 +548,27 @@ export class ResultStore {
         timeline_json AS timelineJson
       FROM test_runs
       WHERE id = ?
-    `).get(runId) as (TestRunRecord & { timelineJson?: string }) | undefined;
+    `).get(runId) as (TestRunRecord & { timelineJson?: string; sampleMetadataJson?: string }) | undefined;
     if (!record) return undefined;
     const timeline = this.parseTimeline(record.timelineJson);
     const normalizedTimeline = timeline.length ? timeline : this.listEventsForRun(runId);
-    const { timelineJson, ...baseRecord } = record;
+    const { timelineJson, sampleMetadataJson, ...baseRecord } = record;
     const normalizedRecord: TestRunRecord = {
       ...baseRecord,
+      sampleMetadata: this.parseSampleMetadata(sampleMetadataJson),
       timeline: normalizedTimeline,
     };
     return { record: normalizedRecord, events: normalizedTimeline };
+  }
+
+  private parseSampleMetadata(sampleMetadataJson?: string): AudioSampleMetadata | undefined {
+    if (!sampleMetadataJson) return undefined;
+    try {
+      const parsed = JSON.parse(sampleMetadataJson) as AudioSampleMetadata;
+      return parsed && typeof parsed === "object" ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private parseTimeline(timelineJson?: string): RunEventRecord[] {
@@ -577,6 +605,9 @@ export class ResultStore {
       "app_name",
       "app_version",
       "sample_path",
+      "sample_source_type",
+      "sample_jsonl_path",
+      "sample_source_id",
       "status",
       "failure_category",
       "failure_reason",
@@ -602,6 +633,9 @@ export class ResultStore {
         row.appName,
         row.appVersion ?? "",
         row.samplePath,
+        row.sampleSourceType ?? "",
+        row.sampleMetadata?.jsonlPath ?? "",
+        row.sampleMetadata?.sourceId ?? "",
         row.status,
         row.failureCategory ?? "",
         row.failureReason ?? "",

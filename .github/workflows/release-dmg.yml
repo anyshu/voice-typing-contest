@@ -52,4 +52,5 @@ jobs:
           files: |
             release/*.dmg
             release/*.zip
+            release/latest-mac.yml
           generate_release_notes: true

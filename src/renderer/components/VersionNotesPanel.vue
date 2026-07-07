@@ -1,9 +1,24 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { currentVersionNotes } from "../content/version-notes";
 
 defineProps<{
   versionLabel: string;
 }>();
+
+const checking = ref(false);
+
+async function checkForUpdates(): Promise<void> {
+  if (checking.value) return;
+  checking.value = true;
+  try {
+    await window.vtc.checkForUpdates();
+  } finally {
+    setTimeout(() => {
+      checking.value = false;
+    }, 2000);
+  }
+}
 </script>
 
 <template>
@@ -15,7 +30,17 @@ defineProps<{
           <h3>{{ currentVersionNotes.headline }}</h3>
           <p>{{ currentVersionNotes.summary }}</p>
         </div>
-        <span class="pill mono">{{ versionLabel }}</span>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span class="pill mono">{{ versionLabel }}</span>
+          <button 
+            class="secondary-button"
+            :disabled="checking"
+            @click="checkForUpdates"
+            style="white-space: nowrap;"
+          >
+            {{ checking ? "检查中..." : "检查更新" }}
+          </button>
+        </div>
       </div>
       <div class="version-notes__tags">
         <span v-for="tag in currentVersionNotes.focusTags" :key="tag" class="pill">{{ tag }}</span>

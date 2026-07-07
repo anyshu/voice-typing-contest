@@ -10,6 +10,7 @@ import { PermissionManager } from "./permission-manager";
 import { TargetAppManager } from "./target-app-manager";
 import { RunController } from "./run-controller";
 import { registerIpc } from "./ipc";
+import { setupAutoUpdater, checkForUpdates } from "./auto-updater";
 import type { AppConfig, AudioDevice, PermissionSnapshot, RunEventRecord, TestRunRecord } from "../shared/types";
 import { defaultDevices, defaultPermissions } from "../shared/defaults";
 import { formatResultLog, formatTimelineLog } from "./run-logging";
@@ -298,6 +299,16 @@ async function createWindow(): Promise<void> {
   });
 
   await loadRenderer(win);
+
+  // 初始化自动更新（仅在生产环境）
+  if (!process.env.ELECTRON_RENDERER_URL) {
+    setupAutoUpdater(win);
+    
+    // 启动后 3 秒检查更新
+    setTimeout(() => {
+      checkForUpdates();
+    }, 3000);
+  }
 }
 
 app.whenReady().then(async () => {
@@ -317,3 +328,6 @@ app.on("window-all-closed", () => {
 });
 
 ipcMain.handle("app:getVersion", () => app.getVersion());
+ipcMain.handle("app:checkForUpdates", () => {
+  checkForUpdates();
+});

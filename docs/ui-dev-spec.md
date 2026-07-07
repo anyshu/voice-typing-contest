@@ -335,6 +335,8 @@ Sample metadata stays off the main row and appears in the tooltip card. The tool
 
 The list is virtualized. Heavier preview controls mount only for the hovered or currently playing row.
 
+Directory rescans must not wait indefinitely on audio duration probing. The scanner first discovers supported audio files, then resolves durations with a small concurrency limit and a per-file timeout; if a single file cannot report duration in time, that row keeps `durationMs: 0` while the rest of the sample list still loads.
+
 Disabling a sample removes it from later benchmark batches without deleting it from the scanned list.
 
 When the app boots, the top notice area first shows `正在检查样本文件...` for a perceptible short duration and then switches to `样本检查完成` so the operator can actually see both states.

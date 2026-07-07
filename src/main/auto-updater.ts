@@ -13,6 +13,8 @@ autoUpdater.autoDownload = false; // 不自动下载，让用户决定
 autoUpdater.autoInstallOnAppQuit = true; // 退出时自动安装
 
 let mainWindow: BrowserWindow | undefined;
+let updateCheckInProgress = false; // 防止重复检查
+let downloadInProgress = false; // 防止重复下载
 
 export function setupAutoUpdater(window: BrowserWindow): void {
   mainWindow = window;
@@ -20,18 +22,21 @@ export function setupAutoUpdater(window: BrowserWindow): void {
   // 检查更新错误
   autoUpdater.on("error", (error) => {
     log.error("更新检查失败:", error);
+    updateCheckInProgress = false;
+    downloadInProgress = false;
   });
 
   // 检查更新时
   autoUpdater.on("checking-for-update", () => {
     log.info("正在检查更新...");
+    updateCheckInProgress = true;
   });
 
   // 有可用更新
   autoUpdater.on("update-available", (info) => {
     log.info("发现新版本:", info.version);
     
-    if (!mainWindow) return;
+    if (!mainWindow || downloadInProgress) return;
 
     dialog.showMessageBox(mainWindow, {
       type: "info",
@@ -43,7 +48,12 @@ export function setupAutoUpdater(window: BrowserWindow): void {
       cancelId: 1,
     }).then((result) => {
       if (result.response === 0) {
-        autoUpdater.downloadUpdate();
+        downloadInProgress = true;
+        log.info("开始下载更新...");
+        autoUpdater.downloadUpdate().catch((err) => {
+          log.error("下载更新失败:", err);
+          downloadInProgress = false;
+        });
       }
     }).catch((err) => {
       log.error("显示更新对话框失败:", err);
@@ -53,6 +63,7 @@ export function setupAutoUpdater(window: BrowserWindow): void {
   // 没有可用更新
   autoUpdater.on("update-not-available", (info) => {
     log.info("当前已是最新版本:", info.version);
+    updateCheckInProgress = false;
   });
 
   // 下载进度
@@ -68,6 +79,8 @@ export function setupAutoUpdater(window: BrowserWindow): void {
   // 下载完成
   autoUpdater.on("update-downloaded", (info) => {
     log.info("更新下载完成:", info.version);
+    downloadInProgress = false;
+    updateCheckInProgress = false;
     
     if (mainWindow) {
       mainWindow.setProgressBar(-1); // 清除进度条
@@ -97,8 +110,14 @@ export function setupAutoUpdater(window: BrowserWindow): void {
  * 手动检查更新
  */
 export function checkForUpdates(): void {
+  if (updateCheckInProgress) {
+    log.info("更新检查已在进行中，跳过");
+    return;
+  }
+  
   autoUpdater.checkForUpdates().catch((error) => {
     log.error("检查更新失败:", error);
+    updateCheckInProgress = false;
     
     if (mainWindow) {
       dialog.showMessageBox(mainWindow, {

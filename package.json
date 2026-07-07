@@ -92,12 +92,19 @@
       "owner": "anyshu",
       "repo": "voice-typing-contest"
     },
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.utilities",
       "identity": null,
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64"]
+        }
       ],
       "icon": "resources/icon-macos.png"
     },

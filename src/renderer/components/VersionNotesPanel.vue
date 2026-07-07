@@ -72,5 +72,13 @@ async function checkForUpdates(): Promise<void> {
         <li v-for="item in currentVersionNotes.nextSteps" :key="item">{{ item }}</li>
       </ol>
     </article>
+
+    <article class="panel">
+      <h3>💡 自动更新</h3>
+      <p style="color: #666; line-height: 1.6;">
+        本应用支持自动更新。启动后会在后台检查新版本，发现更新时会友好提示。
+        你也可以随时点击上方的"检查更新"按钮手动检查。
+      </p>
+    </article>
   </section>
 </template>

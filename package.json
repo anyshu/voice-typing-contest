@@ -40,7 +40,7 @@
   },
   "build": {
     "appId": "com.hc.voicetypingcontest",
-    "productName": "Voice Typing Contest",
+    "productName": "VoiceTypingContest",
     "afterPack": "scripts/fix-macos-signatures.mjs",
     "directories": {
       "output": "release"

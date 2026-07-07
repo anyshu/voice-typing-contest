@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { readAudioDurationMs } from "../src/shared/audio";
 
 vi.mock("../src/shared/audio", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/shared/audio")>();
@@ -102,5 +103,28 @@ describe("SampleManager", () => {
     await rm(root, { recursive: true, force: true });
 
     await expect(new SampleManager().scan(root)).rejects.toThrow("样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。");
+  });
+
+  it("does not hang directory scanning when one duration probe never returns", async () => {
+    root = await mkdtemp(join(tmpdir(), "vtc-samples-"));
+    await writeFile(join(root, "ok.wav"), "wav");
+    await writeFile(join(root, "stuck.mp3"), "mp3");
+    vi.mocked(readAudioDurationMs).mockImplementation(async (filePath: string) => {
+      if (filePath.endsWith("stuck.mp3")) {
+        return await new Promise<number>(() => {});
+      }
+      return 1200;
+    });
+
+    const scanResult = await Promise.race([
+      new SampleManager({ durationProbeTimeoutMs: 10 }).scan(root),
+      new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), 80)),
+    ]);
+
+    expect(scanResult).not.toBe("timed-out");
+    expect(scanResult).toEqual(expect.arrayContaining([
+      expect.objectContaining({ relativePath: "ok.wav", durationMs: 1200 }),
+      expect.objectContaining({ relativePath: "stuck.mp3", durationMs: 0 }),
+    ]));
   });
 });

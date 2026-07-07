@@ -17,7 +17,28 @@ interface JsonlSampleRecord {
   source_md?: string;
 }
 
+interface SampleManagerOptions {
+  durationProbeTimeoutMs?: number;
+  durationProbeConcurrency?: number;
+}
+
+interface DiscoveredSampleFile {
+  filePath: string;
+  relativePath: string;
+}
+
+const DEFAULT_DURATION_PROBE_TIMEOUT_MS = 2000;
+const DEFAULT_DURATION_PROBE_CONCURRENCY = 4;
+
 export class SampleManager {
+  private readonly durationProbeTimeoutMs: number;
+  private readonly durationProbeConcurrency: number;
+
+  constructor(options: SampleManagerOptions = {}) {
+    this.durationProbeTimeoutMs = options.durationProbeTimeoutMs ?? DEFAULT_DURATION_PROBE_TIMEOUT_MS;
+    this.durationProbeConcurrency = options.durationProbeConcurrency ?? DEFAULT_DURATION_PROBE_CONCURRENCY;
+  }
+
   async scan(root: string, previousSamples: AudioSample[] = []): Promise<AudioSample[]> {
     return await this.scanDirectory(root, previousSamples);
   }
@@ -32,15 +53,33 @@ export class SampleManager {
   async scanDirectory(root: string, previousSamples: AudioSample[] = []): Promise<AudioSample[]> {
     const resolvedRoot = resolveHomePath(root);
     const existingByPath = new Map(previousSamples.map((sample) => [sample.filePath, sample]));
-    const found: AudioSample[] = [];
+    const discoveredFiles: DiscoveredSampleFile[] = [];
     try {
-      await this.walk(resolvedRoot, resolvedRoot, found, existingByPath);
+      await this.walk(resolvedRoot, resolvedRoot, discoveredFiles);
     } catch (error) {
       if (this.isMissingPathError(error)) {
         throw new Error("样本目录不存在，可能已经被移动或删除了。请重新选择目录后再扫描。");
       }
       throw error;
     }
+    const found = await this.mapWithConcurrency(discoveredFiles, this.durationProbeConcurrency, async ({ filePath, relativePath }) => {
+      const durationMs = await this.probeDurationMs(filePath);
+      const previous = existingByPath.get(filePath);
+      return {
+        id: previous?.id ?? nanoid(),
+        filePath,
+        relativePath,
+        displayName: basename(filePath),
+        durationMs,
+        language: relativePath.includes("english") ? "en" : "zh",
+        tags: relativePath.split("/").slice(0, -1),
+        expectedText: previous?.expectedText,
+        enabled: previous?.enabled ?? true,
+        exists: true,
+        sourceType: previous?.sourceType ?? "directory",
+        metadata: previous?.metadata,
+      };
+    });
     return found.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   }
 
@@ -117,32 +156,17 @@ export class SampleManager {
     return found.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   }
 
-  private async walk(root: string, current: string, found: AudioSample[], existingByPath: Map<string, AudioSample>): Promise<void> {
+  private async walk(root: string, current: string, found: DiscoveredSampleFile[]): Promise<void> {
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const filePath = join(current, entry.name);
       if (entry.isDirectory()) {
-        await this.walk(root, filePath, found, existingByPath);
+        await this.walk(root, filePath, found);
         continue;
       }
       if (!isSupportedAudioSample(entry.name)) continue;
       const relativePath = relative(root, filePath);
-      const durationMs = await readAudioDurationMs(filePath);
-      const previous = existingByPath.get(filePath);
-      found.push({
-        id: previous?.id ?? nanoid(),
-        filePath,
-        relativePath,
-        displayName: basename(filePath),
-        durationMs,
-        language: relativePath.includes("english") ? "en" : "zh",
-        tags: relativePath.split("/").slice(0, -1),
-        expectedText: previous?.expectedText,
-        enabled: previous?.enabled ?? true,
-        exists: true,
-        sourceType: previous?.sourceType ?? "directory",
-        metadata: previous?.metadata,
-      });
+      found.push({ filePath, relativePath });
     }
   }
 
@@ -199,7 +223,7 @@ export class SampleManager {
   private async resolveJsonlDurationMs(filePath: string, durationSeconds?: number): Promise<number> {
     const fallbackMs = this.normalizeDurationMs(durationSeconds);
     if (fallbackMs > 0) return fallbackMs;
-    return await readAudioDurationMs(filePath);
+    return await this.probeDurationMs(filePath);
   }
 
   private normalizeDurationMs(durationSeconds?: number): number {
@@ -211,5 +235,46 @@ export class SampleManager {
 
   private inferLanguage(relativePath: string): string {
     return relativePath.includes("english") ? "en" : "zh";
+  }
+
+  private async probeDurationMs(filePath: string): Promise<number> {
+    try {
+      return await this.withTimeout(readAudioDurationMs(filePath), this.durationProbeTimeoutMs, 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((resolve) => {
+          timeout = setTimeout(() => resolve(fallback), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T) => Promise<R>,
+  ): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.max(1, Math.min(concurrency, items.length));
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    });
+    await Promise.all(workers);
+    return results;
   }
 }

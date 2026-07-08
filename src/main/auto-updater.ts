@@ -163,13 +163,20 @@ echo "临时目录: $TMP_DIR" >> /tmp/vtc-update.log 2>&1
 echo "解压 ${zipPath}" >> /tmp/vtc-update.log 2>&1
 unzip -q "${zipPath}" -d "$TMP_DIR" >> /tmp/vtc-update.log 2>&1
 
-# 删除旧应用
-echo "删除旧应用 ${appPath}" >> /tmp/vtc-update.log 2>&1
-rm -rf "${appPath}"
+# 保留应用包结构，只替换内容（保留权限）
+# 这样 macOS 不会认为这是一个新应用
+echo "替换应用内容 ${appPath}" >> /tmp/vtc-update.log 2>&1
 
-# 移动新应用
-echo "安装新应用" >> /tmp/vtc-update.log 2>&1
-mv "$TMP_DIR/VoiceTypingContest.app" "${appPath}"
+# 删除旧的 Contents 目录
+rm -rf "${appPath}/Contents"
+
+# 复制新的 Contents 目录
+cp -R "$TMP_DIR/VoiceTypingContest.app/Contents" "${appPath}/"
+
+# 更新 Info.plist（如果有的话）
+if [ -f "$TMP_DIR/VoiceTypingContest.app/Contents/Info.plist" ]; then
+  cp -f "$TMP_DIR/VoiceTypingContest.app/Contents/Info.plist" "${appPath}/Contents/"
+fi
 
 # 清理
 rm -rf "$TMP_DIR"

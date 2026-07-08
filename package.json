@@ -1,6 +1,6 @@
 {
   "name": "voice-typing-contest",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "description": "macOS Electron benchmark app for voice typing tools",
   "main": "out/main/index.js",

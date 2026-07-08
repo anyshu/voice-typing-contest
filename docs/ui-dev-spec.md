@@ -142,7 +142,7 @@ The left `目标App` panel on `主控台` is not read-only:
 
 - every app row keeps the enabled-state pill
 - every app row also exposes a direct toggle control without extra text label
-- the row also shows `.app` file名 or builtin-selftest copy, plus current trigger-mode summary
+- the row also shows `.app` file名 plus current trigger-mode summary
 - toggling here immediately updates the next batch without forcing the operator to jump to `App管理`
 
 The persisted session list belongs to the dedicated `测试历史` page.
@@ -380,7 +380,7 @@ Q&A cards should stay compact:
 
 The `App管理` page shows:
 
-- a compact summary strip with total apps, enabled apps, real-app enablement, installed real-app count, and builtin self-test state
+- a compact summary strip with total apps, enabled apps, real-app enablement, and installed real-app count
 - one compact card per app
 - the nav entry in the upper group, directly below `样本管理`
 

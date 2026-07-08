@@ -23,7 +23,7 @@ export function timelineTitle(item: RunEventRecord): string {
     app_start: "开始处理应用",
     sample_start: "开始处理样本",
     focus_input: "聚焦检测框",
-    selftest_mode: "进入内建自测",
+    selftest_mode: "进入自检模式",
     app_launch: "后台启动目标App",
     app_launch_wait: "等待应用启动",
     pre_hotkey_wait: "等待热键发送",
@@ -58,7 +58,7 @@ export function timelineDetail(item: RunEventRecord): string {
     case "focus_input":
       return "把焦点拉回输入检测区，后面的文本应该落在这里。";
     case "selftest_mode":
-      return `当前使用的是 ${String(payload.app ?? "内建自测")}。`;
+      return `当前使用的是 ${String(payload.app ?? "自检模式")}。`;
     case "app_launch":
       return `${String(payload.app ?? "目标App")} 已尝试后台启动，目标是 ${timelineTailName(payload.target)}。`;
     case "app_launch_wait":

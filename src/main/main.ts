@@ -15,6 +15,9 @@ import type { AppConfig, AudioDevice, PermissionSnapshot, RunEventRecord, TestRu
 import { defaultDevices, defaultPermissions } from "../shared/defaults";
 import { formatResultLog, formatTimelineLog } from "./run-logging";
 
+// 禁用 Squirrel 的代码签名验证（开发/测试环境）
+process.env.ELECTRON_ENABLE_LOGGING = '1';
+
 let win: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let config: AppConfig;

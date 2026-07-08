@@ -650,7 +650,7 @@ export class RunController extends EventEmitter {
           ? undefined
           : item.skipReason === "permission"
             ? "去系统设置 -> 隐私与安全性 -> 辅助功能，给当前这个 Electron 测试工具打开权限，然后回来点“刷新”。"
-            : `先确认 ${item.app.appFileName} 已安装，或者先关掉它，改用“内建自测”验证流程。`,
+            : `先确认 ${item.app.appFileName} 已安装，或者先关掉它。`,
       })),
     });
 

@@ -14,8 +14,6 @@ The tool drives multiple target apps with the same audio samples and records:
 - comparable latency metrics across apps
 - per-run timeline snapshots that can be replayed from both the main console and history views
 
-The current implementation also includes a builtin self-test app profile so the tester can verify the harness before involving any real target app.
-
 The initial targets include apps like Xiguashuo, Shandianshuo, Wispr Flow, and Typeless.
 
 Assumption for v1:
@@ -90,8 +88,6 @@ Optimization in the current implementation:
 
 - for `hold_release` apps, the preferred helper path keeps hotkey hold, playback, and release inside a single helper session
 - if the native helper does not support that command yet, the app falls back to the older split hotkey / play / release path
-- builtin self-test bypasses real app launch and audio playback, then emits expected text directly into the input sink
-
 When all samples finish for one app, switch to the next app and repeat the same app-batch cycle.
 
 Important:
@@ -347,7 +343,7 @@ Config source rules in the current implementation:
 - preset app profiles come from a versioned JSON resource bundled with the app
 - user-added apps and user overrides are persisted in the per-user `config.json`
 - startup merges preset profiles first, then applies matching user overrides, then appends user-only apps
-- if no app remains enabled after merge, the builtin self-test profile should be re-enabled automatically
+- if no app remains enabled after merge, the UI keeps the real app list disabled until the tester enables at least one target app
 
 `hotkeyChord` stores the exact shortcut the tester enters from a dedicated hotkey capture control. The UI should not split it into a main key field plus modifier chips.
 
@@ -376,7 +372,7 @@ Suggested fields:
 
 `relativePath` should preserve subfolder structure under the sample root so the UI can display nested test sets clearly.
 
-`expectedText` is optional, but once present it enables basic accuracy scoring and powers builtin self-test output injection.
+`expectedText` is optional, but once present it enables basic accuracy scoring and report alignment.
 
 `enabled` decides whether the sample joins later benchmark batches. The sample-management page should let the tester toggle each sample individually and show enabled / disabled / total counts at a glance.
 
@@ -568,7 +564,7 @@ Before a run starts, the tool must verify:
 - virtual audio device availability
 - sample file existence
 - database writability
-- that at least one enabled app is runnable, unless the operator is only using builtin self-test
+- that at least one enabled app is runnable
 
 Optional checks:
 

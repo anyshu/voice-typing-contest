@@ -10,6 +10,10 @@ const legacyWisprFlowPreset = {
   hotkeyTriggerMode: "press_start_press_stop" as const,
 };
 
+function isSelftestProfile(app: { id?: string; launchCommand?: string }): boolean {
+  return app.id === "selftest" || Boolean(app.launchCommand?.startsWith("selftest://"));
+}
+
 export class ConfigStore {
   constructor(private readonly filePath: string) {}
 
@@ -35,7 +39,7 @@ export class ConfigStore {
     const legacyAppLaunchDelayMs = config.targetApps.find((app) => typeof app.launchTimeoutMs === "number")?.launchTimeoutMs;
     const legacyFocusInputDelayMs = config.targetApps.find((app) => typeof app.preHotkeyDelayMs === "number")?.preHotkeyDelayMs;
     const legacyCloseAppDelayMs = config.targetApps.find((app) => typeof app.postRunCooldownMs === "number")?.postRunCooldownMs;
-    const appMap = new Map(config.targetApps.map((app) => [app.id, app]));
+    const appMap = new Map(config.targetApps.filter((app) => !isSelftestProfile(app)).map((app) => [app.id, app]));
     const defaultAppIds = new Set(defaultApps.map((app) => app.id));
     const wisprFlow = appMap.get("wispr-flow");
     const wisprDefault = defaultApps.find((app) => app.id === "wispr-flow");
@@ -56,19 +60,13 @@ export class ConfigStore {
         ...app,
         ...appMap.get(app.id),
       })),
-      ...config.targetApps.filter((app) => !defaultAppIds.has(app.id)),
+      ...config.targetApps.filter((app) => !isSelftestProfile(app) && !defaultAppIds.has(app.id)),
     ];
     const audioSamples = (config.audioSamples.length ? config.audioSamples : defaults.audioSamples).map((sample) => ({
       ...sample,
       exists: sample.exists ?? true,
       sourceType: sample.sourceType ?? "directory",
     }));
-    if (!targetApps.some((app) => app.enabled)) {
-      const selftest = targetApps.find((app) => app.id === "selftest");
-      if (selftest) {
-        selftest.enabled = true;
-      }
-    }
     return {
       ...config,
       appLaunchDelayMs: config.appLaunchDelayMs ?? legacyAppLaunchDelayMs ?? defaults.appLaunchDelayMs,

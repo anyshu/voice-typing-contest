@@ -138,7 +138,6 @@ const modeLabels = {
 
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
 const enabledApps = computed(() => config.value.targetApps.filter((item) => item.enabled));
-const builtinApps = computed(() => config.value.targetApps.filter((item) => isBuiltinApp(item)));
 const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
 const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
 const installedRealApps = computed(() => realApps.value.filter((item) => installedAppInfoById.value[item.id]?.installed));
@@ -323,7 +322,7 @@ function isBuiltinApp(app: TargetAppProfile): boolean {
 }
 
 function appKindLabel(app: TargetAppProfile): string {
-  return isBuiltinApp(app) ? "内建自测" : "真实 App";
+  return "真实 App";
 }
 
 function appStatusLabel(app: TargetAppProfile): string {
@@ -339,9 +338,7 @@ function appVersionLabel(app: TargetAppProfile): string {
 }
 
 function appLaunchSummary(app: TargetAppProfile): string {
-  return isBuiltinApp(app)
-    ? "内建流程"
-    : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
+  return app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找";
 }
 
 async function openAppWebsite(app: TargetAppProfile): Promise<void> {
@@ -1203,8 +1200,8 @@ async function rescanSamples(): Promise<void> {
   const missingJsonl = config.value.sampleSourceType === "jsonl" && !config.value.sampleJsonlPath;
   if (missingDirectory || missingJsonl) {
     notice.value = config.value.sampleSourceType === "jsonl"
-      ? "还没有选 JSONL 样本文件。现在仍然可以直接跑内建自测。"
-      : "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
+      ? "还没有选 JSONL 样本文件，请先选择样本来源。"
+      : "还没有选外部样本目录，请先选择样本来源。";
     return;
   }
   try {
@@ -2040,7 +2037,7 @@ onBeforeUnmount(() => {
                 <li v-for="app in config.targetApps" :key="app.id" class="app-row app-row--main">
                   <div class="app-row-main">
                     <strong>{{ app.name }}</strong>
-                    <div class="muted app-row-meta">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
+                    <div class="muted app-row-meta">{{ app.appFileName }}</div>
                     <div class="muted app-row-meta">{{ appModeText(app.hotkeyTriggerMode) }}</div>
                   </div>
                   <div class="app-row-actions">
@@ -2066,7 +2063,7 @@ onBeforeUnmount(() => {
               <h3>输入检测区</h3>
               <span class="pill" :class="statusTone(progress.phase)">{{ phaseText(progress.phase) }}</span>
             </div>
-            <p class="muted">这里是统一的输入检测区。真实目标App和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
+            <p class="muted">这里是统一的输入检测区。真实目标 App 的文本会写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
             <textarea
               ref="inputProbeTextarea"
               class="live-textarea"
@@ -2483,7 +2480,7 @@ onBeforeUnmount(() => {
               </div>
             </article>
 
-            <div v-if="!historyResultGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
+            <div v-if="!historyResultGroups.length" class="muted">还没有结果。选择目标 App 和样本后开始一次测试。</div>
           </div>
         </article>
 
@@ -2526,7 +2523,7 @@ onBeforeUnmount(() => {
           <div class="panel-header-row apps-page__header">
             <div>
               <h3>目标App</h3>
-              <p class="muted">把真实目标 App 和内建自测都收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
+              <p class="muted">把真实目标 App 收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
             </div>
             <div class="toolbar">
               <button class="ghost-button" @click="refreshInstalledAppInfo">刷新安装信息</button>
@@ -2555,11 +2552,6 @@ onBeforeUnmount(() => {
               <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
               <span class="summary-label">已安装真实 App</span>
               <strong>{{ installedRealApps.length }} / {{ realApps.length }}</strong>
-            </div>
-            <div class="summary-item">
-              <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
-              <span class="summary-label">内建自测</span>
-              <strong>{{ builtinApps.length ? (builtinApps[0]?.enabled ? "已启用" : "未启用") : "未配置" }}</strong>
             </div>
           </section>
 
@@ -2701,10 +2693,10 @@ onBeforeUnmount(() => {
                 <label class="settings-field settings-field--wide">
                   <span>外部样本目录</span>
                   <div class="inline-field inline-field--soft">
-                    <input v-model="config.sampleRoot" placeholder="不填也可以，默认直接跑内建自测" />
+                    <input v-model="config.sampleRoot" placeholder="选择包含 WAV / MP3 / OGG 的目录" />
                     <button class="ghost-button" @click="chooseSampleRoot">选择</button>
                   </div>
-                  <small>不填也能运行；填写后可直接把目录里的 WAV / MP3 / OGG 纳入测试。</small>
+                  <small>填写后可直接把目录里的 WAV / MP3 / OGG 纳入测试。</small>
                 </label>
               </div>
             </article>

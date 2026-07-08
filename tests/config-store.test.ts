@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 describe("ConfigStore", () => {
-  it("adds newly introduced builtin app presets to existing config files", async () => {
+  it("loads app presets without legacy built-in self-test entries", async () => {
     root = await mkdtemp(join(tmpdir(), "vtc-config-store-"));
     const configPath = join(root, "config.json");
     await writeFile(configPath, JSON.stringify({
@@ -71,7 +71,7 @@ describe("ConfigStore", () => {
         },
         {
           id: "selftest",
-          name: "内建自测",
+          name: "Legacy SelfTest",
           appFileName: "VTC SelfTest",
           launchCommand: "selftest://echo",
           hotkeyChord: "Cmd+Shift+9",
@@ -94,7 +94,6 @@ describe("ConfigStore", () => {
       "shandianshuo",
       "wispr-flow",
       "typeless",
-      "selftest",
     ]);
     expect(config.targetApps.find((app) => app.id === "shandianshuo")).toMatchObject({
       name: "闪电说",
@@ -104,5 +103,7 @@ describe("ConfigStore", () => {
       enabled: false,
     });
     expect(config.targetApps.find((app) => app.id === "xiguashuo")?.notes).toBe("keep me");
+    expect(config.targetApps.some((app) => app.id === "selftest")).toBe(false);
+    expect(config.audioSamples).toEqual([]);
   });
 });

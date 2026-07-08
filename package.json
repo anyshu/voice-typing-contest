@@ -92,6 +92,7 @@
       "owner": "anyshu",
       "repo": "voice-typing-contest"
     },
+    "electronUpdaterCompatibility": ">=2.16",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.utilities",

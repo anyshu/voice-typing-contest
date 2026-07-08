@@ -10,6 +10,7 @@ import { PermissionManager } from "../src/main/permission-manager";
 import { TargetAppManager } from "../src/main/target-app-manager";
 import { RunController } from "../src/main/run-controller";
 import { ConfigStore } from "../src/main/config-store";
+import type { AudioSample, TargetAppProfile } from "../src/shared/types";
 
 function createWav(durationMs = 240): Buffer {
   const sampleRate = 16000;
@@ -33,6 +34,44 @@ function createWav(durationMs = 240): Buffer {
   buffer.write("data", 36);
   buffer.writeUInt32LE(dataSize, 40);
   return buffer;
+}
+
+function selftestApp(overrides: Partial<TargetAppProfile> = {}): TargetAppProfile {
+  return {
+    id: "selftest",
+    name: "自测",
+    appFileName: "VTC SelfTest",
+    launchCommand: "selftest://echo",
+    hotkeyChord: "Cmd+Shift+9",
+    hotkeyTriggerMode: "hold_release",
+    launchTimeoutMs: 500,
+    preHotkeyDelayMs: 50,
+    hotkeyToAudioDelayMs: 50,
+    audioToTriggerStopDelayMs: 80,
+    resultTimeoutMs: 2200,
+    settleWindowMs: 300,
+    postRunCooldownMs: 80,
+    enabled: true,
+    notes: "",
+    ...overrides,
+  };
+}
+
+function builtinTestSample(overrides: Partial<AudioSample> = {}): AudioSample {
+  return {
+    id: "builtin-test-sample",
+    filePath: "__builtin__/selftest-zh-01.wav",
+    relativePath: "fixtures/builtin-zh-01.wav",
+    displayName: "builtin-zh-01.wav",
+    expectedText: "real app transcript",
+    language: "zh",
+    durationMs: 850,
+    tags: ["fixture"],
+    enabled: true,
+    exists: true,
+    sourceType: "directory",
+    ...overrides,
+  };
 }
 
 let root = "";
@@ -59,7 +98,7 @@ describe("RunController integration", () => {
     config.sampleRoot = sampleRoot;
     config.databasePath = join(root, "vtc.sqlite");
     config.targetApps = [{
-      ...config.targetApps.find((app) => app.id === "selftest")!,
+      ...selftestApp(),
       enabled: true,
     }];
     config.audioSamples = [
@@ -149,13 +188,13 @@ describe("RunController integration", () => {
     config.betweenSamplesDelayMs = 0;
     config.targetApps = [
       {
-        ...config.targetApps.find((app) => app.id === "selftest")!,
+        ...selftestApp(),
         id: "selftest-a",
         name: "自测 A",
         enabled: false,
       },
       {
-        ...config.targetApps.find((app) => app.id === "selftest")!,
+        ...selftestApp(),
         id: "selftest-b",
         name: "自测 B",
         enabled: false,
@@ -275,10 +314,7 @@ describe("RunController integration", () => {
     config.sampleRoot = sampleRoot;
     config.databasePath = join(root, "vtc.sqlite");
     config.betweenSamplesDelayMs = 0;
-    config.targetApps = config.targetApps.map((app) => ({
-      ...app,
-      enabled: app.id === "selftest",
-    }));
+    config.targetApps = [selftestApp()];
     config.audioSamples = [
       {
         id: "sample-1",
@@ -563,13 +599,11 @@ describe("RunController integration", () => {
     config.databasePath = join(root, "vtc.sqlite");
     config.betweenSamplesDelayMs = 0;
     config.resultTimeoutMs = 120;
-    config.targetApps = config.targetApps.map((app) => ({
-      ...app,
-      enabled: app.id === "selftest",
-      hotkeyToAudioDelayMs: app.id === "selftest" ? 0 : app.hotkeyToAudioDelayMs,
-      audioToTriggerStopDelayMs: app.id === "selftest" ? 0 : app.audioToTriggerStopDelayMs,
-      settleWindowMs: app.id === "selftest" ? 20 : app.settleWindowMs,
-    }));
+    config.targetApps = [selftestApp({
+      hotkeyToAudioDelayMs: 0,
+      audioToTriggerStopDelayMs: 0,
+      settleWindowMs: 20,
+    })];
     config.audioSamples = [
       {
         id: "sample-1",
@@ -653,12 +687,15 @@ describe("RunController integration", () => {
     config.sampleRoot = sampleRoot;
     config.databasePath = join(root, "vtc.sqlite");
     config.betweenSamplesDelayMs = 0;
-    config.targetApps = config.targetApps.map((app) => ({
-      ...app,
-      enabled: app.id === "selftest" || app.id === "xiguashuo",
-      appFileName: app.id === "xiguashuo" ? "西瓜说" : app.appFileName,
-      name: app.id === "xiguashuo" ? "西瓜说" : app.name,
-    }));
+    config.targetApps = [
+      ...config.targetApps.filter((app) => app.id === "xiguashuo").map((app) => ({
+        ...app,
+        enabled: true,
+        appFileName: "西瓜说",
+        name: "西瓜说",
+      })),
+      selftestApp(),
+    ];
     config.audioSamples = [
       {
         id: "sample-1",
@@ -740,7 +777,7 @@ describe("RunController integration", () => {
       name: app.id === "xiguashuo" ? "西瓜说" : app.name,
       settleWindowMs: app.id === "xiguashuo" ? 120 : app.settleWindowMs,
     }));
-    config.audioSamples = [defaultConfig().audioSamples[0]!];
+    config.audioSamples = [builtinTestSample()];
 
     const store = new ResultStore(config.databasePath);
     const permissions = new PermissionManager({
@@ -1004,7 +1041,7 @@ describe("RunController integration", () => {
       audioToTriggerStopDelayMs: app.id === "xiguashuo" ? 20 : app.audioToTriggerStopDelayMs,
       settleWindowMs: app.id === "xiguashuo" ? 80 : app.settleWindowMs,
     }));
-    config.audioSamples = [defaultConfig().audioSamples[0]!];
+    config.audioSamples = [builtinTestSample()];
 
     const store = new ResultStore(config.databasePath);
     const permissions = new PermissionManager({
@@ -1069,15 +1106,13 @@ describe("RunController integration", () => {
     config.databasePath = join(root, "vtc.sqlite");
     config.resultTimeoutMs = 3000;
     config.betweenSamplesDelayMs = 0;
-    config.targetApps = config.targetApps.map((app) => ({
-      ...app,
-      enabled: app.id === "selftest",
-      settleWindowMs: app.id === "selftest" ? 300 : app.settleWindowMs,
-      preHotkeyDelayMs: app.id === "selftest" ? 20 : app.preHotkeyDelayMs,
-      hotkeyToAudioDelayMs: app.id === "selftest" ? 20 : app.hotkeyToAudioDelayMs,
-      audioToTriggerStopDelayMs: app.id === "selftest" ? 20 : app.audioToTriggerStopDelayMs,
-      postRunCooldownMs: app.id === "selftest" ? 0 : app.postRunCooldownMs,
-    }));
+    config.targetApps = [selftestApp({
+      settleWindowMs: 300,
+      preHotkeyDelayMs: 20,
+      hotkeyToAudioDelayMs: 20,
+      audioToTriggerStopDelayMs: 20,
+      postRunCooldownMs: 0,
+    })];
     config.audioSamples = [
       {
         id: "sample-1",
@@ -1259,14 +1294,12 @@ describe("RunController integration", () => {
     config.databasePath = join(root, "vtc.sqlite");
     config.resultTimeoutMs = 1200;
     config.betweenSamplesDelayMs = 300;
-    config.targetApps = config.targetApps.map((app) => ({
-      ...app,
-      enabled: app.id === "selftest",
-      preHotkeyDelayMs: app.id === "selftest" ? 20 : app.preHotkeyDelayMs,
-      hotkeyToAudioDelayMs: app.id === "selftest" ? 20 : app.hotkeyToAudioDelayMs,
-      audioToTriggerStopDelayMs: app.id === "selftest" ? 20 : app.audioToTriggerStopDelayMs,
-      settleWindowMs: app.id === "selftest" ? 80 : app.settleWindowMs,
-    }));
+    config.targetApps = [selftestApp({
+      preHotkeyDelayMs: 20,
+      hotkeyToAudioDelayMs: 20,
+      audioToTriggerStopDelayMs: 20,
+      settleWindowMs: 80,
+    })];
     config.audioSamples = [
       {
         id: "sample-1",
@@ -1352,15 +1385,13 @@ describe("RunController integration", () => {
     config.databasePath = join(root, "vtc.sqlite");
     config.resultTimeoutMs = 1200;
     config.betweenSamplesDelayMs = 600;
-    config.targetApps = config.targetApps.map((app) => ({
-      ...app,
-      enabled: app.id === "selftest",
-      preHotkeyDelayMs: app.id === "selftest" ? 20 : app.preHotkeyDelayMs,
-      hotkeyToAudioDelayMs: app.id === "selftest" ? 20 : app.hotkeyToAudioDelayMs,
-      audioToTriggerStopDelayMs: app.id === "selftest" ? 20 : app.audioToTriggerStopDelayMs,
-      settleWindowMs: app.id === "selftest" ? 80 : app.settleWindowMs,
-      postRunCooldownMs: app.id === "selftest" ? 0 : app.postRunCooldownMs,
-    }));
+    config.targetApps = [selftestApp({
+      preHotkeyDelayMs: 20,
+      hotkeyToAudioDelayMs: 20,
+      audioToTriggerStopDelayMs: 20,
+      settleWindowMs: 80,
+      postRunCooldownMs: 0,
+    })];
     config.audioSamples = [
       {
         id: "sample-1",

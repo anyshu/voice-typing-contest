@@ -215,7 +215,7 @@ It should answer these questions at a glance:
 |   Wispr Flow       Enabled                    | |                         | | Sample start         |
 |   App C            Disabled                   | +-------------------------+ | Trigger start        |
 |-----------------------------------------------| explanatory copy + phase   | Audio start          |
-| .app name / builtin note / trigger mode       | pill only, no 4-card stack | Trigger stop         |
+| .app name / trigger mode                      | pill only, no 4-card stack | Trigger stop         |
 |                                               |                            | End                  |
 |--------------------------------------------------------------------------------------------------|
 | Latest Session Summary                                                                           |
@@ -397,7 +397,7 @@ It should make it easy to answer:
 - which apps are enabled
 - which real apps are installed right now
 - what hotkey and trigger mode each app uses
-- whether the builtin self-test is still available as a fallback
+- which real apps are available and enabled
 
 ### 7.2 Layout
 
@@ -405,7 +405,7 @@ It should make it easy to answer:
 +----------------------------------------------------------------------------------+
 | App管理                                                           [刷新] [新增] |
 |----------------------------------------------------------------------------------|
-| [总数] [已启用] [真实 App] [已安装真实 App] [内建自测]                            |
+| [总数] [已启用] [真实 App] [已安装真实 App]                                      |
 |----------------------------------------------------------------------------------|
 | +------------------------------------------------------------------------------+ |
 | | Typeless                                                [启用] [删除]        | |

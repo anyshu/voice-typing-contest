@@ -75,7 +75,7 @@ export class PermissionManager {
         ok: checks.requiresAccessibility ? accessibility : true,
         message: checks.requiresAccessibility
           ? (accessibility ? "辅助功能权限已授权" : "缺少辅助功能权限")
-          : "当前只运行内建自测，不要求辅助功能权限",
+          : "当前没有需要辅助功能权限的目标App",
         category: checks.requiresAccessibility && !accessibility ? ("permission_denied_accessibility" satisfies FailureCategory) : undefined,
         hint: checks.requiresAccessibility && !accessibility ? "先到系统设置里给这个应用打开辅助功能权限，再回来点开始。" : undefined,
       },
@@ -90,7 +90,7 @@ export class PermissionManager {
         key: "samples",
         ok: checks.hasSamples,
         message: checks.hasSamples ? "样本已准备好" : "当前没有启用的样本",
-        hint: checks.hasSamples ? undefined : "先用内建自测样本，或者在设置页选择一个包含 WAV / MP3 / OGG 的目录后重新扫描。",
+        hint: checks.hasSamples ? undefined : "在设置页选择一个包含 WAV / MP3 / OGG 的目录后重新扫描。",
       },
       {
         key: "apps",
@@ -102,7 +102,7 @@ export class PermissionManager {
             : "已经启用了目标App，但当前没有一个能真正跑起来",
         category: checks.hasRunnableApps ? undefined : ("target_app_not_ready" satisfies FailureCategory),
         hint: !checks.hasEnabledApps
-          ? "至少启用一个目标App。想先验证流程的话，直接启用“内建自测”。"
+          ? "至少启用一个目标App。"
           : checks.hasRunnableApps
             ? undefined
             : "先看下面每个应用自己的提示。只要有一个应用能跑，这里就不会拦你。",

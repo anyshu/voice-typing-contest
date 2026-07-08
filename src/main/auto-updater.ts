@@ -143,38 +143,59 @@ async function installUpdate(version: string): Promise<void> {
   const appPath = app.getPath('exe').replace('/Contents/MacOS/VoiceTypingContest', '');
   
   log.info(`开始安装更新: ${zipPath} -> ${appPath}`);
+  log.info(`应用路径: ${appPath}`);
+  log.info(`ZIP 路径: ${zipPath}`);
   
   // 创建安装脚本
-  const script = `
-    #!/bin/bash
-    # 等待应用退出
-    sleep 1
-    
-    # 解压新版本到临时目录
-    TMP_DIR=$(mktemp -d)
-    unzip -q "${zipPath}" -d "$TMP_DIR"
-    
-    # 删除旧应用
-    rm -rf "${appPath}"
-    
-    # 移动新应用
-    mv "$TMP_DIR/VoiceTypingContest.app" "${appPath}"
-    
-    # 清理
-    rm -rf "$TMP_DIR"
-    
-    # 重新启动应用
-    open "${appPath}"
-  `;
+  const script = `#!/bin/bash
+set -e  # 遇到错误立即退出
+set -x  # 显示执行的命令
+
+echo "=== 开始更新安装 ===" >> /tmp/vtc-update.log 2>&1
+
+# 等待应用退出
+sleep 2
+
+# 解压新版本到临时目录
+TMP_DIR=$(mktemp -d)
+echo "临时目录: $TMP_DIR" >> /tmp/vtc-update.log 2>&1
+
+echo "解压 ${zipPath}" >> /tmp/vtc-update.log 2>&1
+unzip -q "${zipPath}" -d "$TMP_DIR" >> /tmp/vtc-update.log 2>&1
+
+# 删除旧应用
+echo "删除旧应用 ${appPath}" >> /tmp/vtc-update.log 2>&1
+rm -rf "${appPath}"
+
+# 移动新应用
+echo "安装新应用" >> /tmp/vtc-update.log 2>&1
+mv "$TMP_DIR/VoiceTypingContest.app" "${appPath}"
+
+# 清理
+rm -rf "$TMP_DIR"
+rm -f "${zipPath}"
+
+echo "=== 更新安装完成 ===" >> /tmp/vtc-update.log 2>&1
+
+# 重新启动应用
+sleep 1
+open "${appPath}" >> /tmp/vtc-update.log 2>&1
+
+echo "=== 应用已重启 ===" >> /tmp/vtc-update.log 2>&1
+`;
   
   const scriptPath = '/tmp/vtc-update-install.sh';
   const fs = await import('node:fs/promises');
   await fs.writeFile(scriptPath, script, { mode: 0o755 });
   
+  log.info(`安装脚本已创建: ${scriptPath}`);
+  log.info(`日志文件: /tmp/vtc-update.log`);
+  
   // 执行安装脚本并退出应用
   exec(`bash "${scriptPath}" &`);
   
   setTimeout(() => {
+    log.info("退出应用以开始安装");
     app.quit();
   }, 500);
 }

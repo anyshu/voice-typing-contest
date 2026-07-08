@@ -152,6 +152,7 @@ set -e  # 遇到错误立即退出
 set -x  # 显示执行的命令
 
 echo "=== 开始更新安装 ===" >> /tmp/vtc-update.log 2>&1
+echo "时间: $(date)" >> /tmp/vtc-update.log 2>&1
 
 # 等待应用退出
 sleep 2
@@ -168,25 +169,34 @@ unzip -q "${zipPath}" -d "$TMP_DIR" >> /tmp/vtc-update.log 2>&1
 echo "替换应用内容 ${appPath}" >> /tmp/vtc-update.log 2>&1
 
 # 删除旧的 Contents 目录
-rm -rf "${appPath}/Contents"
+rm -rf "${appPath}/Contents" >> /tmp/vtc-update.log 2>&1
 
 # 复制新的 Contents 目录
-cp -R "$TMP_DIR/VoiceTypingContest.app/Contents" "${appPath}/"
+cp -R "$TMP_DIR/VoiceTypingContest.app/Contents" "${appPath}/" >> /tmp/vtc-update.log 2>&1
 
 # 更新 Info.plist（如果有的话）
 if [ -f "$TMP_DIR/VoiceTypingContest.app/Contents/Info.plist" ]; then
-  cp -f "$TMP_DIR/VoiceTypingContest.app/Contents/Info.plist" "${appPath}/Contents/"
+  cp -f "$TMP_DIR/VoiceTypingContest.app/Contents/Info.plist" "${appPath}/Contents/" >> /tmp/vtc-update.log 2>&1
 fi
 
 # 清理
-rm -rf "$TMP_DIR"
-rm -f "${zipPath}"
+rm -rf "$TMP_DIR" >> /tmp/vtc-update.log 2>&1
+rm -f "${zipPath}" >> /tmp/vtc-update.log 2>&1
 
 echo "=== 更新安装完成 ===" >> /tmp/vtc-update.log 2>&1
 
-# 重新启动应用
+# 重新启动应用 - 使用绝对路径和完整命令
 sleep 1
-open "${appPath}" >> /tmp/vtc-update.log 2>&1
+echo "启动应用: ${appPath}" >> /tmp/vtc-update.log 2>&1
+/usr/bin/open "${appPath}" >> /tmp/vtc-update.log 2>&1
+OPEN_RESULT=$?
+echo "open 命令返回: $OPEN_RESULT" >> /tmp/vtc-update.log 2>&1
+
+if [ $OPEN_RESULT -ne 0 ]; then
+  echo "ERROR: open 命令失败，尝试备用方法" >> /tmp/vtc-update.log 2>&1
+  # 备用方法：直接执行应用
+  "${appPath}/Contents/MacOS/VoiceTypingContest" >> /tmp/vtc-update.log 2>&1 &
+fi
 
 echo "=== 应用已重启 ===" >> /tmp/vtc-update.log 2>&1
 `;

@@ -490,6 +490,32 @@ describe("App renderer", () => {
     expect(api.stopRun).toHaveBeenCalled();
   });
 
+  it("shows the latest elapsed time for the currently running run", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-23T10:00:00.000Z"));
+    const { handlers } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    handlers.progress?.({
+      sessionId: "session-live",
+      runId: "run-live-1",
+      phase: "audio_playing",
+      currentAppName: "西瓜说",
+      currentSamplePath: "samples/zh-01.wav",
+      currentRunStartedAt: "2026-03-23T10:00:00.000Z",
+      textValue: "",
+      message: "正在播放音频",
+      completedRuns: 0,
+      totalRuns: 2,
+    });
+    vi.advanceTimersByTime(1250);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("最新耗时");
+    expect(wrapper.text()).toContain("1.3 秒");
+  });
+
   it("keeps the close button active between samples instead of flipping back to start", async () => {
     const { handlers } = setupDesktopApi();
     const wrapper = mount(App);

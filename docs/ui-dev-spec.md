@@ -149,13 +149,14 @@ The persisted session list belongs to the dedicated `测试历史` page.
 
 ### 4.1 Summary strip
 
-Show five compact items:
+Show six compact items:
 
 - enabled apps
 - enabled samples
 - accessibility state
 - current output device
 - current progress
+- latest elapsed time for the current/latest run
 
 Do not use oversized KPI cards. Keep icon left, text label in the middle, and one-line value emphasis on the right.
 
@@ -172,7 +173,7 @@ The renderer no longer shows a separate four-item "current status stack" on the 
 
 - the phase pill in the live-input card
 - the timeline on the right
-- the top summary strip progress item
+- the top summary strip progress and latest elapsed-time items
 
 ### 4.3 Timeline
 
@@ -203,6 +204,7 @@ It is grouped by app:
 - app name is the parent node
 - a short one-line app summary sits below the app name
 - stats render in a plain compact grid instead of large cards
+- include `最新耗时` so the operator can see the current/latest run duration without averaging it into the other stats
 - stat tone can switch between accent / success / warning / danger
 
 Current summary content is derived from the latest session's per-app run group and includes the current session status pill beside the headline.

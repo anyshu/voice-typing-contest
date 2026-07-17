@@ -235,6 +235,8 @@ export interface RunProgress {
   phase: RunPhase;
   currentAppName?: string;
   currentSamplePath?: string;
+  currentRunStartedAt?: string;
+  latestRunElapsedMs?: number;
   textValue: string;
   message: string;
   failureCategory?: FailureCategory;

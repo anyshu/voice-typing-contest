@@ -243,13 +243,14 @@ The accessibility banner keeps these two actions:
 
 #### Summary strip
 
-Use five compact summary items:
+Use six compact summary items:
 
 - app count
 - sample count
 - permission state
 - selected virtual device
 - current batch progress
+- latest elapsed time for the current/latest run
 
 Each chip has:
 
@@ -278,13 +279,14 @@ Current state is instead surfaced by:
 
 - the phase pill on the live card
 - the right-side timeline
-- the progress item in the top summary strip
+- the progress and latest elapsed-time items in the top summary strip
 
 Below the main region, show one summary area for the latest session:
 
 - grouped by app
 - parent app title is more prominent
 - child stats are smaller and tighter in a compact plain grid
+- include `最新耗时` as the non-averaged current/latest run duration
 - no raw recognized paragraph in this area
 
 #### Right column

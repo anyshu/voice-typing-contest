@@ -1,6 +1,6 @@
 {
   "name": "voice-typing-contest",
-  "version": "0.2.2",
+  "version": "0.2.13",
   "private": true,
   "description": "macOS Electron benchmark app for voice typing tools",
   "main": "out/main/index.js",
@@ -22,6 +22,7 @@
     "@hugeicons/vue": "^1.0.5",
     "better-sqlite3": "^11.10.0",
     "electron-log": "^5.4.0",
+    "electron-updater": "^6.8.9",
     "nanoid": "^5.1.5",
     "vue": "^3.5.13",
     "vue-i18n": "^10.0.5"
@@ -39,7 +40,7 @@
   },
   "build": {
     "appId": "com.hc.voicetypingcontest",
-    "productName": "Voice Typing Contest",
+    "productName": "VoiceTypingContest",
     "afterPack": "scripts/fix-macos-signatures.mjs",
     "directories": {
       "output": "release"
@@ -86,12 +87,29 @@
         "to": "scripts/history-report/西瓜说_语音测试数据集_v1.md"
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "anyshu",
+      "repo": "voice-typing-contest"
+    },
+    "electronUpdaterCompatibility": ">=2.16",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.utilities",
       "identity": null,
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "icon": "resources/icon-macos.png"
     },

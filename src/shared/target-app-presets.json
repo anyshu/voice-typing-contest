@@ -66,22 +66,5 @@
     "postRunCooldownMs": 300,
     "enabled": false,
     "notes": ""
-  },
-  {
-    "id": "selftest",
-    "name": "内建自测",
-    "appFileName": "VTC SelfTest",
-    "launchCommand": "selftest://echo",
-    "hotkeyChord": "Cmd+Shift+9",
-    "hotkeyTriggerMode": "hold_release",
-    "launchTimeoutMs": 500,
-    "preHotkeyDelayMs": 50,
-    "hotkeyToAudioDelayMs": 50,
-    "audioToTriggerStopDelayMs": 80,
-    "resultTimeoutMs": 2200,
-    "settleWindowMs": 300,
-    "postRunCooldownMs": 80,
-    "enabled": true,
-    "notes": "不依赖真实目标App，用来验证主流程是否打通。"
   }
 ]

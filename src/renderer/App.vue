@@ -88,11 +88,28 @@ const previewCurrentTime = ref<Record<string, number>>({});
 const previewDuration = ref<Record<string, number>>({});
 const previewPlayingSampleId = ref<string | null>(null);
 const hoveredSampleId = ref<string | null>(null);
+const elapsedNowMs = ref(Date.now());
 const sampleListViewport = ref<HTMLElement | null>(null);
 const sampleListScrollTop = ref(0);
 const sampleListViewportHeight = ref(520);
 let resolvePreRunConfirm: (() => void) | null = null;
 let noticeTimer: ReturnType<typeof window.setTimeout> | null = null;
+let elapsedTimer: ReturnType<typeof window.setInterval> | null = null;
+
+function startElapsedTimer(): void {
+  if (elapsedTimer) return;
+  elapsedNowMs.value = Date.now();
+  elapsedTimer = window.setInterval(() => {
+    elapsedNowMs.value = Date.now();
+  }, 250);
+}
+
+function stopElapsedTimer(): void {
+  if (!elapsedTimer) return;
+  window.clearInterval(elapsedTimer);
+  elapsedTimer = null;
+  elapsedNowMs.value = Date.now();
+}
 
 const PRE_RUN_RUN_ID_PREFIX = "prep:";
 const SAMPLE_ROW_HEIGHT = 44;
@@ -138,7 +155,6 @@ const modeLabels = {
 
 const running = computed(() => !["idle", "completed", "failed", "cancelled"].includes(progress.value.phase));
 const enabledApps = computed(() => config.value.targetApps.filter((item) => item.enabled));
-const builtinApps = computed(() => config.value.targetApps.filter((item) => isBuiltinApp(item)));
 const realApps = computed(() => config.value.targetApps.filter((item) => !isBuiltinApp(item)));
 const enabledRealApps = computed(() => realApps.value.filter((item) => item.enabled));
 const installedRealApps = computed(() => realApps.value.filter((item) => installedAppInfoById.value[item.id]?.installed));
@@ -323,7 +339,7 @@ function isBuiltinApp(app: TargetAppProfile): boolean {
 }
 
 function appKindLabel(app: TargetAppProfile): string {
-  return isBuiltinApp(app) ? "内建自测" : "真实 App";
+  return "真实 App";
 }
 
 function appStatusLabel(app: TargetAppProfile): string {
@@ -339,9 +355,7 @@ function appVersionLabel(app: TargetAppProfile): string {
 }
 
 function appLaunchSummary(app: TargetAppProfile): string {
-  return isBuiltinApp(app)
-    ? "内建流程"
-    : (app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找");
+  return app.launchCommand?.trim() || app.appFileName || "按 .app 文件名查找";
 }
 
 async function openAppWebsite(app: TargetAppProfile): Promise<void> {
@@ -815,6 +829,16 @@ function formatLatencyMs(value?: number): string {
   return `${value}`;
 }
 
+function formatElapsedMs(value?: number): string {
+  if (value === undefined) return "-";
+  const elapsedMs = Math.max(0, Math.round(value));
+  if (elapsedMs < 1000) return `${elapsedMs} ms`;
+  if (elapsedMs < 60_000) return `${(elapsedMs / 1000).toFixed(1)} 秒`;
+  const minutes = Math.floor(elapsedMs / 60_000);
+  const seconds = Math.round((elapsedMs % 60_000) / 1000);
+  return `${minutes} 分 ${seconds} 秒`;
+}
+
 function formatCpuPercent(value?: number): string {
   if (value === undefined) return "-";
   return `${value.toFixed(value >= 100 ? 0 : 1)}%`;
@@ -847,6 +871,10 @@ function median(values: number[]): number | undefined {
   const middle = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 1) return sorted[middle];
   return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+function latestRunByCreatedAt(runs: TestRunRecord[]): TestRunRecord | undefined {
+  return [...runs].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
 }
 
 const latestSessionGroup = computed(() => resultSessionGroups.value[0]);
@@ -890,6 +918,24 @@ const mainSessionGroup = computed(() => {
   return latestSessionGroup.value;
 });
 const latestMainRun = computed(() => mainSessionGroup.value?.runs[0]);
+const liveCurrentRunElapsedMs = computed(() => {
+  const startedAt = progress.value.currentRunStartedAt;
+  if (running.value && startedAt) {
+    const startedMs = new Date(startedAt).getTime();
+    if (Number.isFinite(startedMs)) {
+      return Math.max(0, elapsedNowMs.value - startedMs);
+    }
+  }
+  return progress.value.latestRunElapsedMs;
+});
+const latestElapsedLabel = computed(() => formatElapsedMs(liveCurrentRunElapsedMs.value ?? latestMainRun.value?.totalRunMs));
+
+function latestElapsedForApp(appName: string, runs: TestRunRecord[]): number | undefined {
+  if (progress.value.currentAppName === appName && liveCurrentRunElapsedMs.value !== undefined) {
+    return liveCurrentRunElapsedMs.value;
+  }
+  return latestRunByCreatedAt(runs)?.totalRunMs;
+}
 const displayedTimeline = computed(() => {
   const preRunEvents = preRunTimelineEvents.value;
   const liveSessionId = progress.value.sessionId;
@@ -956,6 +1002,7 @@ const latestSessionAppStats = computed(() => (latestSessionGroup.value?.appGroup
       { label: "平均字数", value: textLengths.length ? String(Math.round(textLengths.reduce((sum, value) => sum + value, 0) / textLengths.length)) : "-", tone: "" },
       { label: "最长首字时间", value: formatLatencyMs(firstCharValues.length ? Math.max(...firstCharValues) : undefined), tone: "accent" },
       { label: "首字时间中位数", value: formatLatencyMs(median(firstCharValues)), tone: "accent" },
+      { label: "最新耗时", value: formatElapsedMs(latestElapsedForApp(group.appName, runs)), tone: "accent" },
       { label: "总共耗时", value: formatLatencyMs(totalRunValues.length ? totalRunValues.reduce((sum, value) => sum + value, 0) : undefined), tone: "" },
       { label: "平均 CPU", value: formatCpuPercent(average(averageCpuValues)), tone: "warning" },
       { label: "最高 CPU", value: formatCpuPercent(peakCpuValues.length ? Math.max(...peakCpuValues) : undefined), tone: "warning" },
@@ -999,6 +1046,7 @@ const mainSessionAppStats = computed(() => (mainSessionGroup.value?.appGroups ??
       { label: "平均字数", value: textLengths.length ? String(Math.round(textLengths.reduce((sum, value) => sum + value, 0) / textLengths.length)) : "-", tone: "" },
       { label: "最长首字时间", value: formatLatencyMs(firstCharValues.length ? Math.max(...firstCharValues) : undefined), tone: "accent" },
       { label: "首字时间中位数", value: formatLatencyMs(median(firstCharValues)), tone: "accent" },
+      { label: "最新耗时", value: formatElapsedMs(latestElapsedForApp(group.appName, runs)), tone: "accent" },
       { label: "总共耗时", value: formatLatencyMs(totalRunValues.length ? totalRunValues.reduce((sum, value) => sum + value, 0) : undefined), tone: "" },
       { label: "平均 CPU", value: formatCpuPercent(average(averageCpuValues)), tone: "warning" },
       { label: "最高 CPU", value: formatCpuPercent(peakCpuValues.length ? Math.max(...peakCpuValues) : undefined), tone: "warning" },
@@ -1203,8 +1251,8 @@ async function rescanSamples(): Promise<void> {
   const missingJsonl = config.value.sampleSourceType === "jsonl" && !config.value.sampleJsonlPath;
   if (missingDirectory || missingJsonl) {
     notice.value = config.value.sampleSourceType === "jsonl"
-      ? "还没有选 JSONL 样本文件。现在仍然可以直接跑内建自测。"
-      : "还没有选外部样本目录。现在仍然可以直接跑内建自测。";
+      ? "还没有选 JSONL 样本文件，请先选择样本来源。"
+      : "还没有选外部样本目录，请先选择样本来源。";
     return;
   }
   try {
@@ -1831,6 +1879,14 @@ watch(() => progress.value.phase, async (phase, previousPhase) => {
   await refreshResultData();
 });
 
+watch(running, (isRunning) => {
+  if (isRunning) {
+    startElapsedTimer();
+    return;
+  }
+  stopElapsedTimer();
+}, { immediate: true });
+
 watch(() => page.value, async (nextPage) => {
   if (nextPage !== "samples") return;
   await nextTick();
@@ -1856,6 +1912,10 @@ watch(() => config.value.audioSamples.length, async () => {
 
 onBeforeUnmount(() => {
   clearNoticeTimer();
+  if (elapsedTimer) {
+    window.clearInterval(elapsedTimer);
+    elapsedTimer = null;
+  }
   previewAudioBySampleId.forEach((audio) => audio.pause());
   previewAudioBySampleId.clear();
   window.removeEventListener("resize", measureSampleListViewport);
@@ -1994,6 +2054,11 @@ onBeforeUnmount(() => {
               <span class="summary-label">当前进度</span>
               <strong>{{ progress.completedRuns }} / {{ progress.totalRuns }}</strong>
             </div>
+            <div class="summary-item">
+              <HugeiconsIcon :icon="StopIcon" :size="16" class="summary-inline-icon" />
+              <span class="summary-label">最新耗时</span>
+              <strong>{{ latestElapsedLabel }}</strong>
+            </div>
           </section>
           <button
             class="action-button"
@@ -2040,7 +2105,7 @@ onBeforeUnmount(() => {
                 <li v-for="app in config.targetApps" :key="app.id" class="app-row app-row--main">
                   <div class="app-row-main">
                     <strong>{{ app.name }}</strong>
-                    <div class="muted app-row-meta">{{ app.launchCommand?.startsWith("selftest://") ? "内建自测，不依赖真实目标App" : app.appFileName }}</div>
+                    <div class="muted app-row-meta">{{ app.appFileName }}</div>
                     <div class="muted app-row-meta">{{ appModeText(app.hotkeyTriggerMode) }}</div>
                   </div>
                   <div class="app-row-actions">
@@ -2066,7 +2131,7 @@ onBeforeUnmount(() => {
               <h3>输入检测区</h3>
               <span class="pill" :class="statusTone(progress.phase)">{{ phaseText(progress.phase) }}</span>
             </div>
-            <p class="muted">这里是统一的输入检测区。真实目标App和内建自测都会把文本写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
+            <p class="muted">这里是统一的输入检测区。真实目标 App 的文本会写到这里，方便确认是否命中测试落点，并观察 first char 与最终稳定文本。</p>
             <textarea
               ref="inputProbeTextarea"
               class="live-textarea"
@@ -2483,7 +2548,7 @@ onBeforeUnmount(() => {
               </div>
             </article>
 
-            <div v-if="!historyResultGroups.length" class="muted">还没有结果。先跑一次“内建自测”。</div>
+            <div v-if="!historyResultGroups.length" class="muted">还没有结果。选择目标 App 和样本后开始一次测试。</div>
           </div>
         </article>
 
@@ -2526,7 +2591,7 @@ onBeforeUnmount(() => {
           <div class="panel-header-row apps-page__header">
             <div>
               <h3>目标App</h3>
-              <p class="muted">把真实目标 App 和内建自测都收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
+              <p class="muted">把真实目标 App 收在一个清爽的配置面板里，先启用再去跑批量测试。</p>
             </div>
             <div class="toolbar">
               <button class="ghost-button" @click="refreshInstalledAppInfo">刷新安装信息</button>
@@ -2555,11 +2620,6 @@ onBeforeUnmount(() => {
               <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
               <span class="summary-label">已安装真实 App</span>
               <strong>{{ installedRealApps.length }} / {{ realApps.length }}</strong>
-            </div>
-            <div class="summary-item">
-              <HugeiconsIcon :icon="CheckListIcon" :size="16" class="summary-inline-icon" />
-              <span class="summary-label">内建自测</span>
-              <strong>{{ builtinApps.length ? (builtinApps[0]?.enabled ? "已启用" : "未启用") : "未配置" }}</strong>
             </div>
           </section>
 
@@ -2701,10 +2761,10 @@ onBeforeUnmount(() => {
                 <label class="settings-field settings-field--wide">
                   <span>外部样本目录</span>
                   <div class="inline-field inline-field--soft">
-                    <input v-model="config.sampleRoot" placeholder="不填也可以，默认直接跑内建自测" />
+                    <input v-model="config.sampleRoot" placeholder="选择包含 WAV / MP3 / OGG 的目录" />
                     <button class="ghost-button" @click="chooseSampleRoot">选择</button>
                   </div>
-                  <small>不填也能运行；填写后可直接把目录里的 WAV / MP3 / OGG 纳入测试。</small>
+                  <small>填写后可直接把目录里的 WAV / MP3 / OGG 纳入测试。</small>
                 </label>
               </div>
             </article>

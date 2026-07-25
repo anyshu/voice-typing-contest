@@ -1,9 +1,24 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { currentVersionNotes } from "../content/version-notes";
 
 defineProps<{
   versionLabel: string;
 }>();
+
+const checking = ref(false);
+
+async function checkForUpdates(): Promise<void> {
+  if (checking.value) return;
+  checking.value = true;
+  try {
+    await window.vtc.checkForUpdates();
+  } finally {
+    setTimeout(() => {
+      checking.value = false;
+    }, 2000);
+  }
+}
 </script>
 
 <template>
@@ -15,7 +30,17 @@ defineProps<{
           <h3>{{ currentVersionNotes.headline }}</h3>
           <p>{{ currentVersionNotes.summary }}</p>
         </div>
-        <span class="pill mono">{{ versionLabel }}</span>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span class="pill mono">{{ versionLabel }}</span>
+          <button 
+            class="secondary-button"
+            :disabled="checking"
+            @click="checkForUpdates"
+            style="white-space: nowrap;"
+          >
+            {{ checking ? "检查中..." : "检查更新" }}
+          </button>
+        </div>
       </div>
       <div class="version-notes__tags">
         <span v-for="tag in currentVersionNotes.focusTags" :key="tag" class="pill">{{ tag }}</span>
@@ -46,6 +71,14 @@ defineProps<{
       <ol class="version-notes__list version-notes__list--compact">
         <li v-for="item in currentVersionNotes.nextSteps" :key="item">{{ item }}</li>
       </ol>
+    </article>
+
+    <article class="panel">
+      <h3>💡 自动更新</h3>
+      <p style="color: #666; line-height: 1.6;">
+        本应用支持自动更新。启动后会在后台检查新版本，发现更新时会友好提示。
+        你也可以随时点击上方的"检查更新"按钮手动检查。
+      </p>
     </article>
   </section>
 </template>

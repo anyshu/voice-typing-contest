@@ -9,7 +9,7 @@ import type { InstalledTargetAppInfo, PreflightReport, RunSessionSummary, Settin
 type Handler = (payload: unknown) => void;
 
 function makeSettings(): SettingsPayload {
-  return {
+  const settings: SettingsPayload = {
     ...defaultConfig(),
     permissions: [
       { id: "accessibility", name: "Accessibility", required: true, granted: true },
@@ -17,6 +17,39 @@ function makeSettings(): SettingsPayload {
     ],
     devices: defaultDevices(),
   };
+  settings.targetApps = settings.targetApps.map((app, index) => ({
+    ...app,
+    enabled: index === 1,
+  }));
+  settings.audioSamples = [
+    {
+      id: "sample-zh-01",
+      filePath: "/tmp/vtc-samples/zh-01.wav",
+      relativePath: "samples/zh-01.wav",
+      displayName: "zh-01.wav",
+      expectedText: "这是一条外部测试文本。",
+      language: "zh",
+      durationMs: 850,
+      tags: ["samples", "zh"],
+      enabled: true,
+      exists: true,
+      sourceType: "directory",
+    },
+    {
+      id: "builtin-en-01",
+      filePath: "/tmp/vtc-samples/english-01.wav",
+      relativePath: "samples/english-01.wav",
+      displayName: "english-01.wav",
+      expectedText: "This is an external test sentence.",
+      language: "en",
+      durationMs: 760,
+      tags: ["samples", "en"],
+      enabled: true,
+      exists: true,
+      sourceType: "directory",
+    },
+  ];
+  return settings;
 }
 
 function makeSessions(): RunSessionSummary[] {
@@ -127,7 +160,7 @@ afterEach(() => {
 });
 
 describe("App renderer", () => {
-  it("renders Chinese primary path with built-in self-test enabled", async () => {
+  it("renders Chinese primary path without built-in self-test entry points", async () => {
     setupDesktopApi();
     const wrapper = mount(App);
     await flushPromises();
@@ -135,7 +168,7 @@ describe("App renderer", () => {
     expect(wrapper.text()).toContain("运行前检查");
     expect(wrapper.text()).toContain("样本");
     expect(wrapper.text()).toContain("测试历史");
-    expect(wrapper.text()).toContain("内建自测");
+    expect(wrapper.text()).not.toContain("VTC SelfTest");
   });
 
   it("keeps App management directly below sample management in the upper navigation group", async () => {
@@ -457,6 +490,32 @@ describe("App renderer", () => {
     expect(api.stopRun).toHaveBeenCalled();
   });
 
+  it("shows the latest elapsed time for the currently running run", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-23T10:00:00.000Z"));
+    const { handlers } = setupDesktopApi();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    handlers.progress?.({
+      sessionId: "session-live",
+      runId: "run-live-1",
+      phase: "audio_playing",
+      currentAppName: "西瓜说",
+      currentSamplePath: "samples/zh-01.wav",
+      currentRunStartedAt: "2026-03-23T10:00:00.000Z",
+      textValue: "",
+      message: "正在播放音频",
+      completedRuns: 0,
+      totalRuns: 2,
+    });
+    vi.advanceTimersByTime(1250);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("最新耗时");
+    expect(wrapper.text()).toContain("1.3 秒");
+  });
+
   it("keeps the close button active between samples instead of flipping back to start", async () => {
     const { handlers } = setupDesktopApi();
     const wrapper = mount(App);
@@ -662,7 +721,7 @@ describe("App renderer", () => {
         runId: "run-1",
         eventType: "audio_start",
         tsMs: 300 + index * 40,
-        payloadJson: JSON.stringify({ sample: "__builtin__/selftest-zh-01.wav" }),
+        payloadJson: JSON.stringify({ sample: "/tmp/vtc-samples/zh-01.wav" }),
       });
     }
     await flushPromises();
@@ -1232,7 +1291,7 @@ describe("App renderer", () => {
         appId: "wispr",
         appName: "Wispr Flow",
         sampleId: "sample-2",
-        samplePath: "内建自测/english-01.wav",
+        samplePath: "samples/english-01.wav",
         status: "failed",
         phase: "failed",
         failureCategory: "timeout_waiting_result",
@@ -1352,7 +1411,7 @@ describe("App renderer", () => {
         appId: "typeless",
         appName: "Typeless",
         sampleId: "builtin-en-01",
-        samplePath: "内建自测/english-01.wav",
+        samplePath: "samples/english-01.wav",
         status: "failed",
         phase: "failed",
         failureCategory: "timeout_waiting_result",
@@ -1394,7 +1453,7 @@ describe("App renderer", () => {
         appId: "typeless",
         appName: "Typeless",
         sampleId: "builtin-en-01",
-        samplePath: "内建自测/english-01.wav",
+        samplePath: "samples/english-01.wav",
         status: "success",
         phase: "completed",
         rawText: "ok",
@@ -1418,7 +1477,7 @@ describe("App renderer", () => {
 
     expect(wrapper.text()).toContain("重试");
     expect(wrapper.text()).toContain("2");
-    expect(wrapper.find(".history-sample-text").attributes("data-tooltip")).toBe("内建自测/english-01.wav");
+    expect(wrapper.find(".history-sample-text").attributes("data-tooltip")).toBe("samples/english-01.wav");
   });
 
   it("uses the session start time as the displayed history time for merged rows", async () => {
@@ -1434,7 +1493,7 @@ describe("App renderer", () => {
         appId: "typeless",
         appName: "Typeless",
         sampleId: "builtin-en-01",
-        samplePath: "内建自测/english-01.wav",
+        samplePath: "samples/english-01.wav",
         status: "success",
         phase: "completed",
         rawText: "ok",
@@ -1475,7 +1534,7 @@ describe("App renderer", () => {
         appId: "typeless",
         appName: "Typeless",
         sampleId: "builtin-en-01",
-        samplePath: "内建自测/english-01.wav",
+        samplePath: "samples/english-01.wav",
         status: "success",
         phase: "completed",
         rawText: "ok",

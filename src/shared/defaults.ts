@@ -29,34 +29,9 @@ export const defaultConfig = (): AppConfig => {
     resourceSampleIntervalMs: 1000,
     betweenSamplesDelayMs: 3000,
     closeAppDelayMs: 3000,
-    runNotes: "默认先用内建自测确认流程正常，再去接真实目标App。",
+    runNotes: "选择真实目标 App 和样本目录后开始测试。",
     targetApps: defaultTargetApps(),
-    audioSamples: [
-      {
-        id: "builtin-zh-01",
-        filePath: "__builtin__/selftest-zh-01.wav",
-        relativePath: "内建自测/中文-01.wav",
-        displayName: "中文-01.wav",
-        expectedText: "这是第一条内建自测文本，用来确认运行流程是通的。",
-        language: "zh",
-        durationMs: 850,
-        tags: ["builtin", "selftest", "zh"],
-        enabled: true,
-        sourceType: "directory",
-      },
-      {
-        id: "builtin-en-01",
-        filePath: "__builtin__/selftest-en-01.wav",
-        relativePath: "内建自测/english-01.wav",
-        displayName: "english-01.wav",
-        expectedText: "This is the built in self test sentence for the run flow.",
-        language: "en",
-        durationMs: 760,
-        tags: ["builtin", "selftest", "en"],
-        enabled: true,
-        sourceType: "directory",
-      },
-    ],
+    audioSamples: [],
   };
 };
 

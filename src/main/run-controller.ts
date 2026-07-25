@@ -207,19 +207,21 @@ export class RunController extends EventEmitter {
           pendingAppTimelinePrefix = [];
         }
         this.current = { runId, appId: app.id, sampleId: sample.id, values: [] };
+        const started = performance.now();
+        const currentRunStartedAt = new Date().toISOString();
         this.progress = {
           sessionId,
           runId,
           phase: "focus_input",
           currentAppName: app.name,
           currentSamplePath: sample.relativePath,
+          currentRunStartedAt,
           textValue: "",
           message: `Running ${app.name} / ${sample.relativePath}`,
           completedRuns: completed,
           totalRuns,
         };
         this.emit("progress", { ...this.progress });
-        const started = performance.now();
         const pushEvent = (eventType: string, payload: Record<string, unknown>, tsMs = performance.now()): void => {
           const record: RunEventRecord = {
             id: nanoid(),
@@ -462,6 +464,7 @@ export class RunController extends EventEmitter {
             message: batchFinished ? "Completed" : "当前样本已完成，准备下一条",
             completedRuns: completed,
             totalRuns,
+            latestRunElapsedMs: record.totalRunMs,
           };
           this.emit("result", record);
           this.emit("progress", { ...this.progress });
@@ -496,6 +499,7 @@ export class RunController extends EventEmitter {
             rawText: this.progress.textValue,
             normalizedText: this.progress.textValue.trim(),
             expectedText: sample.expectedText,
+            totalRunMs: Math.round(performance.now() - started),
             averageCpuPercent: resourceSummary.averageCpuPercent,
             peakCpuPercent: resourceSummary.peakCpuPercent,
             averageMemoryMb: resourceSummary.averageMemoryMb,
@@ -526,6 +530,7 @@ export class RunController extends EventEmitter {
             failureReason,
             completedRuns: completed,
             totalRuns,
+            latestRunElapsedMs: record.totalRunMs,
           };
           this.emit("result", record);
           this.emit("progress", { ...this.progress });
@@ -650,7 +655,7 @@ export class RunController extends EventEmitter {
           ? undefined
           : item.skipReason === "permission"
             ? "去系统设置 -> 隐私与安全性 -> 辅助功能，给当前这个 Electron 测试工具打开权限，然后回来点“刷新”。"
-            : `先确认 ${item.app.appFileName} 已安装，或者先关掉它，改用“内建自测”验证流程。`,
+            : `先确认 ${item.app.appFileName} 已安装，或者先关掉它。`,
       })),
     });
 

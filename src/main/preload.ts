@@ -3,6 +3,7 @@ import type { AppConfig, AudioSample, InputObservationEvent, RunStartOptions, Ta
 
 const api = {
   getVersion: async () => await ipcRenderer.invoke("app:getVersion"),
+  checkForUpdates: async () => await ipcRenderer.invoke("app:checkForUpdates"),
   getSettings: async () => await ipcRenderer.invoke("settings:get"),
   saveSettings: async (config: AppConfig) => await ipcRenderer.invoke("settings:save", config),
   pickSampleRoot: async () => await ipcRenderer.invoke("samples:pickRoot"),
